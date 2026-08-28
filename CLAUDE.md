@@ -1,12 +1,14 @@
 # CLAUDE.md - Sluice
 
-Passthrough MCP server. Proxies one or more downstream MCP servers, materializes
-every tool result into a session-scoped DuckDB, and returns a preview plus a
-table handle instead of the payload. Exposes one tool of its own, `query`, for
-read-only SQL over those tables.
+Passthrough MCP server. Proxies **exactly one** downstream MCP server in v0
+(namespacing is built for fan-out, deferred), materializes every tool result into
+a DuckDB scratch DB, and returns a preview plus a table handle instead of the
+payload. Exposes one tool of its own, `query`, for read-only SQL over those
+tables.
 
-Read `spec/001-scratch-db.md` before changing behavior. `intent/001-scratch-db.md`
-records why the non-goals are non-goals.
+Read `spec/001-scratch-db.md` before changing behavior; `intent/` records why the
+non-goals are non-goals; `plan/001-notes-m0.md` is the measured evidence behind
+the rules below.
 
 ## Commands
 
@@ -35,72 +37,68 @@ uv run python -m demo.median  # the eval; not part of CI, calls a model
 
 ## Conventions
 
-- Idiomatic modern Python of the FastAPI and Postgres kind. Dataclasses for
-  value objects, `pathlib`, structured logging to stderr (stdout is the MCP
-  transport and must never be written to directly).
-- `shape.py` and `naming.py` are pure: no DuckDB imports, no MCP imports, no IO.
-  Keep them that way. They hold the logic most likely to be wrong and are the
-  cheapest to test.
-- All DuckDB calls are blocking. Dispatch them through `asyncio.to_thread` so the
-  MCP event loop is never blocked. Serialize writes behind an `asyncio.Lock`.
+- Idiomatic modern Python of the FastAPI and Postgres kind. Dataclasses for value
+  objects, `pathlib`, structured logging **to stderr** (stdout is the MCP
+  transport and must never be written to).
+- `shape.py`, `infer.py`, `naming.py` are pure: no DuckDB, no MCP, no IO. They
+  hold the logic most likely to be wrong and are cheapest to test. Keep them pure.
+- DuckDB calls are blocking: dispatch through `asyncio.to_thread`, serialize
+  writes behind an `asyncio.Lock`, one connection per in-flight query.
 - pytest, function-style tests, Hypothesis for the correctness property.
 
 ## Architecture
 
 ```
-MCP client (agent)
-      | stdio
-   server.py      tools/list = union of downstream tools + query
-      |
-   proxy.py       client sessions to downstream servers, call forwarding
-      |
-   shape.py       extract rows -> depth-1 projection      (pure)
-   infer.py       column types, conservatively             (pure)
-   store.py       envelope row + typed table in DuckDB
-   handle.py      preview + table name + columns -> back to the agent
-   query.py       read-only SQL: statement gate, timeout, caps
+client --stdio--> server.py  tools/list = downstream union + query
+                  proxy.py   downstream session, paginated list, round-trip relay
+                  shape.py   extract rows -> depth-1 projection        (pure)
+                  infer.py   column types + the `exact` flag           (pure)
+                  naming.py  injective names, quoting, collisions      (pure)
+                  scope.py   scope ids; stale handles fail loudly
+                  store.py   envelope row + typed tables
+                  handle.py  preview + tables + columns -> the agent
+                  query.py   three-layer gate, timeout, caps
 ```
 
-Data model: one `sluice_calls` envelope row per call, always. Plus one typed
-table per eligible call, named `<server>__<tool>__<seq>`, never appended to, with
-a `<server>__<tool>__latest` view repointed after each call.
+Data model: one `sluice_calls` envelope row per call. Plus one typed table per
+candidate array, never appended to, named
+`<server>__<tool>__<hash>__<scope>__<seq>` with a `__latest` view on the highest
+`seq`.
+
+Pinned: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 1.5.5. Every normative
+claim in the spec is against those; do not generalize across revisions.
 
 ## Rules that are load-bearing
 
-- **The DB is in-memory and dies with the process.** Deliberate. Do not add
-  persistence without going back through `intent/`.
-- **Sluice never turns a working tool call into a failed one.** Every
-  materialization failure degrades to an envelope-only handle and logs. See
-  spec §8.
-- **The handle must ride in `content`.** `_meta` is not fed to the model by
-  clients. `structuredContent` is a mirror on the way out, not the primary
-  channel.
-- **On the way in, `structuredContent` wins.** A downstream tool may put its data
-  in `structuredContent` and a prose summary in `content`. Materializing the text
-  in that case flattens the summary and discards the data. Channel priority is
-  spec §5.1 step 3, and the chosen channel is always reported.
-- **`max_payload_bytes` is a hard ceiling, not a size gate.** Peak memory during
-  materialization is a multiple of payload size and an OOM kill ends the session,
-  which is the one failure the "never fails a working call" invariant cannot
-  absorb. Everything under the ceiling is still intercepted.
-- **Read-only means two layers, not a SELECT prefix check.** DuckDB's own
-  `extract_statements` parser for the statement gate, plus
-  `enable_external_access = false` and `lock_configuration = true` at session
-  open. `SELECT * FROM read_csv('/etc/passwd')` is a SELECT.
-- **Every truncation is reported to the agent.** A silently truncated result is a
-  correctness bug in a tool that sells determinism.
-- **Materialization is file-free. No `read_json`, no temp files.** The §6.1
-  lockdown is database-global and blocks DuckDB's own file readers, Sluice's
-  included. Tables are built with explicit DDL plus `executemany`. Do not "fix" a
-  materialization failure by relaxing the lockdown.
-- **Sluice owns type inference** (spec §5.5), because of the above. Two rules
-  exist to prevent silent wrongness and must not be optimized away: never infer
-  `TIMESTAMP` from a string (DuckDB returns it naive and drops the offset), and
-  mixed scalar columns become `VARCHAR`, never `JSON` (`median()` on a `JSON`
-  column succeeds and returns a lexicographic answer).
+Each of these was a bug before it was a rule. Spec section in parentheses.
+
+- **Sluice never turns a working tool call into a failed one** (§8). Failures
+  degrade to an envelope-only handle. Two boundaries: OOM, and a connection-wide
+  interrupt.
+- **The handle rides in `content`** (§4.1); `structuredContent` mirrors it.
+  **On the way in, `structuredContent` wins** (§5.1): a tool may put data there
+  and prose in `content`, and flattening the prose discards the data.
+- **Exactness is domain-bounded** (§5.6). `median` equals Python exactly inside
+  the domain, not outside; `avg` never does. Never state the claim without it.
+- **Materialization is file-free** (§5.4). The lockdown is database-global and
+  blocks DuckDB's own readers. Do not "fix" a load failure by relaxing it.
+- **Sluice owns type inference** (§5.5), because of the above. Never infer
+  `TIMESTAMP` from a string; mixed scalars become `VARCHAR`, never `JSON`
+  (`median()` on `JSON` returns a lexicographic answer).
+- **Read-only means three layers** (§6.1): statement gate, engine lockdown,
+  catalog denylist. `SELECT * FROM read_csv('/etc/passwd')` is a SELECT.
+- **No table discovery** (§12). Enumeration is what isolation blocks. Do not add
+  a `sluice_schema` view back.
+- **Sluice never answers an elicitation** (§11). Round trips are relayed
+  untouched; `request_state` is opaque.
+- **Clone the whole downstream tool object** (FR-3), mutating only name,
+  description, and `outputSchema`. Rebuilding it field by field drops
+  `annotations.destructiveHint`.
+- **Every truncation is reported** (§6.3). Silent truncation is a correctness bug
+  in a tool that sells determinism.
 
 ## Out of scope for v0
 
-No cross-session persistence, no cross-server joins or entity resolution, no
-auth, policy, redaction, or audit layer, no hosted service, no UI. These are
-recorded as choices in `intent/001-scratch-db.md` §"Non-goals", not as backlog.
+No cross-session persistence, cross-server joins, entity resolution, auth,
+policy, redaction, audit layer, hosted service, UI, or table discovery. Recorded
+as choices in `intent/` §Non-goals, not as backlog.

@@ -95,7 +95,19 @@ otherwise think they were arbitrary.
    nothing to flatten. Both are still recorded in the envelope.
 6. **Proxied tool descriptions get one appended sentence** explaining the handle
    contract. The upstream description is otherwise preserved verbatim.
-7. **The reference downstream server is a purpose-built fake, in-repo.** It emits
+7. **Per-conversation scope isolation is in v0**, decided after review. A client
+   may reuse one stdio process across conversations, so "the DB dies with the
+   session" was really "dies with the process." Worse, after a restart, sequence
+   numbers restart and a resumed conversation's stale handle could name a table
+   that exists and holds different data. Scope tags in table names fix that
+   unconditionally; the isolation half is capability-based rather than enforced,
+   and spec §12 states the residual risk. The cost is table discovery: the
+   enumeration that discovery needs is exactly what isolation must block.
+8. **Multi-round-trip tool calls are relayed end to end**, decided after review.
+   The hazard otherwise is not that interactive tools break, it is that Sluice
+   answers elicitation and sampling prompts addressed to the real client and its
+   human.
+9. **The reference downstream server is a purpose-built fake, in-repo.** It emits
    controlled payloads (400 homogeneous rows, heterogeneous rows, deeply nested,
    non-tabular, oversized) so CI is hermetic and the correctness property test
    has ground truth.
@@ -117,7 +129,15 @@ Written down as choices, not oversights.
   every tool call and every result is the natural place to put all four, and that
   is plausibly the eventual product. It is not this version. The envelope table
   is the seed of an audit log, and that is as far as v0 goes.
+
+  One exception, added after review: **scope isolation** (spec §12). It is not
+  really an auth layer, it is a correctness fix, because without it a resumed
+  conversation can get a clean answer about a different result set. Even so, it is
+  capability-based rather than enforced, and enforced isolation stays in v1.
 - **No hosted service, no UI.** Local stdio process only.
+- **No table discovery.** Direct consequence of scope isolation: enumeration is
+  what has to be blocked, so the agent's own handles in its transcript are the
+  index of what exists.
 
 ## Open questions
 
@@ -142,11 +162,15 @@ The correctness criterion is a property: **an aggregate computed via `query` mus
 equal the same aggregate computed directly over the raw source data.** This is
 mechanically checkable and belongs in CI.
 
-"Equal" splits in two, which was measured rather than assumed. `count`, `min`,
-`max`, `median`, `count(DISTINCT)`, and `GROUP BY` counts are exactly equal to
-their Python equivalents on DuckDB 1.5.5. `avg` and float `sum` are not, because
-summation order differs, so those assert within a stated tolerance. A criterion
-demanding exact equality everywhere would be false on arrival.
+"Equal" is bounded by a domain and splits in two inside it, both measured rather
+than assumed. Outside the domain (integers past 2^53 in a float column,
+non-finite values, mixed scalar types) no guarantee is claimed and the handle
+flags the column. Inside it: `count`, `min`, `max`, `median`, `count(DISTINCT)`, `GROUP BY` counts, and
+integer `sum` are exactly equal to their Python equivalents on DuckDB 1.5.5.
+`avg` and float `sum` are not, because summation order differs, so those assert
+within a stated relative and absolute tolerance. A criterion demanding exact
+equality everywhere would be false on arrival: `avg([-1e308, 1, 2, 1e308])` is
+`0.0` in DuckDB and `0.75` in Python.
 
 The demonstration is separate and is not a test: an agent asked for a median over
 roughly 400 rows gets it wrong reading the payload and right reading the table.
