@@ -69,8 +69,11 @@ async def test_json_columns_round_trip(store: Store) -> None:
     assert '"n"' in args
 
 
-async def test_sequence_is_monotonic_per_tool(store: Store) -> None:
-    assert await store.next_seq("a") == 1
-    assert await store.next_seq("a") == 2
-    assert await store.next_seq("b") == 1
-    assert await store.next_seq("a") == 3
+async def test_sequences_are_monotonic_per_tool_and_independent(store: Store) -> None:
+    assert await store.next_call_seq("a") == 1
+    assert await store.next_call_seq("a") == 2
+    assert await store.next_call_seq("b") == 1
+    # One call may create several tables, so the counters must not share.
+    assert await store.next_table_seq("a") == 1
+    assert await store.next_table_seq("a") == 2
+    assert await store.next_call_seq("a") == 3

@@ -86,6 +86,8 @@ class Handle:
     byte_size: int
     preview: str
     preview_complete: bool
+    preview_rows: int | None = None
+    total_rows: int | None = None
     tables: list[TableRef] = field(default_factory=list)
     flat_reason: str | None = None
     query_available: bool = False

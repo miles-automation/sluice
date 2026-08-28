@@ -171,3 +171,11 @@ def render_preview(payload: SelectedPayload, limit: int) -> tuple[str, bool]:
         source = json.dumps(payload.value, default=str)
     truncated, was_cut = truncate_to_bytes(source, limit)
     return truncated, not was_cut
+
+
+def render_row_preview(rows: list[Any], count: int, limit: int) -> tuple[str, int]:
+    """First `count` rows as JSON lines, bounded by `limit` bytes."""
+    shown = rows[:count]
+    text = "\n".join(json.dumps(row, default=str) for row in shown)
+    truncated, _ = truncate_to_bytes(text, limit)
+    return truncated, len(shown)

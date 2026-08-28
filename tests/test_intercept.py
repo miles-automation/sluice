@@ -97,7 +97,7 @@ async def test_non_json_text_is_recorded_without_a_table(
     result = await _run(interceptor, proxy, "just_text")
     assert result.structured_content is not None
     assert result.structured_content["source_channel"] == str(PayloadChannel.NONE)
-    assert result.structured_content["flat_reason"] == "not_json"
+    assert result.structured_content["flat_reason"].startswith("not_json")
     assert "no json here" in result.structured_content["preview"]
 
 
@@ -117,7 +117,7 @@ async def test_large_payloads_are_truncated_and_say_so(
     result = await _run(interceptor, proxy, "rows", {"n": 400})
     assert result.structured_content is not None
     assert result.structured_content["preview_complete"] is False
-    assert "preview (truncated," in _text(result)
+    assert "preview (first 3 of 400 rows," in _text(result)
 
 
 async def test_errors_pass_through_and_are_still_recorded(
@@ -204,3 +204,155 @@ async def test_full_loop_returns_a_handle_not_a_payload(fake_config: object) -> 
     assert "row-0399" not in text
     assert result.structured_content is not None
     assert result.structured_content["call_id"]
+
+
+# --------------------------------------------------------------------------
+# M3: materialization
+# --------------------------------------------------------------------------
+
+
+def _columns(result: types.CallToolResult, table: int = 0) -> dict[str, str]:
+    assert result.structured_content is not None
+    spec = result.structured_content["tables"][table]
+    return {column["name"]: column["type"] for column in spec["columns"]}
+
+
+async def test_rows_are_materialized_with_real_types(
+    interceptor: Interceptor, proxy: Proxy, store: Store
+) -> None:
+    result = await _run(interceptor, proxy, "rows", {"n": 400})
+    assert result.structured_content is not None
+    table = result.structured_content["tables"][0]
+    assert table["row_count"] == 400
+    assert table["source_path"] == "$.items"
+    assert _columns(result) == {
+        "id": "BIGINT",
+        "name": "VARCHAR",
+        "score": "DOUBLE",
+        "tag": "VARCHAR",
+        "active": "BOOLEAN",
+    }
+    rows = store.connection.execute(f'SELECT count(*) FROM "{table["name"]}"').fetchall()
+    assert rows[0][0] == 400
+
+
+async def test_aggregates_match_the_source_data(
+    interceptor: Interceptor, proxy: Proxy, store: Store
+) -> None:
+    """A small version of the M5 correctness property: the whole point of the
+    project, checked end to end for the first time."""
+    import statistics
+
+    from tests.fake_server import rows_payload
+
+    result = await _run(interceptor, proxy, "rows", {"n": 400})
+    assert result.structured_content is not None
+    name = result.structured_content["tables"][0]["name"]
+    source = rows_payload(400)
+    scores = [row["score"] for row in source]
+
+    count, minimum, maximum, median = store.connection.execute(
+        f'SELECT count(score), min(score), max(score), median(score) FROM "{name}"'
+    ).fetchall()[0]
+    assert count == len(scores)
+    assert minimum == min(scores)
+    assert maximum == max(scores)
+    assert median == statistics.median(scores)
+
+    grouped = store.connection.execute(
+        f'SELECT tag, count(*) FROM "{name}" GROUP BY tag ORDER BY tag'
+    ).fetchall()
+    from collections import Counter
+
+    expected = sorted(Counter(row["tag"] for row in source).items())
+    assert grouped == expected
+
+
+async def test_every_candidate_array_becomes_its_own_table(
+    interceptor: Interceptor, proxy: Proxy
+) -> None:
+    result = await _run(interceptor, proxy, "two_arrays")
+    assert result.structured_content is not None
+    tables = result.structured_content["tables"]
+    assert [t["source_path"] for t in tables] == ["$.rows", "$.facets"]
+    assert [t["row_count"] for t in tables] == [20, 100]
+    assert "also materialized" not in _text(result) or len(tables) == 2
+    assert tables[0]["name"] != tables[1]["name"]
+
+
+async def test_mixed_elements_produce_no_table(interceptor: Interceptor, proxy: Proxy) -> None:
+    result = await _run(interceptor, proxy, "mixed_elements")
+    assert result.structured_content is not None
+    assert result.structured_content["tables"] == []
+    assert "mixed_elements" in result.structured_content["flat_reason"]
+
+
+async def test_empty_result_says_so(interceptor: Interceptor, proxy: Proxy) -> None:
+    result = await _run(interceptor, proxy, "empty")
+    assert result.structured_content is not None
+    assert result.structured_content["tables"] == []
+    assert result.structured_content["flat_reason"].startswith("empty")
+    assert "no table:" in _text(result)
+
+
+async def test_nested_values_become_json_columns(interceptor: Interceptor, proxy: Proxy) -> None:
+    result = await _run(interceptor, proxy, "nested")
+    columns = _columns(result)
+    assert columns["meta"] == "JSON"
+    assert columns["tags"] == "JSON"
+    assert columns["id"] == "BIGINT"
+    assert "json_extract" in _text(result)
+
+
+async def test_json_columns_are_queryable(
+    interceptor: Interceptor, proxy: Proxy, store: Store
+) -> None:
+    result = await _run(interceptor, proxy, "nested")
+    assert result.structured_content is not None
+    name = result.structured_content["tables"][0]["name"]
+    total = store.connection.execute(
+        f"SELECT sum(CAST(json_extract(meta, '$.k') AS BIGINT)) FROM \"{name}\""
+    ).fetchall()[0][0]
+    assert total == sum(range(5))
+
+
+async def test_wide_payloads_are_capped_with_an_extra_column(
+    interceptor: Interceptor, proxy: Proxy
+) -> None:
+    result = await _run(interceptor, proxy, "wide", {"k": 200})
+    columns = _columns(result)
+    assert len(columns) == 65
+    assert columns["_extra"] == "JSON"
+
+
+async def test_edge_numbers_are_flagged_inexact(interceptor: Interceptor, proxy: Proxy) -> None:
+    """The correctness guarantee lapses outside spec 5.6's domain, and the
+    handle has to say so per column."""
+    result = await _run(interceptor, proxy, "edge_numbers")
+    assert result.structured_content is not None
+    columns = {c["name"]: c for c in result.structured_content["tables"][0]["columns"]}
+    assert columns["big"]["type"] == "BIGINT"
+    assert columns["big"]["exact"] is True
+    assert columns["huge"]["type"] == "HUGEINT"
+    assert columns["mid"]["type"] == "BIGINT"
+    assert columns["f"]["type"] == "DOUBLE"
+    assert columns["f"]["exact"] is False  # non-finite present
+    assert "inexact" in _text(result)
+
+
+async def test_scalar_arrays_get_a_value_column(interceptor: Interceptor, proxy: Proxy) -> None:
+    result = await _run(interceptor, proxy, "scalars", {"n": 10})
+    assert _columns(result) == {"value": "DOUBLE"}
+
+
+async def test_colliding_tool_names_get_separate_tables(
+    interceptor: Interceptor, proxy: Proxy
+) -> None:
+    first = await _run(interceptor, proxy, "hyphen-tool")
+    second = await _run(interceptor, proxy, "hyphen_tool")
+    assert first.structured_content is not None
+    assert second.structured_content is not None
+    assert (
+        first.structured_content["tables"][0]["name"]
+        != second.structured_content["tables"][0]["name"]
+    )

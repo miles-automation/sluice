@@ -137,7 +137,7 @@ carries `channel`, `scope`, every table with its path, and renamed-column
 mappings, all of which revision 2 promised in prose and omitted from the rendered
 output. `both_channels()` sets `channel_conflict` and the handle says so.
 
-### M3. Flattening and inference
+### M3. Flattening and inference  [COMPLETE]
 
 `shape.py`, `infer.py`, table creation in `store.py`.
 
@@ -294,10 +294,10 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 | File | Proves |
 |---|---|
 | `test_engine_contract.py` | the measured DuckDB and SDK behaviors the design rests on, asserted against installed versions; the tripwire that makes unpinned dependencies safe |
-| `test_naming.py` | injectivity: `a-b` vs `a_b` and `Foo` vs `foo` get different tables; 128-char mounted-name validation fails startup loudly; recursive internal-column allocation including `_row` vs `_row__src`; two keys sanitizing identically; deterministic column-cap tie-break on `wide(200)`; every identifier quoted |
+| `test_naming.py` | injectivity: `a-b` vs `a_b` and `Foo` vs `foo` get different tables; 128-char mounted-name validation fails startup loudly; sequence widening past 9999; identifier quoting |
 | `test_scope.py` | scope from client `_meta` when present, minted otherwise; a stale handle from a prior process cannot resolve to a live table; two scopes cannot see each other's tables |
-| `test_shape.py` | channel selection over the four-shape matrix; `two_arrays()` yields two tables with both paths in the handle; `mixed_elements()` yields none; depth-1 projection; missing key and JSON `null` both become NULL |
-| `test_infer.py` | every row of §5.5; mixed scalars `VARCHAR` not `JSON`; ISO-8601 stays `VARCHAR`; int128 gets `HUGEINT`; the ±2^53 rule sets `exact: false`; non-finite floats set `exact: false` |
+| `test_shape.py` | extraction for every payload shape; every candidate array materialized; `mixed_elements` and `empty` reported rather than degraded; depth-1 projection; missing key and JSON `null` both NULL; reserved-column collisions allocated recursively; column cap with a deterministic tie-break |
+| `test_infer.py` | every row of §5.5; mixed scalars `VARCHAR` not `JSON`; ISO-8601 stays `VARCHAR`; int128 gets `HUGEINT`; the ±2^53 rule and non-finite floats set `exact: false`; bool checked before int; value coercion |
 | `test_store.py` | lockdown closes external access while Sluice can still create tables; envelope round-trips including JSON columns; per-tool monotonic sequence |
 | `test_intercept.py` | payload replaced by a handle; structured mirror; structured channel beats prose; conflict surfaced; `not_json`; complete vs truncated preview; errors and images pass through and are still recorded; image bytes not stored; oversize passes through unparsed with payload columns NULL; no query hint before M4; a forced envelope-write failure returns the downstream result (FR-8) |
 | `test_handle.py` | handle carries channel, scope, every table with path, renamed columns, and the `exact` flags; `structuredContent` mirrors it; complete-preview rule below budget; `channel_conflict` surfaced |

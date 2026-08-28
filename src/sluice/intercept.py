@@ -4,18 +4,26 @@ import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import anyio
 from mcp import types
 
 from sluice import handle as handle_render
+from sluice import naming, scope, shape
 from sluice import payload as payload_select
-from sluice import scope
 from sluice.config import Limits
-from sluice.models import CallRecord, Handle, Passthrough, PayloadChannel, SelectedPayload
+from sluice.infer import ColumnSpec, ColumnType, infer_column
+from sluice.models import (
+    CallRecord,
+    ColumnRef,
+    Handle,
+    Passthrough,
+    PayloadChannel,
+    SelectedPayload,
+    TableRef,
+)
 from sluice.store import Store
 
 logger = logging.getLogger(__name__)
-
-FLATTENING_PENDING = "flattening not implemented yet (plan M3)"
 
 
 def _now() -> datetime:
@@ -29,6 +37,10 @@ class Interceptor:
         self._store = store
         self._limits = limits
         self._query_available = query_available
+        # Admission gate over the whole pipeline, not just the write. Peak
+        # memory is a multiple of payload size, and parsing and projection both
+        # happen before the write lock is taken (spec 7).
+        self._admission = anyio.Semaphore(limits.max_concurrent_materializations)
 
     async def intercept(
         self,
@@ -43,7 +55,7 @@ class Interceptor:
     ) -> types.CallToolResult:
         ended_at = _now()
         scope_id, _ = scope.derive(meta)
-        seq = await self._store.next_seq(mounted)
+        seq = await self._store.next_call_seq(mounted)
         call_id = str(uuid4())
 
         reason = payload_select.passthrough_reason(result, self._limits.max_payload_bytes)
@@ -63,6 +75,11 @@ class Interceptor:
         else:
             selected = payload_select.select(result)
 
+        tables: list[TableRef] = []
+        flat_reason: str | None = None
+        if reason is None:
+            tables, flat_reason = await self._materialize(mounted, scope_id, call_id, selected)
+
         record = CallRecord(
             call_id=call_id,
             scope_id=scope_id,
@@ -76,7 +93,9 @@ class Interceptor:
             content_kinds=payload_select.content_kinds(result),
             started_at=started_at,
             ended_at=ended_at,
-            flat_reason=None if reason else FLATTENING_PENDING,
+            flat_tables=[table.name for table in tables],
+            source_paths=[table.source_path for table in tables],
+            flat_reason=flat_reason,
         )
 
         try:
@@ -91,7 +110,7 @@ class Interceptor:
         if reason is not None:
             return self._passthrough(result, reason, selected)
 
-        return handle_render.to_result(self._build_handle(record, selected))
+        return handle_render.to_result(self._build_handle(record, selected, tables))
 
     def _passthrough(
         self,
@@ -109,11 +128,84 @@ class Interceptor:
             update={"content": [*result.content, types.TextContent(type="text", text=note)]}
         )
 
-    def _build_handle(self, record: CallRecord, selected: SelectedPayload) -> Handle:
-        preview, complete = payload_select.render_preview(selected, self._limits.preview_bytes)
-        flat_reason = record.flat_reason
+    async def _materialize(
+        self, mounted: str, scope_id: str, call_id: str, selected: SelectedPayload
+    ) -> tuple[list[TableRef], str | None]:
+        """Build one typed table per candidate row set.
+
+        A failure here is logged and reported on the envelope row; it never
+        fails the tool call (FR-10).
+        """
         if selected.channel is PayloadChannel.NONE:
-            flat_reason = "not_json"
+            return [], "not_json: no channel parsed as JSON"
+        async with self._admission:
+            try:
+                return await self._build_tables(mounted, scope_id, call_id, selected)
+            except Exception as exc:
+                logger.exception("materialization failed for %s", mounted)
+                return [], f"load_failed: {type(exc).__name__}: {exc}"
+
+    async def _build_tables(
+        self, mounted: str, scope_id: str, call_id: str, selected: SelectedPayload
+    ) -> tuple[list[TableRef], str | None]:
+        extraction = shape.extract(selected.value)
+        if not extraction.row_sets:
+            return [], extraction.reason
+        tables: list[TableRef] = []
+        for row_set in extraction.row_sets:
+            projection = shape.project(row_set.rows, self._limits.max_columns)
+            stored_to_source = {v: k for k, v in projection.renamed.items()}
+            specs: list[ColumnSpec] = []
+            for column in projection.columns:
+                values = [record.get(column) for record in projection.records]
+                if column == shape.EXTRA_COLUMN:
+                    column_type, exact = ColumnType.JSON, False
+                else:
+                    column_type, exact = infer_column(values)
+                specs.append(
+                    ColumnSpec(
+                        name=column,
+                        type=column_type,
+                        exact=exact,
+                        renamed_from=stored_to_source.get(column),
+                    )
+                )
+            seq = await self._store.next_table_seq(mounted)
+            name = naming.table_name(mounted, scope_id, seq)
+            row_count = await self._store.create_flat_table(
+                name, specs, projection.records, call_id
+            )
+            tables.append(
+                TableRef(
+                    name=name,
+                    source_path=row_set.source_path,
+                    row_count=row_count,
+                    columns=[
+                        ColumnRef(
+                            name=spec.name,
+                            type=str(spec.type),
+                            exact=spec.exact,
+                            renamed_from=spec.renamed_from,
+                        )
+                        for spec in specs
+                    ],
+                )
+            )
+        return tables, None
+
+    def _build_handle(
+        self, record: CallRecord, selected: SelectedPayload, tables: list[TableRef]
+    ) -> Handle:
+        preview, complete = payload_select.render_preview(selected, self._limits.preview_bytes)
+        shown: int | None = None
+        total: int | None = None
+        if not complete and tables:
+            rows = shape.extract(selected.value).row_sets
+            if rows:
+                preview, shown = payload_select.render_row_preview(
+                    rows[0].rows, self._limits.preview_rows, self._limits.preview_bytes
+                )
+                total = tables[0].row_count
         return Handle(
             call_id=record.call_id,
             scope_id=record.scope_id,
@@ -122,7 +214,9 @@ class Interceptor:
             byte_size=selected.byte_size,
             preview=preview,
             preview_complete=complete,
-            tables=[],
-            flat_reason=flat_reason,
+            preview_rows=shown,
+            total_rows=total,
+            tables=tables,
+            flat_reason=record.flat_reason,
             query_available=self._query_available,
         )

@@ -46,6 +46,11 @@ def render_text(handle: Handle) -> str:
     lines.append(f"envelope: {ENVELOPE_TABLE} WHERE call_id = '{handle.call_id}'")
     if handle.preview_complete:
         lines.append(f"preview (complete, {handle.byte_size} B):")
+    elif handle.preview_rows is not None and handle.total_rows is not None:
+        lines.append(
+            f"preview (first {handle.preview_rows} of {handle.total_rows} rows, "
+            f"payload {handle.byte_size} B):"
+        )
     else:
         lines.append(f"preview (truncated, of {handle.byte_size} B):")
     lines.append(_indent(handle.preview))

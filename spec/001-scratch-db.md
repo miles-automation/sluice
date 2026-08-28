@@ -108,7 +108,7 @@ Behavior differs across revisions; do not generalize.
 CREATE TABLE sluice_calls (
     call_id      VARCHAR PRIMARY KEY,   -- uuid4
     scope_id     VARCHAR,               -- §12
-    seq          BIGINT,                -- monotonic within process, 1-based
+    seq          BIGINT,                -- Nth call to this tool, 1-based
     server       VARCHAR,
     tool         VARCHAR,               -- downstream name, not namespaced
     args         JSON,
@@ -162,16 +162,27 @@ table     = f"{mounted}__{scope_tag}__{seq:04d}"
   from a previous process resolving to live data holding different contents.
   Without it, sequence numbers restart at 1 on every process start and a resumed
   conversation's handle can name a table that exists and is wrong.
-- `seq` is zero-padded to 4 and simply widens past 9999. Padding governs lexical
-  sort only.
+- `seq` in a table name is the per-tool **table** counter, not the call counter.
+  One call may produce several tables (§5.2), so a shared counter would make
+  both numbers mean neither thing. It is zero-padded to 4 and simply widens past
+  9999; padding governs lexical sort only.
 - **Every identifier is quoted in generated SQL.** No exceptions, including
   column names.
 
-Internal column names are allocated recursively: if a source key sanitizes to
-`_row`, `_call_id`, or `_extra`, it becomes `<key>__src`; if `<key>__src` is also
-taken, `<key>__src2`, and so on until free. The handle publishes the original-to-
-stored mapping for every renamed column. Two source keys that sanitize
-identically are disambiguated the same way.
+**Column names are the source keys verbatim.** Revision 3 sanitized them, which
+was wrong twice over: sanitizing is not injective, so two distinct keys could
+land on one column, and it left the agent unable to tell which source key a
+column came from. Since every generated identifier is quoted anyway, verbatim
+names cost nothing and are injective by construction, because JSON object keys
+are already unique within an object.
+
+The only possible collision is therefore with Sluice's own reserved columns
+`_row`, `_call_id`, and `_extra`. A source key equal to one of those becomes
+`<key>__src`, then `<key>__src2`, and so on until free. The handle publishes the
+original-to-stored mapping for every renamed column.
+
+The agent must quote any column name that is not a bare identifier. The handle
+prints names as they are rather than as they would need to be typed.
 
 **There is no `__latest` view.** Revision 3 specified one; implementing §12
 showed it cannot exist. When the client supplies no conversation identifier,
@@ -300,6 +311,12 @@ Given the parsed payload:
   Revision 2's 90%-objects threshold left the remaining 10% undefined, and
   implementers would variously drop, wrap, or fail on them, changing `count(*)`.
   100% or nothing.
+
+  This applies to a list nested in an object too. `{"items": [9 objects, 42]}`
+  reports `mixed_elements` rather than falling through to the single-row rule
+  below, which would bury the ambiguous list in one JSON column and report
+  success. A value that clearly wants to be a row set and is not cleanly one is
+  worth saying out loud.
 - **An object.** Every top-level value that is a list of objects is a candidate.
   **Materialize each candidate as its own table**, named by §3.2 with distinct
   sequence numbers, all listed in the handle with their paths. Sluice does not
@@ -695,6 +712,10 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
     through its session (FR-1, §11).
 15. A `__latest` view and per-call scope minting were incompatible, and a
     `__latest` view and FR-18 were redundant. Removed (§3.2).
+16. Sanitized column names were not injective and hid which source key a column
+    came from. Column names are now the source keys verbatim, quoted (§3.2).
+17. The call counter and the table counter were one counter, which made a table
+    name's sequence number mean neither "Nth call" nor "Nth table" (§3.1, §3.2).
 
 ## 14. Open questions
 

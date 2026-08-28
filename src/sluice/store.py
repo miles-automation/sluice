@@ -9,7 +9,10 @@ import anyio
 import duckdb
 
 from sluice.config import Limits
+from sluice.infer import ColumnSpec, coerce
 from sluice.models import CallRecord
+from sluice.naming import quote_ident
+from sluice.shape import CALL_COLUMN, ROW_COLUMN
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +77,8 @@ class Store:
     def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
         self._connection = connection
         self._lock = anyio.Lock()
-        self._sequences: dict[str, int] = {}
+        self._call_sequences: dict[str, int] = {}
+        self._table_sequences: dict[str, int] = {}
 
     @classmethod
     def open(cls, limits: Limits) -> Self:
@@ -104,10 +108,23 @@ class Store:
     ) -> None:
         self.close()
 
-    async def next_seq(self, mounted: str) -> int:
+    async def next_call_seq(self, mounted: str) -> int:
+        """Nth call to this tool. Recorded on the envelope row."""
+        return await self._bump(self._call_sequences, mounted)
+
+    async def next_table_seq(self, mounted: str) -> int:
+        """Nth table created for this tool. Appears in the table name.
+
+        Separate from the call counter because one call may produce several
+        tables (spec 5.2), and a shared counter would make both numbers mean
+        neither thing.
+        """
+        return await self._bump(self._table_sequences, mounted)
+
+    async def _bump(self, counters: dict[str, int], key: str) -> int:
         async with self._lock:
-            nxt = self._sequences.get(mounted, 0) + 1
-            self._sequences[mounted] = nxt
+            nxt = counters.get(key, 0) + 1
+            counters[key] = nxt
             return nxt
 
     async def record(self, record: CallRecord) -> None:
@@ -148,3 +165,50 @@ class Store:
 
     def _insert(self, row: tuple[Any, ...]) -> None:
         self._connection.execute(_INSERT, row)
+
+    async def create_flat_table(
+        self,
+        name: str,
+        columns: list[ColumnSpec],
+        records: list[dict[str, Any]],
+        call_id: str,
+    ) -> int:
+        """Create one typed table and fill it.
+
+        Explicit DDL plus executemany, not `read_json`: the lockdown is
+        database-global and blocks DuckDB's own file readers (spec 5.4).
+        Every identifier is quoted, including column names taken verbatim from
+        downstream payload keys.
+        """
+        async with self._lock:
+            return await anyio.to_thread.run_sync(
+                self._create_flat, name, columns, records, call_id
+            )
+
+    def _create_flat(
+        self,
+        name: str,
+        columns: list[ColumnSpec],
+        records: list[dict[str, Any]],
+        call_id: str,
+    ) -> int:
+        declared = ", ".join(f"{quote_ident(c.name)} {c.type}" for c in columns)
+        trailing = f"{quote_ident(ROW_COLUMN)} BIGINT, {quote_ident(CALL_COLUMN)} VARCHAR"
+        separator = ", " if declared else ""
+        self._connection.execute(
+            f"CREATE TABLE {quote_ident(name)} ({declared}{separator}{trailing})"
+        )
+        placeholders = ", ".join(["?"] * (len(columns) + 2))
+        rows = [
+            (
+                *(coerce(record.get(column.name), column.type) for column in columns),
+                record[ROW_COLUMN],
+                call_id,
+            )
+            for record in records
+        ]
+        if rows:
+            self._connection.executemany(
+                f"INSERT INTO {quote_ident(name)} VALUES ({placeholders})", rows
+            )
+        return len(rows)
