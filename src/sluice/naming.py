@@ -63,10 +63,6 @@ def table_name(mounted: str, scope_tag: str, seq: int) -> str:
     return f"{mounted}__{scope_tag}__{seq:04d}"
 
 
-def latest_view_name(mounted: str, scope_tag: str) -> str:
-    return f"{mounted}__{scope_tag}__latest"
-
-
 def quote_ident(name: str) -> str:
     """Quote a SQL identifier. Applied to every generated identifier, no exceptions."""
     escaped = name.replace('"', '""')

@@ -32,6 +32,8 @@ repos/sluice/
 │   ├── models.py            # dataclasses: Handle, CallRecord, TableRef, Limits
 │   ├── naming.py            # injective naming, quoting, collisions (§3.2)
 │   ├── scope.py             # scope id derivation and minting (§12)
+│   ├── payload.py           # eligibility and channel selection (§5.1). Pure.
+│   ├── intercept.py         # record, then replace the payload with a handle
 │   ├── proxy.py             # downstream sessions, paginated listing, MRTR relay
 │   ├── errors.py            # the four failure classes (§8)
 │   ├── server.py            # MCP server: tools/list, tools/call, control plane
@@ -44,6 +46,7 @@ repos/sluice/
     ├── conftest.py
     ├── fake_server/__main__.py
     ├── test_naming.py       ├── test_scope.py       ├── test_shape.py
+    ├── test_intercept.py
     ├── test_infer.py        ├── test_store.py       ├── test_handle.py
     ├── test_proxy.py        ├── test_errors.py      ├── test_query_safety.py
     ├── test_query_limits.py ├── test_passthrough.py ├── test_concurrency.py
@@ -119,9 +122,9 @@ Exit criterion: `test_proxy.py` and `test_passthrough.py`. Passthrough compares
 **parsed SDK models, not bytes**: the SDK deserializes and reserializes, so key
 order and escaping may differ while the result is unchanged.
 
-### M2. Envelope, scope, handle
+### M2. Envelope, scope, handle  [COMPLETE]
 
-`scope.py`, `store.py`, `models.py`, `handle.py`.
+`scope.py`, `store.py`, `models.py`, `payload.py`, `handle.py`, `intercept.py`.
 
 In-memory DuckDB at startup with the §6.1 lockdown, `sluice_calls`, scope
 derivation (client `_meta` conversation id when present, minted per call
@@ -142,7 +145,7 @@ Extraction (§5.2) including materializing **every** candidate array, depth-1
 projection, Sluice's own inference with the `exact` flag (§5.5), file-free
 creation via explicit DDL plus `executemany`, `_row` and `_call_id` injection,
 recursive collision renaming, column cap with a deterministic tie-breaker,
-`__latest` by highest `seq`.
+no `__latest` view (spec §3.2, removed in revision 4).
 
 M0 forced inference into scope: the §6.1 lockdown blocks `read_json`, so DuckDB
 cannot do it. Budget accordingly. This is the largest change between the
@@ -295,7 +298,8 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 | `test_scope.py` | scope from client `_meta` when present, minted otherwise; a stale handle from a prior process cannot resolve to a live table; two scopes cannot see each other's tables |
 | `test_shape.py` | channel selection over the four-shape matrix; `two_arrays()` yields two tables with both paths in the handle; `mixed_elements()` yields none; depth-1 projection; missing key and JSON `null` both become NULL |
 | `test_infer.py` | every row of §5.5; mixed scalars `VARCHAR` not `JSON`; ISO-8601 stays `VARCHAR`; int128 gets `HUGEINT`; the ±2^53 rule sets `exact: false`; non-finite floats set `exact: false` |
-| `test_store.py` | one envelope row per call when the write succeeds; `flat_reason` on every table-less path; `__latest` follows highest `seq` under out-of-order completion; a forced envelope-insert failure returns the downstream result and writes no row (FR-8) |
+| `test_store.py` | lockdown closes external access while Sluice can still create tables; envelope round-trips including JSON columns; per-tool monotonic sequence |
+| `test_intercept.py` | payload replaced by a handle; structured mirror; structured channel beats prose; conflict surfaced; `not_json`; complete vs truncated preview; errors and images pass through and are still recorded; image bytes not stored; oversize passes through unparsed with payload columns NULL; no query hint before M4; a forced envelope-write failure returns the downstream result (FR-8) |
 | `test_handle.py` | handle carries channel, scope, every table with path, renamed columns, and the `exact` flags; `structuredContent` mirrors it; complete-preview rule below budget; `channel_conflict` surfaced |
 | `test_proxy.py` | `paged()` mounts the page-2 tool; the whole tool object survives cloning including `annotations.destructiveHint`; `needs_input()` completes across a relayed round trip; Sluice advertises no sampling or elicitation capability |
 | `test_errors.py` | all four failure classes produce distinct `failure_class` values and correct upstream results; `bad_schema()` produces an `output_schema` failure rather than an unhandled `RuntimeError` |

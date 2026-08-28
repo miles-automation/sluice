@@ -1,12 +1,14 @@
 """The MCP server Sluice exposes upstream."""
 
 import logging
+from datetime import UTC, datetime
 
 from mcp import types
 from mcp.server import NotificationOptions, Server, ServerRequestContext
 
 from sluice import __version__
 from sluice.errors import DownstreamError, FailureClass, error_result
+from sluice.intercept import Interceptor
 from sluice.proxy import MODERN_VERSIONS, Proxy
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,7 @@ INSTRUCTIONS = (
 )
 
 
-def build_server(proxy: Proxy) -> Server[object]:
+def build_server(proxy: Proxy, interceptor: Interceptor | None = None) -> Server[object]:
     async def on_list_tools(
         context: ServerRequestContext[object],
         params: types.PaginatedRequestParams | None,
@@ -32,6 +34,7 @@ def build_server(proxy: Proxy) -> Server[object]:
         context: ServerRequestContext[object],
         params: types.CallToolRequestParams,
     ) -> types.CallToolResult | types.InputRequiredResult:
+        started_at = datetime.now(UTC).replace(tzinfo=None)
         try:
             result = await proxy.call(
                 params.name,
@@ -62,7 +65,20 @@ def build_server(proxy: Proxy) -> Server[object]:
                         f"{context.protocol_version}",
                     )
                 )
-            return result
+            if interceptor is None or isinstance(result, types.InputRequiredResult):
+                # An interim result is not a payload. Materialization runs only
+                # on a final CallToolResult (spec 11).
+                return result
+            entry = proxy.resolve(params.name)
+            return await interceptor.intercept(
+                server=entry.server if entry else "unknown",
+                tool=entry.original.name if entry else params.name,
+                mounted=params.name,
+                arguments=params.arguments,
+                result=result,
+                meta=params.meta,
+                started_at=started_at,
+            )
 
     return Server(
         SERVER_NAME,

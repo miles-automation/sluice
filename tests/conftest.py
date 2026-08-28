@@ -1,11 +1,13 @@
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
 
 from sluice.config import Config, Limits, ServerConfig
+from sluice.intercept import Interceptor
 from sluice.proxy import Proxy, connect
+from sluice.store import Store
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,3 +39,14 @@ def fake_config() -> Config:
 async def proxy(fake_config: Config) -> AsyncIterator[Proxy]:
     async with connect(fake_config) as started:
         yield started
+
+
+@pytest.fixture
+def store() -> Iterator[Store]:
+    with Store.open(Limits()) as opened:
+        yield opened
+
+
+@pytest.fixture
+def interceptor(store: Store) -> Interceptor:
+    return Interceptor(store, Limits())

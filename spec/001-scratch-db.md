@@ -1,12 +1,14 @@
 # Spec 001: Scratch DB for MCP tool results
 
-Status: draft (revision 3, post-M0 and post-review)
+Status: draft (revision 4, post-M0, post-review, post-M2)
 Date: 2026-08-28
 Implements: intent/001-scratch-db.md
 Evidence: plan/001-notes-m0.md
 
-Revision 3 incorporates the M0 spike results and a design review. Sections that
-changed materially: §1, §2, §3, §4, §5.2, §5.3, §5.5, §5.6, §6, §7, §9, §10, §12.
+Revision 3 incorporated the M0 spike results and a design review. Revision 4
+folds in what building M1 and M2 proved: the protocol-version finding (§11) and
+the removal of the `__latest` view (§3.2). Sections changed materially across
+both: §1, §2, §3, §4, §5.2, §5.3, §5.5, §5.6, §6, §7, §9, §10, §11, §12.
 
 **Pinned protocol revision: MCP `2026-07-28`. Pinned SDK: `mcp` 2.1.1. Pinned
 engine: DuckDB 1.5.5.** Every normative claim below is against those versions.
@@ -171,9 +173,16 @@ taken, `<key>__src2`, and so on until free. The handle publishes the original-to
 stored mapping for every renamed column. Two source keys that sanitize
 identically are disambiguated the same way.
 
-Sluice replaces the view `<mounted>__latest` after each materialization. **Latest
-means highest `seq`, not last written.** Calls may complete out of order, so a
-call that started first and finished second must not claim the view.
+**There is no `__latest` view.** Revision 3 specified one; implementing §12
+showed it cannot exist. When the client supplies no conversation identifier,
+scope is minted per call, so `<mounted>__<scope>__latest` would name exactly one
+table and mean nothing. Its only real use was letting an agent reach a result
+whose table name it had lost, which is discovery, and FR-18 removed discovery as
+the price of isolation. Dropping it also removes the out-of-order completion
+question entirely: there is no shared view for a late-finishing call to claim.
+
+The agent reaches a table by the name in its own handle. That is the whole
+addressing model.
 
 ### 3.3 No schema view
 
@@ -579,8 +588,9 @@ two boundaries, both named rather than implied:
   finishes. The timeout interrupts that exact object (§6.2).
 - Materialization admission gated by `max_concurrent_materializations` (§7),
   covering parse and projection, not only the write.
-- All DuckDB calls are blocking and dispatched through `asyncio.to_thread`.
-- `<mounted>__latest` points at the highest `seq`, not the last write (§3.2).
+- All DuckDB calls are blocking and dispatched through `anyio.to_thread.run_sync`
+  with an `anyio.Lock`, matching the SDK's concurrency library rather than
+  assuming an asyncio backend.
 
 ## 10. Control plane
 
@@ -683,6 +693,8 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
 14. Relaying round trips requires protocol `2026-07-28`, which the `initialize`
     handshake cannot reach. Resolved by connecting with `mcp.Client` and calling
     through its session (FR-1, §11).
+15. A `__latest` view and per-call scope minting were incompatible, and a
+    `__latest` view and FR-18 were redundant. Removed (§3.2).
 
 ## 14. Open questions
 

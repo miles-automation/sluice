@@ -11,8 +11,10 @@ from mcp.server.stdio import stdio_server
 
 from sluice.config import Config, ConfigError, find_config, load_config
 from sluice.errors import DownstreamError
+from sluice.intercept import Interceptor
 from sluice.proxy import Proxy
 from sluice.server import build_server, initialization_options
+from sluice.store import Store
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -25,7 +27,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 async def serve(config: Config) -> None:
     async with AsyncExitStack() as stack:
         proxy = await Proxy.start(config, stack)
-        server = build_server(proxy)
+        store = stack.enter_context(Store.open(config.limits))
+        interceptor = Interceptor(store, config.limits)
+        server = build_server(proxy, interceptor)
         async with stdio_server() as (read_stream, write_stream):
             await server.run(read_stream, write_stream, initialization_options(server))  # type: ignore[arg-type]
 
