@@ -29,7 +29,11 @@ Behavior differs across revisions; do not generalize.
 ### Proxying
 
 - **FR-1** Sluice starts a client session to each configured downstream server at
-  startup and holds it for the process lifetime.
+  startup and holds it for the process lifetime. It connects with `mcp.Client`,
+  not a bare `ClientSession`, for the reason in §11: only the `Client` connect
+  path probes `server/discover` and can therefore negotiate `2026-07-28`. Calls
+  are then issued through `client.session` rather than `Client.call_tool`, which
+  resolves round trips internally.
 - **FR-2** Sluice's `tools/list` returns the union of downstream tools, each
   renamed per §3.2, plus Sluice's own `query`. **Downstream listing is
   paginated**: `ClientSession.list_tools()` returns a single page and does not
@@ -605,6 +609,28 @@ elicitation capability of its own downstream, and passes `InputRequiredResult`,
 `request_state` is opaque and must be neither parsed nor rewritten.
 Materialization runs only on a final `CallToolResult`.
 
+**Round trips exist only at `2026-07-28`, and reaching it is not automatic.**
+Measured, mcp 2.1.1:
+
+- `InputRequiredResult` is in the `tools/call` result union at `2026-07-28` and
+  at no earlier version.
+- The `initialize` handshake tops out at `2025-11-25`
+  (`LATEST_HANDSHAKE_VERSION`). `2026-07-28` is reached by a `server/discover`
+  probe, which `mcp.Client` performs on connect and a bare
+  `ClientSession.initialize()` does not.
+
+A proxy built on the handshake alone therefore loses round-trip support
+silently, and the symptom is a pydantic validation error inside the server's
+result serializer that names neither the tool nor the version. Hence FR-1's
+connect path.
+
+**Downstream modern, upstream legacy.** Sluice's own upstream client may
+negotiate a version that cannot carry `InputRequiredResult`. Sluice checks the
+upstream negotiated version before relaying one upward and, when it is too old,
+returns an error naming the tool, the required version, and the negotiated one.
+Passing it up regardless fails in the serializer with a message that helps
+nobody.
+
 ## 12. Scope isolation
 
 A client may reuse one stdio process across conversations, so process lifetime is
@@ -654,6 +680,9 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
 12. Verbatim error passthrough is impossible for three of four failure classes (§8).
 13. Silently choosing among several candidate arrays was incompatible with the
     correctness criterion; all candidates are materialized (§5.2).
+14. Relaying round trips requires protocol `2026-07-28`, which the `initialize`
+    handshake cannot reach. Resolved by connecting with `mcp.Client` and calling
+    through its session (FR-1, §11).
 
 ## 14. Open questions
 

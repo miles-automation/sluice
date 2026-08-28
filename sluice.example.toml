@@ -1,0 +1,25 @@
+# Sluice configuration. Copy to sluice.toml and edit.
+#
+# v0 proxies exactly one downstream server. The [servers.<name>] table shape
+# admits several because tool namespacing is built for fan-out, but Sluice
+# refuses to start with more than one configured rather than pretending.
+
+[servers.gh]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+# ${VAR} expands from Sluice's own environment, so secrets stay out of this file.
+env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+
+[limits]
+# A ceiling applied before parsing, not a size gate on interception: everything
+# under it is still materialized. See spec 5.1 for what it does and does not bound.
+max_payload_bytes = 33554432
+max_concurrent_materializations = 2
+preview_bytes = 2048
+preview_rows = 3
+max_columns = 64
+query_timeout_seconds = 10
+query_max_rows = 100
+query_max_bytes = 65536
+max_cell_bytes = 512
+duckdb_max_memory = "1GB"

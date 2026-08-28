@@ -80,7 +80,14 @@ Four things here are not obvious and each has a test that fails without them:
    capability downstream so Sluice is never asked to answer for the human.
 4. **The error taxonomy** (spec §8). `validate_tool_result` raises `RuntimeError`
    rather than returning a result, so "verbatim passthrough" is impossible for
-   three of the four classes.
+   three of the four classes. It is classified by message substring, which
+   `test_engine_contract.py` pins.
+5. **Connect with `mcp.Client`, call through `client.session`.** Found while
+   building: `InputRequiredResult` exists only at protocol `2026-07-28`, and the
+   `initialize` handshake tops out at `2025-11-25`. Only the `Client` connect
+   path probes `server/discover` and reaches the modern version. Calls still go
+   through the underlying session so round trips come back to Sluice for
+   relaying rather than being resolved inside the SDK. See spec §11.
 
 Build the fake downstream server here. It is the fixture for everything after.
 
@@ -236,6 +243,12 @@ nested column and get a number-shaped lie.
 `listChanged: false`; a downstream server adding tools at runtime needs a Sluice
 restart. Stated in spec §10 rather than left as a surprise.
 
+**R11. Protocol version regression.** Severity: medium. Round trips need
+`2026-07-28`, reached only via the `Client` discover probe. A refactor to a bare
+`ClientSession` would silently drop to `2025-11-25`, and the symptom is a
+serializer validation error naming neither the tool nor the version.
+`test_engine_contract.py` pins the version facts; `test_proxy.py` pins the relay.
+
 **R10. Downstream pagination of results.** Severity: low. A tool that pages
 produces N tables the agent must UNION by hand. README note, not code.
 
@@ -277,6 +290,7 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 
 | File | Proves |
 |---|---|
+| `test_engine_contract.py` | the measured DuckDB and SDK behaviors the design rests on, asserted against installed versions; the tripwire that makes unpinned dependencies safe |
 | `test_naming.py` | injectivity: `a-b` vs `a_b` and `Foo` vs `foo` get different tables; 128-char mounted-name validation fails startup loudly; recursive internal-column allocation including `_row` vs `_row__src`; two keys sanitizing identically; deterministic column-cap tie-break on `wide(200)`; every identifier quoted |
 | `test_scope.py` | scope from client `_meta` when present, minted otherwise; a stale handle from a prior process cannot resolve to a live table; two scopes cannot see each other's tables |
 | `test_shape.py` | channel selection over the four-shape matrix; `two_arrays()` yields two tables with both paths in the handle; `mixed_elements()` yields none; depth-1 projection; missing key and JSON `null` both become NULL |

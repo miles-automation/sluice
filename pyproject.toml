@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sluice"
+version = "0.1.0"
+description = "Passthrough MCP server that materializes tool results into a DuckDB scratch database"
+readme = "README.md"
+requires-python = ">=3.14"
+
+# Lower bounds only, deliberately. They encode "we need something that landed
+# here": mcp 2.1.1 for InputRequiredResult and the on_list_tools constructor API,
+# duckdb 1.5.5 for the behaviors measured in plan/001-notes-m0.md. There are no
+# upper bounds; this project runs on latest and fixes breakage forward.
+# tests/test_engine_contract.py is the safety net that makes that safe: it
+# asserts the measured library behaviors the design rests on, so an upgrade that
+# changes them fails loudly instead of quietly making the product wrong.
+dependencies = [
+    "duckdb>=1.5.5",
+    "mcp>=2.1.1",
+]
+
+[project.scripts]
+sluice = "sluice.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "anyio>=4",
+    "hypothesis>=6",
+    "ruff",
+    "mypy",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sluice"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: property tests and anything that generates large inputs",
+    "contract: asserts measured third-party library behavior (see plan/001-notes-m0.md)",
+]
