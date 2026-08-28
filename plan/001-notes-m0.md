@@ -1109,3 +1109,85 @@ late-type heterogeneous input.
       query_connection_usable=(43,)
       writer_connection_usable=(44,)
       observer_connection_usable=(45,)
+
+## 9. Supplementary checks (Claude, same day)
+
+M0 step 3 asserted two of the six lockdown cases the plan listed. The remaining
+four were run, along with follow-ups the results implied. Environment: the same
+`/tmp/sluice-m0.X210IN/.venv`, DuckDB 1.5.5, CPython 3.14.2.
+
+### 9.1 The lockdown blocks Sluice's own materialization (blocking)
+
+`read_json` over a temp NDJSON file, after `SET enable_external_access = false`
+and `SET lock_configuration = true`:
+
+    PermissionException: Permission Error: Cannot access file
+    ".../rows.ndjson" - file system operations are disabled by configuration
+
+Spec §6.1 and the then-current §5.4 were mutually exclusive. Resolved by making
+materialization file-free; see spec §5.4 and §5.5.
+
+### 9.2 Remaining lockdown assertions
+
+Under the full lockdown, all blocked with `PermissionException`:
+`read_parquet`, `ATTACH`, `COPY ... TO`, `INSTALL httpfs`, `LOAD httpfs`,
+`read_json` on an outside path, `glob('/etc/*')`.
+
+`PRAGMA database_list` **succeeded**. The engine lockdown does not stop PRAGMA;
+only the layer-1 statement gate does. Noted in spec §6.1.
+
+### 9.3 Two rejected workarounds
+
+- `SET allowed_directories = ['<session tmp>']` does not confine access. Under
+  it, `read_csv('/etc/hosts')`, `COPY ... TO '/tmp/...'`, `ATTACH`,
+  `INSTALL httpfs`, and `glob('/etc/*')` all succeeded.
+- `enable_external_access` is database-global. Two connections to one named
+  in-memory database, with the setting locked off on the first, were both
+  blocked. A writer-with-access plus query-without-access split is not possible.
+
+### 9.4 File-free materialization works
+
+`CREATE TABLE ... (explicit column types)` plus `executemany`, under
+`enable_external_access = false` and `lock_configuration = true`: succeeded,
+with `JSON` columns still queryable through `json_extract` and castable for
+aggregation.
+
+### 9.5 JSON columns are aggregation traps
+
+A column holding 300 integers then one string, loaded by DuckDB's own inference,
+became `JSON`. On that column:
+
+    count(v)                   -> 301
+    sum(v)                     -> BinderException: no function sum(JSON)
+    avg(v)                     -> BinderException: no function avg(JSON)
+    median(v)                  -> '232'          <-- lexicographic, silently wrong
+    sum(TRY_CAST(v AS DOUBLE)) -> 44850.0
+
+`median()` returning a plausible number that is wrong is the failure mode this
+project exists to prevent. Spec §5.5 rule 2 assigns `VARCHAR` to mixed scalar
+columns so the same query fails loudly instead.
+
+### 9.6 Aggregate equality against Python (the correctness criterion)
+
+    n=400  median duck=339.15               py=339.15   equal=True
+    n=400  avg    duck=339.1499999999999    py=339.15   equal=False
+    n=401  median duck=340.0                py=340.0    equal=True
+    n=401  avg    duck=339.99999999999994   py=340.0    equal=False
+    n=400  median over BIGINT duck=199.5    py=199.5    equal=True
+
+`median` is exactly equal for integer and float columns at even and odd row
+counts. `avg` is not, because summation order differs. The property test
+therefore needs two classes of assertion; see plan §3.
+
+### 9.7 Statement gate, trailing semicolons
+
+    'SELECT 1;'                             -> count=1 ['SELECT']
+    'SELECT 1; '                            -> count=1 ['SELECT']
+    'SELECT 1;\n'                           -> count=1 ['SELECT']
+    'SELECT 1; SELECT 2'                    -> count=2 ['SELECT', 'SELECT']
+    'SELECT 1 -- ; comment'                 -> count=1 ['SELECT']
+    'WITH x AS (SELECT 1) SELECT * FROM x;' -> count=1 ['SELECT']
+
+The layer-1 gate handles trailing semicolons, a semicolon inside a comment, and
+CTEs without special-casing. Spec §6.3 drops the `SELECT * FROM (<sql>)` wrapper
+for unrelated reasons, but this confirms the gate itself needs no preprocessing.

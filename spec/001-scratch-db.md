@@ -150,8 +150,9 @@ Format:
 ```
 sluice: result materialized.
 table: gh__list_issues__001   rows=412   from=$.items
-columns: id BIGINT, number BIGINT, title VARCHAR, state VARCHAR, created_at TIMESTAMP,
-         labels JSON, user JSON, _row BIGINT
+columns: id BIGINT, number BIGINT, title VARCHAR, state VARCHAR, created_at VARCHAR,
+         labels JSON*, user JSON*, _row BIGINT
+         (* JSON: use json_extract and cast before arithmetic)
 envelope: sluice_calls WHERE call_id = '0c3f8e1a-...'
 preview (first 3 of 412 rows, 1.9 KB of 91.4 KB):
   {"id": 1841, "number": 212, "title": "worktree helper", "state": "open", ...}
@@ -287,19 +288,8 @@ into an `_extra JSON` column. The handle states that this happened and how many
 keys went into `_extra`. Below the cap, a rare key simply becomes a mostly-null
 column, which is informative and costs nothing.
 
-**Inference hazards.** DuckDB infers aggressively, and three cases produce a
-column whose type is wrong in a way that survives silently:
-
-- Timestamp-shaped strings that are not timestamps (version strings, ids,
-  ISO-looking opaque tokens) inferred as `TIMESTAMP`.
-- Integers outside int64 range, which either fail the load or widen to `DOUBLE`
-  and lose precision.
-- Decimal-shaped strings inferred as `DOUBLE`, losing exactness for money.
-
-v0 accepts DuckDB's inference and does not fight it, but the handle's column list
-is the agent's only view of what happened, so the inferred type shown there must
-be the type DuckDB actually assigned, read back from `duckdb_columns()` after the
-load rather than predicted before it.
+**Column types** are Sluice's own, not DuckDB's inference. See §5.5 for the
+rules and for the three measured DuckDB behaviors that motivated them.
 
 **Heterogeneity** is therefore not a binary pass or fail. Rows with different key
 sets produce a union schema with NULLs, which is a correct and queryable
@@ -307,41 +297,83 @@ representation of the data that actually arrived.
 
 ### 5.4 Loading into DuckDB
 
-Write the projected rows as newline-delimited JSON to a temp file in the
-session's temp directory, then:
+**No temp files, and no `read_json`.** This is forced by §6.1, not chosen.
+`SET enable_external_access = false` is a database-global setting, and it blocks
+DuckDB's own file readers, Sluice's included. A file-based load and the security
+posture cannot coexist:
 
-```sql
-CREATE TABLE <name> AS
-SELECT * FROM read_json(
-    '<path>',
-    format = 'newline_delimited',
-    union_by_name = true,
-    sample_size = -1
-);
-```
+- `read_json` over a temp file under the lockdown fails with
+  `PermissionException: file system operations are disabled by configuration`.
+  Verified, DuckDB 1.5.5.
+- `SET allowed_directories = [...]` does not confine access. Under it,
+  `read_csv('/etc/hosts')`, `COPY ... TO '/tmp/...'`, `ATTACH`, `INSTALL httpfs`,
+  and `glob('/etc/*')` all still succeeded. Verified, DuckDB 1.5.5.
+- The setting is database-global, so a writer connection with access enabled and
+  a query connection with it disabled is not possible against one database.
+  Verified, DuckDB 1.5.5.
 
-`sample_size = -1` scans every row for type inference. This matters: with a
-sampled inference, a column that is integer for the first 100 rows and a string
-at row 300 fails the load. Since each table is written once from a complete row
-set, full-scan inference is affordable and removes the failure mode.
+So materialization builds the table directly:
 
-`union_by_name = true` is what makes §5.3's heterogeneity handling work.
+1. Infer a column type per column from the **complete** projected row set (§5.5).
+2. `CREATE TABLE <name> (<col> <TYPE>, ..., _row BIGINT, _call_id VARCHAR)`.
+3. `executemany` the projected rows.
 
-The NDJSON temp file is deleted immediately after the `CREATE TABLE` returns,
-success or failure. It is written inside the session temp directory, which is
-removed at process exit.
+Verified to work under the full lockdown, with JSON columns still queryable via
+`json_extract`.
 
-**Peak memory.** Materialization can transiently hold the MCP result object, the
-concatenated text, the parsed JSON, the projected row list, the NDJSON buffer,
-and the DuckDB table at the same time, so peak Python memory is a multiple of the
-payload, and `duckdb_max_memory` bounds none of it. This is why §5.1 step 2
-exists: `max_payload_bytes` is a hard ceiling applied before parsing, not a size
-gate on interception. Every payload under the ceiling is still intercepted, per
-the always-intercept decision.
+Three consequences worth stating plainly:
 
-If the load raises regardless, catch it, record `flat_reason = 'load_failed: ...'`
-on the envelope row, and return an envelope-only handle. FR-9: a materialization
-failure never fails the tool call.
+- **Sluice owns type inference now.** The original scope assumed DuckDB's JSON
+  inference would do most of this work. It cannot, given the lockdown. This is
+  the largest single change the M0 spike forced.
+- The NDJSON buffer leaves the pipeline, so peak memory drops and there is no
+  temp file to leak or clean up. The §5.1 `max_payload_bytes` figure was derived
+  from a measurement of the file-based pipeline and must be re-measured.
+- Inference becomes a thing Sluice is responsible for getting right, and
+  therefore a thing that must be tested directly rather than trusted.
+
+If table creation or insertion raises, catch it, record
+`flat_reason = 'load_failed: ...'` on the envelope row, and return an
+envelope-only handle. FR-9: a materialization failure never fails the tool call.
+
+### 5.5 Type inference rules
+
+Per column, over every value present in the complete row set, ignoring nulls:
+
+| Values observed | Column type |
+|---|---|
+| all bool | `BOOLEAN` |
+| all int, all within int64 | `BIGINT` |
+| all int, any outside int64 but within int128 | `HUGEINT` |
+| all int, any outside int128 | `VARCHAR`, flagged lossy in the handle |
+| all numeric, at least one float | `DOUBLE` |
+| all strings | `VARCHAR` |
+| any object or array | `JSON` |
+| mixed scalar types | `VARCHAR`, flagged mixed in the handle |
+| all null, or column absent everywhere | `VARCHAR` |
+
+Three rules that exist because of measured DuckDB behavior:
+
+1. **Never infer `TIMESTAMP` from a string.** DuckDB infers ISO-8601-shaped
+   strings as `TIMESTAMP` and returns them naive, silently dropping the `Z`
+   offset. Version strings and opaque ids that happen to look like dates get
+   swept up the same way. v0 keeps them `VARCHAR`; the agent can `CAST` in SQL,
+   where the conversion is visible.
+2. **Mixed scalar columns become `VARCHAR`, never `JSON`.** DuckDB's own
+   inference assigns `JSON` to a column that is integer for 300 rows and a string
+   on row 301. On a `JSON` column, `sum()` and `avg()` do not exist (binder
+   error, which is loud and fine) but **`median()` succeeds and returns a
+   lexicographic result**: over the integers 0 to 299 plus one string, it
+   returned `'232'`. A plausible-looking number that is silently wrong is the
+   exact failure this project exists to prevent. `VARCHAR` makes the same query
+   fail loudly instead.
+3. **`HUGEINT` is real and exact** through int128, so integers past int64 do not
+   have to widen to `DOUBLE` and lose precision. DuckDB assigns `HUGEINT` up to
+   unsigned-64 max on its own; Sluice does it deliberately and further.
+
+`JSON` columns are aggregation traps even when correctly typed, so the handle
+marks them (§4.1) and the column list states that they need `json_extract` and a
+cast before any arithmetic.
 
 ## 6. The `query` tool
 
@@ -372,7 +404,17 @@ SET lock_configuration = true;           -- must be last; no SET can undo the ab
 ```
 
 Layer 1 alone would still permit filesystem reads inside a SELECT. Layer 2 alone
-would still permit `CREATE TABLE`. Both are required.
+would still permit `CREATE TABLE`, and it does not block `PRAGMA` (verified:
+`PRAGMA database_list` succeeds under the full lockdown, and is stopped only by
+the layer-1 statement gate). Both layers are required.
+
+Verified blocked under this sequence, DuckDB 1.5.5: `read_csv`, `read_json`,
+`read_parquet`, `glob`, `ATTACH`, `COPY ... TO`, `INSTALL`, `LOAD`, and any
+later `SET` of a locked option.
+
+**This lockdown is why §5.4 cannot use `read_json`.** The setting is
+database-global and applies to Sluice's own SQL as much as the agent's. Do not
+"fix" a materialization failure by relaxing it.
 
 ### 6.2 Timeout
 
@@ -380,18 +422,20 @@ DuckDB has no statement timeout setting. The mechanism is: execute on a dedicate
 cursor inside a worker thread, and have the event loop call `interrupt()` on the
 connection when the deadline passes. Default 10 seconds, configurable.
 
-**Interrupt isolation is a requirement, not a detail.** `interrupt()` operates on
-a connection. If it aborts every operation in flight on that connection, then a
-timed-out `query` would also kill a concurrent materialization write, which
-breaks the §8 invariant by turning a working tool call into a failed one. It is
-not enough to prove that an interrupt stops the query it was aimed at. The
-required property is: **interrupting a `query` must leave any concurrent write
-untouched and must leave the connection usable afterward.**
+**The watchdog must interrupt the exact `DuckDBPyConnection` object the worker is
+executing on.** Measured, DuckDB 1.5.5: `interrupt()` on a *parent* connection
+does not stop work running on a cursor derived from it (the query ran to
+completion, 5.2s). `interrupt()` on the object actually executing the query
+stopped it in 0.2s. Interrupt scope is the connection object, not the
+parent-and-children family.
 
-If DuckDB's interrupt turns out to be connection-wide, §9 changes: `query`
-execution moves to its own dedicated connection to the same in-memory database,
-isolated from the writer, and the interrupt is scoped to that connection. Verify
-before building. See plan risk R4.
+Isolation is therefore confirmed in both directions: a concurrent write on a
+sibling cursor committed intact, and all connections stayed usable. The same
+held for separately opened connections to one named in-memory database.
+
+An implementation whose watchdog interrupts the parent silently does nothing,
+and the timeout appears to work only because short queries finish anyway. Test
+it with a query that genuinely runs long.
 
 ### 6.3 Result shaping
 
@@ -465,7 +509,7 @@ not stored in the config file.
 | Downstream call raises | Envelope row with `is_error`, error returned verbatim |
 | Result is not JSON on any channel | Envelope-only handle, head-and-tail text preview |
 | Payload exceeds `max_payload_bytes` | Passthrough with a size note, no parse, envelope row records the size |
-| Flattening or load fails | Envelope-only handle, `flat_reason` records the cause, call succeeds |
+| Flattening, inference, or insert fails | Envelope-only handle, `flat_reason` records the cause, call succeeds |
 | DuckDB write fails | Log to stderr, return the original result unmodified, do not fail the call |
 | `query` rejects the SQL | Tool error naming the reason, never a silent empty result |
 | `query` times out | Tool error stating the timeout, with the elapsed budget |
@@ -479,8 +523,9 @@ left implicit:
 1. **Process death.** An out-of-memory kill during materialization takes the
    whole session, not just the call, and no `except` clause can catch it. The
    invariant is therefore conditional on staying inside the memory budget, which
-   is what `max_payload_bytes` (§5.1 step 2) and the temp-file cleanup in §5.4
-   exist to guarantee. A recovery path that assumes the process survives is not a
+   is what `max_payload_bytes` (§5.1 step 2) exists to guarantee. The file-free
+   load in §5.4 removes one copy from the pipeline, so the ceiling needs
+   re-deriving against the new shape. A recovery path that assumes the process survives is not a
    recovery path.
 2. **Connection-wide interrupt.** A timed-out `query` must not abort a concurrent
    write. See §6.2.
@@ -534,7 +579,14 @@ Flagged as requested, with the resolution this spec takes.
 9. **The "never fails a working call" invariant was stated without boundaries**
    and cannot survive an OOM kill, which ends the process rather than the call.
    Resolved in §8 by naming both boundaries and adding `max_payload_bytes`.
-10. **Session scope was undefined for non-stdio transports.** Resolved by
+10. **The §6.1 lockdown and the §5.4 `read_json` load were mutually exclusive**,
+    and both were written into the same spec. `enable_external_access` is
+    database-global and blocks Sluice's own file readers. Neither
+    `allowed_directories` nor a writer/query connection split works around it.
+    Resolved by making materialization file-free (§5.4) and giving Sluice its own
+    inference rules (§5.5). This invalidated the premise that DuckDB's JSON
+    inference would do most of the work.
+11. **Session scope was undefined for non-stdio transports.** Resolved by
    restricting v0 to stdio, which makes process lifetime and session lifetime the
    same thing. An HTTP transport would need a session-id-keyed map of databases
    and an eviction policy, and that is not v0.

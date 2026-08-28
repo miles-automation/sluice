@@ -38,6 +38,7 @@ repos/sluice/
 │   ├── server.py            # the MCP server: tools/list, tools/call, wiring
 │   ├── store.py             # DuckDB session: open, lockdown, envelope, table creation
 │   ├── shape.py             # extraction (§5.2) and depth-1 projection (§5.3). Pure functions.
+│   ├── infer.py             # column type inference (§5.5). Pure functions.
 │   ├── handle.py            # handle rendering: content text + structuredContent
 │   ├── query.py             # the query tool: statement gate, timeout, result shaping
 │   └── naming.py            # namespacing, table names, identifier sanitizing, collisions
@@ -47,6 +48,7 @@ repos/sluice/
     │   ├── __init__.py
     │   └── __main__.py      # the in-repo fake downstream MCP server
     ├── test_shape.py
+    ├── test_infer.py
     ├── test_naming.py
     ├── test_store.py
     ├── test_handle.py
@@ -57,7 +59,8 @@ repos/sluice/
     └── test_property_aggregates.py
 ```
 
-`shape.py` and `naming.py` are pure and have no DuckDB or MCP imports. That is
+`shape.py`, `infer.py`, and `naming.py` are pure and have no DuckDB or MCP
+imports. That is
 deliberate: the two places most likely to be wrong are the ones cheapest to test
 in isolation.
 
@@ -178,15 +181,24 @@ Exit criterion: `test_store.py` and `test_handle.py` pass. `boom()` and
 an envelope-only handle. A small result's preview contains the whole payload and
 says so.
 
-### M3. Flattening
+### M3. Flattening and inference
 
-`shape.py`, plus the table-creation half of `store.py`.
+`shape.py`, `infer.py`, plus the table-creation half of `store.py`.
 
-Extraction (§5.2), depth-1 projection (§5.3), NDJSON load with
-`union_by_name = true, sample_size = -1` (§5.4), `_row` and `_call_id` injection,
-collision renaming, column cap and `_extra`, `__latest` view maintenance.
+Extraction (§5.2), depth-1 projection (§5.3), **Sluice's own column type
+inference (§5.5)**, file-free table creation via explicit DDL plus `executemany`
+(§5.4), `_row` and `_call_id` injection, collision renaming, column cap and
+`_extra`, `__latest` view maintenance.
 
-Exit criterion: `test_shape.py` covers every fake-server tool. `mixed(400)`
+M0 forced the inference work into scope: the §6.1 lockdown blocks `read_json`,
+so DuckDB cannot do the inference for us. Budget for it accordingly. This is the
+single largest change between the pre-spike and post-spike plan.
+
+Exit criterion: `test_infer.py` covers the §5.5 table row by row, and in
+particular pins the two silent-wrongness cases: a mixed int-and-string column
+becomes `VARCHAR` and not `JSON`, and an ISO-8601-shaped string stays `VARCHAR`
+and is not inferred as a naive `TIMESTAMP`. `test_shape.py` covers every
+fake-server tool. `mixed(400)`
 produces a union schema with NULLs and does not fail on the row-300 type change.
 `wide(200)` produces 64 columns plus `_extra`. `two_arrays()` picks the longest
 and reports the alternative in the handle. `empty()` reports `rows=0` rather than
@@ -267,11 +279,14 @@ issuing `query` calls for data that was already fully present in the preview, th
 preview wording is not doing its job and needs to say more loudly that the data
 is complete.
 
-**R6. Type inference cost on large payloads.** Severity: low. `sample_size = -1`
-scans every row. This is the right trade for correctness, and payload sizes in
-scope are megabytes at most. If it shows up, the answer is a size threshold above
-which inference falls back to sampling with a warning in the handle, not a
-silently sampled inference.
+**R6. Type inference is now Sluice's own code.** Severity: high, and new after
+M0. The §6.1 lockdown blocks `read_json`, so the original plan to delegate
+inference to DuckDB is dead (spec §5.4). Every inference bug is now a Sluice bug,
+and inference bugs are the kind that produce a confident, well-typed, wrong
+answer. Mitigation: `infer.py` is pure and directly tested (`test_infer.py`), the
+Hypothesis property test fuzzes it by construction, and §5.5's rules are
+deliberately conservative, preferring `VARCHAR` and a loud failure over a clever
+type and a quiet one.
 
 **R7. The extraction heuristic picks the wrong array.** Severity: low, by design
 visible. `two_arrays()` exists to pin this behavior. The mitigation is not a
@@ -297,6 +312,14 @@ those. An OOM kill ends the session, so this is the one failure mode the §8
 invariant cannot absorb. Detection: M0 step 7. Mitigation: `max_payload_bytes`
 applied before parsing, and temp-file cleanup on every path.
 
+**R12. `JSON` columns are aggregation traps.** Severity: medium. On a `JSON`
+column `sum()` and `avg()` raise a binder error, which is fine because it is
+loud, but `median()` succeeds and returns a lexicographic result. Measured: over
+integers 0 to 299 plus one string, `median()` returned `'232'`. §5.5 avoids
+producing `JSON` for mixed scalars, and the handle marks genuine `JSON` columns,
+but an agent can still write `median(json_col)` on a legitimately nested column
+and get a number-shaped lie. Watch for it in the demo.
+
 **R11. The `query` SQL wrapper rejects valid SQL.** Severity: medium, now
 avoided. Wrapping user SQL in `SELECT * FROM (<sql>) LIMIT n+1` breaks on
 trailing semicolons and on result sets with duplicate column names, both of which
@@ -317,16 +340,34 @@ them from the fake server. Call through Sluice. Then for each numeric column,
 assert that every one of these computed via `query` equals the same statistic
 computed in pure Python over the generated source data:
 
+Two classes of assertion, and the split is measured rather than assumed:
+
+**Exact equality.** Verified in M0 on DuckDB 1.5.5:
+
 - `count(*)` and `count(col)` against `len()` and non-null count
-- `sum`, `min`, `max`
-- `avg` against `statistics.fmean`, within floating point tolerance
-- `median(col)` against `statistics.median`
+- `min`, `max`
+- `median(col)` against `statistics.median`, for `BIGINT` and `DOUBLE` columns
+  and for both even and odd row counts (measured equal at n=400 and n=401)
 - `count(DISTINCT col)` against `len(set(...))`
 - `GROUP BY` a categorical column with counts, against `collections.Counter`
+
+**Equality within tolerance.** Floating point summation order differs between
+DuckDB and Python, so exact equality is the wrong assertion and would produce a
+flaky suite:
+
+- `avg` against `statistics.fmean`. Measured unequal at n=400
+  (`339.1499999999999` against `339.15`) and n=401 (`339.99999999999994`
+  against `340.0`). Assert `math.isclose` with a stated relative tolerance, and
+  state the tolerance in the spec rather than tuning it until the test passes.
+- `sum` over float columns, same reasoning. `sum` over integer columns is exact.
 
 Null handling is the sharp edge: SQL aggregate semantics skip NULLs and the
 Python reference must do the same, deliberately, not accidentally. Write the
 reference implementation to skip them explicitly and comment why.
+
+Restrict generated columns to types §5.5 will make aggregatable. A mixed
+int-and-string column becomes `VARCHAR` by design, and asserting a numeric
+aggregate over it is testing the wrong thing.
 
 This is a property over generated data, so it also functions as a fuzzer for the
 projection code in `shape.py`.
@@ -336,10 +377,11 @@ projection code in `shape.py`.
 | File | Proves |
 |---|---|
 | `test_naming.py` | namespacing, identifier sanitizing, `_row`/`_call_id` and `_extra` collision renaming, collisions created by case folding, downstream tool names at MCP length limits, per-tool sequence numbering past 999 |
+| `test_infer.py` | every row of the §5.5 table; mixed scalars become `VARCHAR` not `JSON`; ISO-8601 strings stay `VARCHAR`; int128 range gets `HUGEINT`; all-null columns; the lossy-int flag reaching the handle |
 | `test_shape.py` | channel selection across the M0 step 6 matrix; extraction path selection for all payload shapes in the fake server; depth-1 projection; JSON columns for nested values; column cap and `_extra`; inference hazards (timestamp-shaped strings, integers beyond int64, decimal-shaped strings) reported with the type DuckDB actually assigned |
 | `test_store.py` | one envelope row per call including errors and passthroughs; `flat_reason` populated on every table-less path; `__latest` view repoints; a forced load failure does not fail the call (FR-9) |
 | `test_handle.py` | handle text contains table, row count, columns, `source_path`, call id; `structuredContent` mirrors it; complete-preview rule triggers below the budget and is labelled |
-| `test_query_safety.py` | the §M4 rejection table; multi-statement input rejected by count |
+| `test_query_safety.py` | the §M4 rejection table; multi-statement input rejected by count; `PRAGMA database_list` rejected by the layer-1 gate, since the engine lockdown does not stop it |
 | `test_query_limits.py` | row cap detected via the `n+1` fetch and reported; byte cap truncates and reports; timeout fires and reports; per-cell truncation; truncation cuts on character boundaries for multi-byte UTF-8; a trailing semicolon and a result set with duplicate column names both succeed (R11 regression) |
 | `test_passthrough.py` | `isError` and image results semantically equal to direct downstream calls, compared as parsed models; oversize payloads pass through with a size note |
 | `test_concurrency.py` | a timed-out `query` leaves a concurrent materialization write intact and the connection usable (R4, spec §6.2); `__latest` view repointing under concurrent calls to the same tool |

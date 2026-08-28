@@ -55,6 +55,7 @@ MCP client (agent)
    proxy.py       client sessions to downstream servers, call forwarding
       |
    shape.py       extract rows -> depth-1 projection      (pure)
+   infer.py       column types, conservatively             (pure)
    store.py       envelope row + typed table in DuckDB
    handle.py      preview + table name + columns -> back to the agent
    query.py       read-only SQL: statement gate, timeout, caps
@@ -88,8 +89,15 @@ a `<server>__<tool>__latest` view repointed after each call.
   open. `SELECT * FROM read_csv('/etc/passwd')` is a SELECT.
 - **Every truncation is reported to the agent.** A silently truncated result is a
   correctness bug in a tool that sells determinism.
-- **`sample_size = -1` on every `read_json`.** Sampled type inference breaks on a
-  column whose type changes late in the payload.
+- **Materialization is file-free. No `read_json`, no temp files.** The §6.1
+  lockdown is database-global and blocks DuckDB's own file readers, Sluice's
+  included. Tables are built with explicit DDL plus `executemany`. Do not "fix" a
+  materialization failure by relaxing the lockdown.
+- **Sluice owns type inference** (spec §5.5), because of the above. Two rules
+  exist to prevent silent wrongness and must not be optimized away: never infer
+  `TIMESTAMP` from a string (DuckDB returns it naive and drops the offset), and
+  mixed scalar columns become `VARCHAR`, never `JSON` (`median()` on a `JSON`
+  column succeeds and returns a lexicographic answer).
 
 ## Out of scope for v0
 

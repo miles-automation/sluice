@@ -142,6 +142,12 @@ The correctness criterion is a property: **an aggregate computed via `query` mus
 equal the same aggregate computed directly over the raw source data.** This is
 mechanically checkable and belongs in CI.
 
+"Equal" splits in two, which was measured rather than assumed. `count`, `min`,
+`max`, `median`, `count(DISTINCT)`, and `GROUP BY` counts are exactly equal to
+their Python equivalents on DuckDB 1.5.5. `avg` and float `sum` are not, because
+summation order differs, so those assert within a stated tolerance. A criterion
+demanding exact equality everywhere would be false on arrival.
+
 The demonstration is separate and is not a test: an agent asked for a median over
 roughly 400 rows gets it wrong reading the payload and right reading the table.
 That is an eval against a model, it is non-deterministic, and it must not gate CI.
