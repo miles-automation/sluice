@@ -252,6 +252,16 @@ restart. Stated in spec §10 rather than left as a surprise.
 serializer validation error naming neither the tool nor the version.
 `test_engine_contract.py` pins the version facts; `test_proxy.py` pins the relay.
 
+**R12. A green suite that is not a gate.** Severity: high, and it fired once
+already. After M3, all 148 tests passed against builds that stored every `_row`
+as 0, stored the wrong `_call_id`, dropped downstream `structuredContent`,
+discarded result `_meta`, and derived scopes from a process-randomized hash. The
+suite asserted schemas and counts but almost never asserted stored values.
+Mitigation: full-record assertions rather than field subsets, whole-model
+comparison in passthrough tests, fault injection at each write boundary, and a
+periodic mutation pass. Coverage alone does not catch this class; every one of
+those mutants ran covered lines.
+
 **R10. Downstream pagination of results.** Severity: low. A tool that pages
 produces N tables the agent must UNION by hand. README note, not code.
 
@@ -295,7 +305,9 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 |---|---|
 | `test_engine_contract.py` | the measured DuckDB and SDK behaviors the design rests on, asserted against installed versions; the tripwire that makes unpinned dependencies safe |
 | `test_naming.py` | injectivity: `a-b` vs `a_b` and `Foo` vs `foo` get different tables; 128-char mounted-name validation fails startup loudly; sequence widening past 9999; identifier quoting |
-| `test_scope.py` | scope from client `_meta` when present, minted otherwise; a stale handle from a prior process cannot resolve to a live table; two scopes cannot see each other's tables |
+| `test_scope.py` | scope from client `_meta` when present, minted otherwise; a stale handle from a prior process cannot resolve to a live table; a fixed BLAKE2 digest vector; cross-process stability under three `PYTHONHASHSEED` values; minting draws from `secrets`; 128-bit width |
+| `test_config.py` | every rejection path; limit validation including `max_concurrent_materializations = 0`; env expansion; file loading; `find_config` precedence; the shipped example config loads |
+| `test_cli.py` | a real `python -m sluice` subprocess serving over stdio and returning a handle; exit codes and clean diagnostics for a missing config, invalid limits, and an unreachable downstream; startup errors unwrapped from anyio ExceptionGroups |
 | `test_shape.py` | extraction for every payload shape; every candidate array materialized; `mixed_elements` and `empty` reported rather than degraded; depth-1 projection; missing key and JSON `null` both NULL; reserved-column collisions allocated recursively; column cap with a deterministic tie-break |
 | `test_infer.py` | every row of §5.5; mixed scalars `VARCHAR` not `JSON`; ISO-8601 stays `VARCHAR`; int128 gets `HUGEINT`; the ±2^53 rule and non-finite floats set `exact: false`; bool checked before int; value coercion |
 | `test_store.py` | lockdown closes external access while Sluice can still create tables; envelope round-trips including JSON columns; per-tool monotonic sequence |

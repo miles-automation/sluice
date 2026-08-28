@@ -356,3 +356,69 @@ async def test_colliding_tool_names_get_separate_tables(
         first.structured_content["tables"][0]["name"]
         != second.structured_content["tables"][0]["name"]
     )
+
+
+async def test_flat_table_rows_are_traceable_to_the_call(
+    interceptor: Interceptor, proxy: Proxy, store: Store
+) -> None:
+    """`_row` and `_call_id` are the join back to the envelope, and the handle's
+    call_id is what the agent uses to find it. All three have to agree."""
+    result = await _run(interceptor, proxy, "rows", {"n": 5})
+    assert result.structured_content is not None
+    call_id = result.structured_content["call_id"]
+    name = result.structured_content["tables"][0]["name"]
+
+    rows = store.connection.execute(
+        f'SELECT _row, _call_id, id FROM "{name}" ORDER BY _row'
+    ).fetchall()
+    assert [r[0] for r in rows] == [0, 1, 2, 3, 4]
+    assert {r[1] for r in rows} == {call_id}
+    assert [r[2] for r in rows] == [0, 1, 2, 3, 4]
+
+    envelope = store.connection.execute(
+        f"SELECT call_id, flat_tables, source_paths FROM {ENVELOPE_TABLE}"
+    ).fetchall()[0]
+    assert envelope == (call_id, [name], ["$.items"])
+
+
+async def test_downstream_structured_content_is_preserved_on_the_envelope(
+    interceptor: Interceptor, proxy: Proxy, store: Store
+) -> None:
+    """Sluice overwrites the outgoing structuredContent with its handle, so the
+    envelope is the only place the downstream tool's own structured output
+    survives."""
+    await _run(interceptor, proxy, "structured_only")
+    stored, text = store.connection.execute(
+        f"SELECT result_structured, result_text FROM {ENVELOPE_TABLE}"
+    ).fetchall()[0]
+    assert json.loads(stored) == {"items": [{"id": i, "score": i * 2} for i in range(3)]}
+    assert text == "Found 3 records for your query."
+
+
+async def test_no_orphan_tables_when_materialization_fails(
+    proxy: Proxy, store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tables and the envelope go in as one transaction, so a failure leaves the
+    database untouched rather than leaving tables nothing points at."""
+    from sluice import intercept as intercept_module
+
+    def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("insert blew up")
+
+    interceptor = Interceptor(store, Limits())
+    monkeypatch.setattr(store, "_create_flat", explode)
+    result = await _run(interceptor, proxy, "rows", {"n": 5})
+
+    tables = store.connection.execute(
+        "SELECT table_name FROM duckdb_tables() WHERE table_name != ?", [ENVELOPE_TABLE]
+    ).fetchall()
+    assert tables == []
+    # The call is still recorded, and the handle says why there is no table.
+    row = store.connection.execute(
+        f"SELECT flat_tables, flat_reason FROM {ENVELOPE_TABLE}"
+    ).fetchall()[0]
+    assert row[0] == []
+    assert row[1].startswith("load_failed")
+    assert result.structured_content is not None
+    assert result.structured_content["tables"] == []
+    assert intercept_module is not None

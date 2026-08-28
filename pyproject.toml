@@ -27,6 +27,7 @@ sluice = "sluice.__main__:main"
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "pytest-cov",
     "anyio>=4",
     "hypothesis>=6",
     "ruff",

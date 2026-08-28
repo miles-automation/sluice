@@ -67,3 +67,30 @@ def test_sequence_widens_past_9999() -> None:
 )
 def test_quote_ident(raw: str, expected: str) -> None:
     assert naming.quote_ident(raw) == expected
+
+
+def test_the_discovered_collision_pair_no_longer_collides() -> None:
+    """Regression for a real collision found by brute force against the old
+    24-bit tag: `s/a..---_` and `s/a-----_-_` both mounted as `s__a__fa29cc`."""
+    assert naming.mounted_name("s", "a..---_") != naming.mounted_name("s", "a-----_-_")
+
+
+def test_injectivity_check_accepts_distinct_names() -> None:
+    mapping = naming.assert_injective([("s", "a"), ("s", "b"), ("t", "a")])
+    assert len(mapping) == 3
+
+
+def test_injectivity_check_fails_loudly_on_a_forced_collision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wider digest lowers the probability of a collision; it cannot prove
+    injectivity. The loud failure is the actual fix, so it is tested by forcing
+    the case rather than by hoping one never occurs."""
+    monkeypatch.setattr(naming, "tag", lambda value: "constant")
+    with pytest.raises(naming.NameCollisionError) as caught:
+        naming.assert_injective([("s", "alpha"), ("s", "alpha!")])
+    assert "alpha" in str(caught.value)
+
+
+def test_repeated_identical_pairs_are_not_a_collision() -> None:
+    assert len(naming.assert_injective([("s", "a"), ("s", "a")])) == 1

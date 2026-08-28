@@ -12,7 +12,7 @@ from mcp.types.version import MODERN_PROTOCOL_VERSIONS
 
 from sluice.config import Config
 from sluice.errors import DownstreamError, FailureClass
-from sluice.naming import mounted_name
+from sluice.naming import assert_injective, mounted_name
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +145,14 @@ class Proxy:
     async def refresh_tools(self) -> None:
         """Capture the static tool catalog (spec 10)."""
         tools = await self._list_all_tools()
+        server = self._config.server.name
+        # Fails loudly rather than letting the second tool overwrite the first
+        # in the dict, which would leave the agent calling one tool and reaching
+        # another.
+        assert_injective([(server, tool.name) for tool in tools])
         mounted: dict[str, MountedTool] = {}
         for tool in tools:
-            entry = expose(self._config.server.name, tool)
+            entry = expose(server, tool)
             mounted[entry.mounted] = entry
         self._tools = mounted
         logger.info("mounted %d downstream tools", len(mounted))

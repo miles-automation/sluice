@@ -3,8 +3,10 @@
 import os
 import re
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 CONFIG_ENV_VAR = "SLUICE_CONFIG"
 DEFAULT_CONFIG_NAME = "sluice.toml"
@@ -26,6 +28,17 @@ class ServerConfig:
     url: str | None = None
 
 
+_POSITIVE = (
+    "max_payload_bytes",
+    "max_concurrent_materializations",
+    "max_columns",
+    "query_max_rows",
+    "query_max_bytes",
+    "max_cell_bytes",
+)
+_NON_NEGATIVE = ("preview_bytes", "preview_rows")
+
+
 @dataclass(frozen=True, slots=True)
 class Limits:
     max_payload_bytes: int = 33_554_432
@@ -38,6 +51,26 @@ class Limits:
     query_max_bytes: int = 65_536
     max_cell_bytes: int = 512
     duckdb_max_memory: str = "1GB"
+
+    def __post_init__(self) -> None:
+        # Validated here rather than at parse time so a Limits built in code is
+        # checked too. `max_concurrent_materializations = 0` is the sharp one:
+        # a zero-sized admission semaphore blocks every materialization forever
+        # rather than failing.
+        for name in _POSITIVE:
+            value = getattr(self, name)
+            if value < 1:
+                raise ConfigError(f"[limits].{name} must be at least 1, got {value}")
+        for name in _NON_NEGATIVE:
+            value = getattr(self, name)
+            if value < 0:
+                raise ConfigError(f"[limits].{name} must not be negative, got {value}")
+        if self.query_timeout_seconds <= 0:
+            raise ConfigError(
+                f"[limits].query_timeout_seconds must be positive, got {self.query_timeout_seconds}"
+            )
+        if not self.duckdb_max_memory.strip():
+            raise ConfigError("[limits].duckdb_max_memory must not be empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +113,7 @@ def load_config(path: Path, environ: dict[str, str] | None = None) -> Config:
     return parse_config(raw, environ=environ)
 
 
-def parse_config(raw: dict[str, object], environ: dict[str, str] | None = None) -> Config:
+def parse_config(raw: Mapping[str, Any], environ: dict[str, str] | None = None) -> Config:
     servers_raw = raw.get("servers")
     if not isinstance(servers_raw, dict) or not servers_raw:
         raise ConfigError("config must define at least one [servers.<name>] table")
@@ -135,7 +168,7 @@ def parse_config(raw: dict[str, object], environ: dict[str, str] | None = None) 
     limits_raw = raw.get("limits", {})
     if not isinstance(limits_raw, dict):
         raise ConfigError("[limits] must be a table")
-    known = {f for f in Limits.__dataclass_fields__}
+    known = set(Limits.__dataclass_fields__)
     unknown = set(limits_raw) - known
     if unknown:
         raise ConfigError(f"[limits] has unknown keys: {', '.join(sorted(unknown))}")

@@ -37,6 +37,21 @@ class TableRef:
 
 
 @dataclass(frozen=True, slots=True)
+class TablePlan:
+    """A table computed but not yet written.
+
+    Materialization is planned in full before anything touches the database, so
+    the write can be one transaction rather than a sequence of steps that can
+    half-succeed.
+    """
+
+    name: str
+    source_path: str
+    columns: list[Any]
+    records: list[dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
 class SelectedPayload:
     """The payload materialization runs against, and where it came from."""
 

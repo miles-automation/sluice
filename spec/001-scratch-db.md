@@ -77,6 +77,13 @@ Behavior differs across revisions; do not generalize.
 - **FR-10** Materialization happens before the response is returned. A
   materialization failure must not fail the call: it is logged, the envelope row
   records the failure, and the agent receives an envelope-only handle.
+- **FR-10a** The flat tables and the envelope row are written in **one
+  transaction**. Either the call is fully recorded or the database is untouched.
+  The envelope is the only record that a table exists, so tables written without
+  it are unreachable and invisible; and a call may produce several tables (§5.2),
+  so a partial write would hand the agent a handle naming tables that do not all
+  exist. On failure Sluice rolls back and retries with no tables, recording
+  `flat_reason = 'load_failed: ...'`.
 
 ### Returning
 
@@ -149,12 +156,22 @@ case-sensitive and may contain hyphens and dots.
 
 ```
 slug(s)   = lowercase, non-alphanumerics -> "_", truncated to 40 chars
-tag(s)    = first 6 chars of blake2b(s.encode()) hexdigest   # of the UNSANITIZED name
+tag(s)    = first 12 chars of blake2b(s.encode()) hexdigest  # of the UNSANITIZED name
 mounted   = f"{slug(server)}__{slug(tool)}__{tag(server + '\x00' + tool)}"
 table     = f"{mounted}__{scope_tag}__{seq:04d}"
 ```
 
-- The hash tag makes the mapping injective. `a-b` and `a_b` get different tags.
+- The hash tag makes collisions unlikely. It does **not** make the mapping
+  injective, and revision 4 claimed it did. A brute-force search over
+  SDK-accepted tool names found a real collision against the original 6-character
+  (24-bit) tag after roughly 3,300 candidates, which is exactly the birthday
+  bound: `s/a..---_` and `s/a-----_-_` both mounted as `s__a__fa29cc`.
+
+  The tag is now 12 characters (48 bits), and **mounted names are checked for
+  collisions at startup and a collision fails startup loudly**. The check is the
+  fix; the wider tag only lowers how often it fires. Silently letting the second
+  tool overwrite the first in a dict would leave the agent calling a tool it can
+  see and reaching a different one.
 - Mounted names are validated against the 128-character tool-name limit at
   startup; a name that cannot fit fails startup loudly rather than silently
   colliding.
@@ -558,6 +575,10 @@ max_cell_bytes = 512
 duckdb_max_memory = "1GB"
 ```
 
+Every limit is validated where it is constructed, not only where it is parsed.
+`max_concurrent_materializations = 0` is the sharp one: a zero-sized admission
+semaphore blocks every materialization forever rather than failing.
+
 `max_concurrent_materializations` is an admission gate over the whole pipeline,
 not just the write. Peak memory is a multiple of payload size, so N concurrent
 materializations multiply it; the write lock alone does not bound this because
@@ -669,9 +690,17 @@ not conversation lifetime. Two failures follow if scope is ignored:
    data. A clean answer about the wrong result set is the failure mode this
    project exists to prevent.
 
-**The scope id.** If the client supplies a conversation identifier in request
-`_meta`, Sluice derives the scope from it. Otherwise Sluice mints a fresh
-unguessable scope id per proxied call. Either way the scope tag is embedded in
+**The scope id.** 32 hex characters, so **128 bits**. Revision 4 specified 8
+characters, which is 32 bits and not capability-token strength for the one
+mechanism standing between conversations. Table names are copied from the handle
+rather than typed, so the extra width costs nothing that matters.
+
+If the client supplies a conversation identifier in request `_meta`, Sluice
+derives the scope from it with BLAKE2, never the builtin `hash()`, whose
+per-process seed randomization would silently orphan every table belonging to a
+resumed conversation. Otherwise Sluice mints a fresh scope id per proxied call
+using `secrets`, never `random`: a predictable sequence satisfies every "the
+values are all different" test while providing no isolation at all. Either way the scope tag is embedded in
 every table name (§3.2), so:
 
 - A stale handle from a previous process names a table that cannot exist, and
@@ -716,6 +745,12 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
     came from. Column names are now the source keys verbatim, quoted (§3.2).
 17. The call counter and the table counter were one counter, which made a table
     name's sequence number mean neither "Nth call" nor "Nth table" (§3.1, §3.2).
+18. A hash tag was described as making names injective. It does not. Collisions
+    now fail startup loudly, and the tag was widened to 48 bits (§3.2).
+19. Materialization and the envelope write were separate, so a failure could
+    leave orphaned tables the envelope did not know about (FR-10a).
+20. An 8-character scope tag was 32 bits, not capability strength, for the one
+    mechanism separating conversations. Now 128 (§12).
 
 ## 14. Open questions
 

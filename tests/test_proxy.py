@@ -6,6 +6,7 @@ import pytest
 from mcp import Client, types
 
 from sluice import naming
+from sluice.config import Config
 from sluice.errors import DownstreamError, FailureClass
 from sluice.proxy import HANDLE_NOTE, Proxy
 from tests.fake_server import PAGE_TWO_TOOL, build_fake_server
@@ -121,3 +122,22 @@ async def test_sluice_advertises_no_sampling_or_elicitation(proxy: Proxy) -> Non
     block = result.content[0]
     assert isinstance(block, types.TextContent)
     assert json.loads(block.text) == {"sampling": False, "elicitation": False}
+
+
+async def test_startup_fails_loudly_on_a_mounted_name_collision(
+    fake_config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two downstream tools colliding used to overwrite each other in a dict,
+    leaving the agent able to call one tool and reach another. Forced here,
+    because a wider digest makes a natural collision unlikely, not impossible."""
+    from contextlib import AsyncExitStack
+
+    from sluice.__main__ import first_startup_error
+
+    monkeypatch.setattr(naming, "tag", lambda value: "constant")
+    with pytest.raises(BaseException) as caught:  # anyio wraps it in a group
+        async with AsyncExitStack() as stack:
+            await Proxy.start(fake_config, stack)
+    found = first_startup_error(caught.value)
+    assert isinstance(found, naming.NameCollisionError)
+    assert "both mount as" in str(found)

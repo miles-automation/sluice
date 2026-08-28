@@ -10,7 +10,7 @@ import duckdb
 
 from sluice.config import Limits
 from sluice.infer import ColumnSpec, coerce
-from sluice.models import CallRecord
+from sluice.models import CallRecord, TablePlan
 from sluice.naming import quote_ident
 from sluice.shape import CALL_COLUMN, ROW_COLUMN
 
@@ -127,13 +127,30 @@ class Store:
             counters[key] = nxt
             return nxt
 
-    async def record(self, record: CallRecord) -> None:
-        """Write one envelope row.
+    async def commit_call(self, record: CallRecord, plans: list[TablePlan]) -> None:
+        """Write the flat tables and the envelope row as one transaction.
 
-        FR-8 is conditional on this succeeding. There is no fallback journal: if
-        the envelope write fails, the caller logs and returns the downstream
-        result unmodified rather than failing a call that worked.
+        Atomicity matters here for a specific reason: the envelope is the only
+        record that a table exists. Creating tables and then failing to write
+        the envelope leaves tables nothing points at, and failing partway
+        through several candidate tables leaves some of them. Either the call is
+        fully recorded or the database is untouched.
         """
+        async with self._lock:
+            await anyio.to_thread.run_sync(self._commit, record, plans)
+
+    def _commit(self, record: CallRecord, plans: list[TablePlan]) -> None:
+        self._connection.execute("BEGIN TRANSACTION")
+        try:
+            for plan in plans:
+                self._create_flat(plan, record.call_id)
+            self._insert_envelope(record)
+        except Exception:
+            self._connection.execute("ROLLBACK")
+            raise
+        self._connection.execute("COMMIT")
+
+    def _insert_envelope(self, record: CallRecord) -> None:
         payload = record.payload
         row: tuple[Any, ...] = (
             record.call_id,
@@ -160,43 +177,19 @@ class Store:
             record.ended_at,
             record.duration_ms,
         )
-        async with self._lock:
-            await anyio.to_thread.run_sync(self._insert, row)
-
-    def _insert(self, row: tuple[Any, ...]) -> None:
         self._connection.execute(_INSERT, row)
 
-    async def create_flat_table(
-        self,
-        name: str,
-        columns: list[ColumnSpec],
-        records: list[dict[str, Any]],
-        call_id: str,
-    ) -> int:
-        """Create one typed table and fill it.
-
-        Explicit DDL plus executemany, not `read_json`: the lockdown is
-        database-global and blocks DuckDB's own file readers (spec 5.4).
-        Every identifier is quoted, including column names taken verbatim from
-        downstream payload keys.
-        """
-        async with self._lock:
-            return await anyio.to_thread.run_sync(
-                self._create_flat, name, columns, records, call_id
-            )
-
-    def _create_flat(
-        self,
-        name: str,
-        columns: list[ColumnSpec],
-        records: list[dict[str, Any]],
-        call_id: str,
-    ) -> int:
+    def _create_flat(self, plan: TablePlan, call_id: str) -> None:
+        """Explicit DDL plus executemany, never `read_json`: the lockdown is
+        database-global and blocks DuckDB's own file readers (spec 5.4). Every
+        identifier is quoted, including column names taken verbatim from
+        downstream payload keys."""
+        columns: list[ColumnSpec] = plan.columns
         declared = ", ".join(f"{quote_ident(c.name)} {c.type}" for c in columns)
         trailing = f"{quote_ident(ROW_COLUMN)} BIGINT, {quote_ident(CALL_COLUMN)} VARCHAR"
         separator = ", " if declared else ""
         self._connection.execute(
-            f"CREATE TABLE {quote_ident(name)} ({declared}{separator}{trailing})"
+            f"CREATE TABLE {quote_ident(plan.name)} ({declared}{separator}{trailing})"
         )
         placeholders = ", ".join(["?"] * (len(columns) + 2))
         rows = [
@@ -205,10 +198,9 @@ class Store:
                 record[ROW_COLUMN],
                 call_id,
             )
-            for record in records
+            for record in plan.records
         ]
         if rows:
             self._connection.executemany(
-                f"INSERT INTO {quote_ident(name)} VALUES ({placeholders})", rows
+                f"INSERT INTO {quote_ident(plan.name)} VALUES ({placeholders})", rows
             )
-        return len(rows)

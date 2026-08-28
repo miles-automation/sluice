@@ -18,7 +18,15 @@ risk.
 import hashlib
 import secrets
 
-SCOPE_TAG_LENGTH = 8
+SCOPE_TAG_LENGTH = 32
+"""32 hex characters, so 128 bits.
+
+An earlier 8-character tag was 32 bits, which is not capability-token strength.
+Scope tags are the only thing standing between one conversation and another's
+tables (spec 12), and a table name is long enough already that the agent copies
+it from the handle rather than typing it, so the extra characters cost nothing
+that matters.
+"""
 
 SCOPE_META_KEYS: tuple[str, ...] = (
     "conversationId",
@@ -38,7 +46,12 @@ which is stricter, not weaker.
 
 
 def mint() -> str:
-    """A fresh unguessable scope tag."""
+    """A fresh unguessable scope tag.
+
+    `secrets`, never `random`: this is a capability token, and a predictable
+    sequence would satisfy every "the values are all different" test while
+    providing no isolation at all.
+    """
     return secrets.token_hex(SCOPE_TAG_LENGTH // 2)
 
 
@@ -48,8 +61,12 @@ def from_conversation_id(conversation_id: str) -> str:
     Hashed rather than used directly: the identifier may be long, may contain
     characters that are not identifier-safe, and lands in a table name that the
     agent reads.
+
+    BLAKE2, never the builtin `hash()`: PYTHONHASHSEED randomization would make
+    the same conversation resolve to different scopes in different processes,
+    silently orphaning every table from a resumed conversation.
     """
-    digest = hashlib.blake2b(conversation_id.encode("utf-8"), digest_size=8).hexdigest()
+    digest = hashlib.blake2b(conversation_id.encode("utf-8"), digest_size=16).hexdigest()
     return digest[:SCOPE_TAG_LENGTH]
 
 

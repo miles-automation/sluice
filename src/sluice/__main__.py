@@ -12,9 +12,29 @@ from mcp.server.stdio import stdio_server
 from sluice.config import Config, ConfigError, find_config, load_config
 from sluice.errors import DownstreamError
 from sluice.intercept import Interceptor
+from sluice.naming import NameCollisionError
 from sluice.proxy import Proxy
 from sluice.server import build_server, initialization_options
 from sluice.store import Store
+
+STARTUP_ERRORS = (DownstreamError, NameCollisionError, ConfigError)
+
+
+def first_startup_error(exc: BaseException) -> BaseException | None:
+    """Find a known startup failure inside a possibly nested ExceptionGroup.
+
+    anyio wraps failures raised inside a task group, so a downstream collision
+    or transport error arrives as a group rather than itself. Without this the
+    user gets a traceback where a one-line diagnostic belongs.
+    """
+    if isinstance(exc, STARTUP_ERRORS):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for inner in exc.exceptions:
+            found = first_startup_error(inner)
+            if found is not None:
+                return found
+    return None
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -49,12 +69,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         anyio.run(serve, config)
-    except DownstreamError as exc:
-        # FR-6: fail to start rather than running in a degraded state.
-        print(f"sluice: {exc}", file=sys.stderr)
-        return 1
     except KeyboardInterrupt:
         return 130
+    except BaseException as exc:
+        # FR-6: fail to start rather than running in a degraded state.
+        known = first_startup_error(exc)
+        if known is None:
+            raise
+        print(f"sluice: {known}", file=sys.stderr)
+        return 1
     return 0
 
 

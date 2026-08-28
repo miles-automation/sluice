@@ -13,6 +13,7 @@ to re-read the named spec section, not to relax the assertion.
 import statistics
 import threading
 import time
+from pathlib import Path
 
 import duckdb
 import pytest
@@ -44,25 +45,89 @@ def _locked_connection() -> duckdb.DuckDBPyConnection:
 # --------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="module")
+def readable_files(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    """Files that a connection WITHOUT the lockdown can genuinely read.
+
+    Pointing these assertions at `/etc/hosts` made four of them pass vacuously:
+    that file is neither valid JSON nor valid Parquet, so the reads failed on
+    parsing whether or not external access was closed. A security test that
+    passes without the security control is worse than no test.
+    """
+    directory = tmp_path_factory.mktemp("readable")
+    json_path = directory / "rows.json"
+    json_path.write_text('[{"a": 1}, {"a": 2}]', encoding="utf-8")
+    parquet_path = directory / "rows.parquet"
+    open_con = duckdb.connect(":memory:")
+    open_con.execute(f"COPY (SELECT 1 AS a) TO '{parquet_path}' (FORMAT PARQUET)")
+    open_con.close()
+    return {
+        "json": str(json_path),
+        "parquet": str(parquet_path),
+        "glob": str(directory / "*"),
+    }
+
+
+def test_the_fixture_files_really_are_readable_without_the_lockdown(
+    readable_files: dict[str, str],
+) -> None:
+    """Guards the guard. If these ever stop reading cleanly, the blocked-by-
+    lockdown assertions below go back to passing for the wrong reason."""
+    con = duckdb.connect(":memory:")
+    assert con.execute(f"SELECT count(*) FROM read_json('{readable_files['json']}')").fetchall()
+    assert con.execute(
+        f"SELECT count(*) FROM read_parquet('{readable_files['parquet']}')"
+    ).fetchall()
+    assert con.execute(f"SELECT count(*) FROM glob('{readable_files['glob']}')").fetchall()
+
+
+@pytest.mark.parametrize("kind", ["json", "parquet", "glob"])
+def test_lockdown_blocks_reads_that_would_otherwise_succeed(
+    readable_files: dict[str, str], kind: str
+) -> None:
+    reader = {"json": "read_json", "parquet": "read_parquet", "glob": "glob"}[kind]
+    con = _locked_connection()
+    with pytest.raises(duckdb.PermissionException):
+        con.execute(f"SELECT * FROM {reader}('{readable_files[kind]}')").fetchall()
+
+
+def test_lockdown_blocks_our_own_read_json(readable_files: dict[str, str]) -> None:
+    """The finding that forced file-free materialization (spec 5.4).
+
+    `enable_external_access` is database-global: it applies to Sluice's own SQL
+    exactly as it applies to the agent's. The file here is valid JSON, so the
+    only thing that can stop the read is the lockdown.
+    """
+    con = _locked_connection()
+    with pytest.raises(duckdb.PermissionException):
+        con.execute(f"SELECT * FROM read_json('{readable_files['json']}')").fetchall()
+
+
+def test_lockdown_blocks_writing_data_out(tmp_path: Path) -> None:
+    con = _locked_connection()
+    with pytest.raises(duckdb.PermissionException):
+        con.execute(f"COPY (SELECT 1) TO '{tmp_path / 'exfil.csv'}'")
+
+
 @pytest.mark.parametrize(
-    "sql",
-    [
-        "SELECT * FROM read_csv('/etc/hosts')",
-        "SELECT * FROM read_parquet('/etc/hosts')",
-        "SELECT * FROM read_json('/etc/hosts')",
-        "SELECT * FROM glob('/etc/*')",
-        "ATTACH '/tmp/sluice_contract.db' AS evil",
-        "COPY (SELECT 1) TO '/tmp/sluice_contract.csv'",
-        "INSTALL httpfs",
-        "LOAD httpfs",
-        "SET enable_external_access = true",
-    ],
-    ids=lambda s: s.split()[0].lower() + "_" + str(abs(hash(s)) % 1000),
+    "sql", ["ATTACH '/tmp/sluice_contract.db' AS evil", "INSTALL httpfs", "LOAD httpfs"]
 )
-def test_engine_lockdown_blocks(sql: str) -> None:
+def test_lockdown_blocks_attach_and_extensions(sql: str) -> None:
+    con = _locked_connection()
+    with pytest.raises(duckdb.PermissionException):
+        con.execute(sql).fetchall()
+
+
+def test_configuration_is_frozen_by_the_lock() -> None:
+    """`threads` is settable on a fresh connection, so this proves the lock
+    itself. `enable_external_access = true` would not: it is refused at runtime
+    for an unrelated reason even without the lock."""
+    open_con = duckdb.connect(":memory:")
+    open_con.execute("SET threads = 3")
+    open_con.close()
     con = _locked_connection()
     with pytest.raises(duckdb.Error):
-        con.execute(sql).fetchall()
+        con.execute("SET threads = 3")
 
 
 def test_engine_lockdown_does_not_block_pragma() -> None:
@@ -70,18 +135,6 @@ def test_engine_lockdown_does_not_block_pragma() -> None:
     spec 6.1 needs all three layers rather than the engine settings alone."""
     con = _locked_connection()
     assert con.execute("PRAGMA database_list").fetchall()
-
-
-def test_lockdown_also_blocks_our_own_read_json(tmp_path: object) -> None:
-    """The finding that forced file-free materialization (spec 5.4).
-
-    `enable_external_access` is database-global: it applies to Sluice's own SQL
-    exactly as it applies to the agent's. If this ever starts passing, spec 5.4's
-    reasoning has changed and should be revisited, not worked around.
-    """
-    con = _locked_connection()
-    with pytest.raises(duckdb.Error):
-        con.execute("SELECT * FROM read_json('/tmp/whatever.ndjson')").fetchall()
 
 
 @pytest.mark.parametrize(
@@ -180,7 +233,7 @@ def _run_and_interrupt(
         try:
             executor.execute(_LONG_QUERY).fetchall()
             outcome["interrupted"] = False
-        except duckdb.Error:
+        except duckdb.InterruptException:
             outcome["interrupted"] = True
 
     started = time.monotonic()
@@ -189,7 +242,9 @@ def _run_and_interrupt(
     time.sleep(0.3)
     target.interrupt()
     worker.join(timeout=60)
-    return outcome.get("interrupted", False), time.monotonic() - started
+    assert not worker.is_alive(), "the query thread never terminated"
+    assert "interrupted" in outcome, "the query neither finished nor raised"
+    return outcome["interrupted"], time.monotonic() - started
 
 
 @pytest.mark.slow

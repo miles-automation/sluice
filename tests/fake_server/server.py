@@ -68,6 +68,7 @@ def fake_tools() -> list[types.Tool]:
         _tool("both_channels", "both channels populated and disagreeing"),
         _tool("two_text_blocks", "two blocks each holding valid JSON"),
         _tool("edge_numbers", "int64 and 2^53 boundaries, non-finite floats"),
+        _tool("rich_result", "carries result _meta and content annotations"),
         _tool("client_capabilities", "reports the capabilities the connected client advertised"),
         _tool("needs_input", "returns InputRequiredResult, completes on round two"),
         _tool(
@@ -184,6 +185,18 @@ async def _call(
                     {"big": 0, "huge": 0, "mid": 1, "f": math.inf},
                 ]
             }
+        )
+    if name == "rich_result":
+        return types.CallToolResult(
+            content=[
+                types.TextContent(
+                    type="text",
+                    text="not json",
+                    annotations=types.Annotations(audience=["user"], priority=0.7),
+                    _meta={"vendor.example/trace": "abc123"},
+                )
+            ],
+            _meta={"vendor.example/requestId": "req-42"},
         )
     if name == "client_capabilities":
         capabilities = context.session.client_capabilities

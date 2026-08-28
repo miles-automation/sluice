@@ -1,6 +1,7 @@
 """Turning a downstream result into what the agent sees (spec 4, 5.1, 8)."""
 
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from sluice.models import (
     Passthrough,
     PayloadChannel,
     SelectedPayload,
+    TablePlan,
     TableRef,
 )
 from sluice.store import Store
@@ -75,10 +77,11 @@ class Interceptor:
         else:
             selected = payload_select.select(result)
 
+        plans: list[TablePlan] = []
         tables: list[TableRef] = []
         flat_reason: str | None = None
         if reason is None:
-            tables, flat_reason = await self._materialize(mounted, scope_id, call_id, selected)
+            plans, tables, flat_reason = await self._plan(mounted, scope_id, selected)
 
         record = CallRecord(
             call_id=call_id,
@@ -99,13 +102,28 @@ class Interceptor:
         )
 
         try:
-            await self._store.record(record)
-        except Exception:
-            # FR-8 is conditional on this write. There is no fallback journal, so
-            # the honest response is to log and hand back what the tool actually
-            # returned rather than fail a call that worked.
-            logger.exception("envelope write failed for %s; passing the result through", tool)
-            return result
+            await self._store.commit_call(record, plans)
+        except Exception as exc:
+            # The tables and the envelope go in together, so a failure here has
+            # left the database untouched. Retry with no tables so the call is
+            # still recorded, and say why the tables are missing.
+            logger.exception("commit failed for %s; retrying envelope-only", tool)
+            tables = []
+            degraded = replace(
+                record,
+                flat_tables=[],
+                source_paths=[],
+                flat_reason=f"load_failed: {type(exc).__name__}: {exc}",
+            )
+            try:
+                await self._store.commit_call(degraded, [])
+            except Exception:
+                # FR-8 is conditional on the envelope write. There is no
+                # fallback journal, so hand back what the tool actually
+                # returned rather than fail a call that worked.
+                logger.exception("envelope write failed for %s; passing through", tool)
+                return result
+            record = degraded
 
         if reason is not None:
             return self._passthrough(result, reason, selected)
@@ -128,29 +146,31 @@ class Interceptor:
             update={"content": [*result.content, types.TextContent(type="text", text=note)]}
         )
 
-    async def _materialize(
-        self, mounted: str, scope_id: str, call_id: str, selected: SelectedPayload
-    ) -> tuple[list[TableRef], str | None]:
-        """Build one typed table per candidate row set.
+    async def _plan(
+        self, mounted: str, scope_id: str, selected: SelectedPayload
+    ) -> tuple[list[TablePlan], list[TableRef], str | None]:
+        """Compute every table without touching the database.
 
-        A failure here is logged and reported on the envelope row; it never
-        fails the tool call (FR-10).
+        Planning is separated from writing so the write can be one transaction.
+        A failure here is reported on the envelope row; it never fails the tool
+        call (FR-10).
         """
         if selected.channel is PayloadChannel.NONE:
-            return [], "not_json: no channel parsed as JSON"
+            return [], [], "not_json: no channel parsed as JSON"
         async with self._admission:
             try:
-                return await self._build_tables(mounted, scope_id, call_id, selected)
+                return await self._build_plans(mounted, scope_id, selected)
             except Exception as exc:
-                logger.exception("materialization failed for %s", mounted)
-                return [], f"load_failed: {type(exc).__name__}: {exc}"
+                logger.exception("planning failed for %s", mounted)
+                return [], [], f"load_failed: {type(exc).__name__}: {exc}"
 
-    async def _build_tables(
-        self, mounted: str, scope_id: str, call_id: str, selected: SelectedPayload
-    ) -> tuple[list[TableRef], str | None]:
+    async def _build_plans(
+        self, mounted: str, scope_id: str, selected: SelectedPayload
+    ) -> tuple[list[TablePlan], list[TableRef], str | None]:
         extraction = shape.extract(selected.value)
         if not extraction.row_sets:
-            return [], extraction.reason
+            return [], [], extraction.reason
+        plans: list[TablePlan] = []
         tables: list[TableRef] = []
         for row_set in extraction.row_sets:
             projection = shape.project(row_set.rows, self._limits.max_columns)
@@ -172,14 +192,19 @@ class Interceptor:
                 )
             seq = await self._store.next_table_seq(mounted)
             name = naming.table_name(mounted, scope_id, seq)
-            row_count = await self._store.create_flat_table(
-                name, specs, projection.records, call_id
+            plans.append(
+                TablePlan(
+                    name=name,
+                    source_path=row_set.source_path,
+                    columns=specs,
+                    records=projection.records,
+                )
             )
             tables.append(
                 TableRef(
                     name=name,
                     source_path=row_set.source_path,
-                    row_count=row_count,
+                    row_count=len(projection.records),
                     columns=[
                         ColumnRef(
                             name=spec.name,
@@ -191,7 +216,7 @@ class Interceptor:
                     ],
                 )
             )
-        return tables, None
+        return plans, tables, None
 
     def _build_handle(
         self, record: CallRecord, selected: SelectedPayload, tables: list[TableRef]

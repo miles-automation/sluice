@@ -35,14 +35,40 @@ async def _direct(tool: str, arguments: dict[str, object] | None = None) -> type
     return result
 
 
-@pytest.mark.parametrize("tool", ["rows", "boom", "picture", "just_text", "structured_only"])
+@pytest.mark.parametrize(
+    "tool",
+    ["rows", "boom", "picture", "just_text", "structured_only", "both_channels", "rich_result"],
+)
 async def test_result_matches_a_direct_call(proxy: Proxy, tool: str) -> None:
+    """Compares the WHOLE parsed model, not a chosen subset.
+
+    Checking only content, structured_content, and is_error let a mutation that
+    discarded every downstream result `_meta` pass the entire suite. Nothing is
+    excluded here because nothing needs to be: an extra hop through Sluice
+    leaves the serialized result byte-for-byte equal.
+    """
     through = await proxy.call(naming.mounted_name("fake", tool), {"n": 5})
     direct = await _direct(tool, {"n": 5})
     assert isinstance(through, types.CallToolResult)
-    assert through.content == direct.content
-    assert through.structured_content == direct.structured_content
-    assert through.is_error == direct.is_error
+    assert through.model_dump(mode="json") == direct.model_dump(mode="json")
+
+
+async def test_result_metadata_and_annotations_survive_the_hop(proxy: Proxy) -> None:
+    """Named separately from the parametrized case so a regression says which
+    thing was lost."""
+    result = await proxy.call(naming.mounted_name("fake", "rich_result"), None)
+    assert isinstance(result, types.CallToolResult)
+    # Subset, not equality: the SDK adds `io.modelcontextprotocol/serverInfo` to
+    # result `_meta` on the way out. What matters is that the downstream tool's
+    # own keys are still there.
+    assert result.meta is not None
+    assert result.meta["vendor.example/requestId"] == "req-42"
+    block = result.content[0]
+    assert isinstance(block, types.TextContent)
+    assert block.meta == {"vendor.example/trace": "abc123"}
+    assert block.annotations is not None
+    assert block.annotations.audience == ["user"]
+    assert block.annotations.priority == 0.7
 
 
 async def test_errors_are_forwarded_verbatim(proxy: Proxy) -> None:

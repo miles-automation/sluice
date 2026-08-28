@@ -16,13 +16,25 @@ MAX_MOUNTED_NAME = 128
 fails startup loudly rather than being truncated into a collision."""
 
 SLUG_MAX = 40
-TAG_LEN = 6
+TAG_LEN = 12
+"""48 bits. A 6-character tag is 24 bits, and a brute-force search found a real
+collision after ~3,300 candidate tool names (`a..---_` and `a-----_-_` both
+mounted as `s__a__fa29cc`), which is exactly the birthday bound.
+
+Widening lowers the probability. It does not prove injectivity, so it is not the
+fix on its own: `assert_injective` below is, because it turns a collision into a
+loud startup failure instead of one tool silently overwriting another.
+"""
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 
 class NameTooLongError(ValueError):
     """A mounted tool name would exceed MAX_MOUNTED_NAME."""
+
+
+class NameCollisionError(ValueError):
+    """Two distinct downstream tools mounted to the same name."""
 
 
 def slug(value: str) -> str:
@@ -67,3 +79,22 @@ def quote_ident(name: str) -> str:
     """Quote a SQL identifier. Applied to every generated identifier, no exceptions."""
     escaped = name.replace('"', '""')
     return f'"{escaped}"'
+
+
+def assert_injective(pairs: list[tuple[str, str]]) -> dict[str, tuple[str, str]]:
+    """Map (server, tool) pairs to mounted names, refusing any collision.
+
+    A hash tag makes collisions unlikely, never impossible. Silently letting one
+    tool overwrite another in a dict is the failure mode this exists to stop:
+    the agent would call a tool it can see and reach a different one.
+    """
+    seen: dict[str, tuple[str, str]] = {}
+    for server, tool in pairs:
+        name = mounted_name(server, tool)
+        clash = seen.get(name)
+        if clash is not None and clash != (server, tool):
+            raise NameCollisionError(
+                f"{clash[0]}/{clash[1]!r} and {server}/{tool!r} both mount as {name!r}"
+            )
+        seen[name] = (server, tool)
+    return seen
