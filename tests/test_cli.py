@@ -43,6 +43,11 @@ async def test_sluice_runs_as_a_real_stdio_server(tmp_path: Path) -> None:
         mounted = naming.mounted_name("fake", "rows")
         assert mounted in {tool.name for tool in listing.tools}
 
+        # The query tool must be mounted by `serve`, not merely by a fixture
+        # that builds the server by hand. Removing QueryTool from serve used to
+        # pass the entire suite.
+        assert "query" in {tool.name for tool in listing.tools}
+
         result = await client.call_tool(mounted, {"n": 400})
         block = result.content[0]
         assert isinstance(block, types.TextContent)
@@ -51,6 +56,21 @@ async def test_sluice_runs_as_a_real_stdio_server(tmp_path: Path) -> None:
         assert "row-0399" not in block.text
         assert result.structured_content is not None
         assert result.structured_content["tables"][0]["row_count"] == 400
+
+        # `serve` must also wire query_available, or the handle omits the hint
+        # that tells the agent the tool exists.
+        assert "`query` tool" in block.text
+
+        table = result.structured_content["tables"][0]["name"]
+        queried = await client.call_tool("query", {"sql": f'SELECT count(*) FROM "{table}"'})
+        assert queried.is_error is not True
+        queried_block = queried.content[0]
+        assert isinstance(queried_block, types.TextContent)
+        assert "| 400 |" in queried_block.text
+
+        # And the gate is live in the installed server, not just in unit tests.
+        blocked = await client.call_tool("query", {"sql": "SELECT * FROM sluice_calls"})
+        assert blocked.is_error is True
 
 
 def test_missing_config_exits_with_a_diagnostic(tmp_path: Path) -> None:

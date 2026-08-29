@@ -80,61 +80,64 @@ def _check_objects(
     sql: str, connection: duckdb.DuckDBPyConnection, allowed_objects: set[str]
 ) -> None:
     document = _serialize(sql, connection)
-    tables, functions, shows, ctes = _walk(document)
+    _validate(document, frozenset(), allowed_objects)
 
-    if shows:
-        raise QueryRejectedError(
-            "SHOW and DESCRIBE are not available; the tables you can query are named "
-            "in the handles you were given"
-        )
-    forbidden_functions = sorted(functions - set(ALLOWED_TABLE_FUNCTIONS))
-    if forbidden_functions:
-        raise QueryRejectedError(f"table function not allowed: {', '.join(forbidden_functions)}")
 
-    for schema, name in sorted(tables):
-        if name in ctes and not schema:
-            # A CTE alias appears in the AST as a base table. Allowing the names
-            # bound by this same statement keeps `WITH x AS (...) SELECT * FROM x`
-            # working without opening anything up.
-            continue
-        if schema:
-            raise QueryRejectedError(f"schema-qualified tables are not available: {schema}.{name}")
-        if name not in allowed_objects:
+def _cte_names(node: dict[str, Any]) -> frozenset[str]:
+    cte_map = node.get("cte_map")
+    if not isinstance(cte_map, dict):
+        return frozenset()
+    names = {
+        str(entry["key"])
+        for entry in cte_map.get("map") or []
+        if isinstance(entry, dict) and entry.get("key")
+    }
+    return frozenset(names)
+
+
+def _validate(node: Any, visible: frozenset[str], allowed_objects: set[str]) -> None:
+    """Check every referenced object, honouring lexical scope.
+
+    Scope is the whole point. Collecting CTE names globally and then allowing
+    any base table with a matching name is a **complete bypass**: a CTE defined
+    in a subquery whitelists that name for the entire statement, so
+
+        SELECT scope_id, flat_tables FROM sluice_calls s
+        WHERE EXISTS (WITH sluice_calls AS (SELECT 1) SELECT * FROM sluice_calls)
+
+    reads the real envelope, and the same shape reaches `sqlite_master` and
+    `duckdb_tables`. Verified against a build that collected names globally.
+
+    A CTE name only permits references inside the node that defines it, where
+    they resolve to the CTE rather than to anything real.
+    """
+    if isinstance(node, dict):
+        local = visible | _cte_names(node)
+        kind = node.get("type")
+        if kind == "BASE_TABLE":
+            schema = node.get("schema_name") or ""
+            name = str(node.get("table_name"))
+            if schema:
+                raise QueryRejectedError(
+                    f"schema-qualified tables are not available: {schema}.{name}"
+                )
+            if name not in local and name not in allowed_objects:
+                raise QueryRejectedError(
+                    f"unknown table {name!r}. You can only query tables named in the "
+                    "handles you were given in this conversation."
+                )
+        elif kind == "TABLE_FUNCTION":
+            function = node.get("function")
+            name = str(function.get("function_name")) if isinstance(function, dict) else "?"
+            if name not in ALLOWED_TABLE_FUNCTIONS:
+                raise QueryRejectedError(f"table function not allowed: {name}")
+        elif kind == "SHOW_REF":
             raise QueryRejectedError(
-                f"unknown table {name!r}. You can only query tables named in the handles "
-                "you were given in this conversation."
+                "SHOW and DESCRIBE are not available; the tables you can query are named "
+                "in the handles you were given"
             )
-
-
-def _walk(node: Any) -> tuple[set[tuple[str, str]], set[str], bool, set[str]]:
-    """Collect base tables, table functions, SHOW refs, and CTE names."""
-    tables: set[tuple[str, str]] = set()
-    functions: set[str] = set()
-    ctes: set[str] = set()
-    shows = False
-
-    def visit(value: Any) -> None:
-        nonlocal shows
-        if isinstance(value, dict):
-            kind = value.get("type")
-            if kind == "BASE_TABLE":
-                tables.add((value.get("schema_name") or "", str(value.get("table_name"))))
-            elif kind == "TABLE_FUNCTION":
-                function = value.get("function")
-                if isinstance(function, dict):
-                    functions.add(str(function.get("function_name")))
-            elif kind == "SHOW_REF":
-                shows = True
-            cte_map = value.get("cte_map")
-            if isinstance(cte_map, dict):
-                for entry in cte_map.get("map") or []:
-                    if isinstance(entry, dict) and entry.get("key"):
-                        ctes.add(str(entry["key"]))
-            for child in value.values():
-                visit(child)
-        elif isinstance(value, list):
-            for child in value:
-                visit(child)
-
-    visit(node)
-    return tables, functions, shows, ctes
+        for child in node.values():
+            _validate(child, local, allowed_objects)
+    elif isinstance(node, list):
+        for child in node:
+            _validate(child, visible, allowed_objects)

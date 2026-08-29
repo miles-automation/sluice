@@ -1,7 +1,9 @@
 """Timeout, caps, escaping, and truncation reporting (spec 6.2, 6.3)."""
 
+import contextlib
 import time
 
+import anyio
 import pytest
 
 from sluice.config import Limits
@@ -111,12 +113,72 @@ async def test_max_rows_below_one_is_rejected(store: Store) -> None:
         await QueryTool(store, Limits()).run("SELECT 1", max_rows=0)
 
 
+@pytest.mark.parametrize("cap", [100, 200, 1000])
+async def test_output_never_exceeds_the_byte_cap(store: Store, cap: int) -> None:
+    """Asserted against the cap itself, in bytes, over the whole output.
+
+    An earlier version counted characters, excluded the header and the notes,
+    and had a test that merely required "under 600" for a 200-byte cap, which
+    enshrined the violation instead of catching it."""
+    name = _seed(store, rows=40, width="z")
+    tool = QueryTool(store, Limits(query_max_bytes=cap, max_cell_bytes=64))
+    text = await tool.run(f'SELECT a, b FROM "{name}" ORDER BY a', max_rows=40)
+    assert len(text.encode("utf-8")) <= cap
+
+
+async def test_the_truncation_notice_always_survives(store: Store) -> None:
+    """The notices are the last thing in the output, so if the body is
+    mis-measured the backstop eats them and the result becomes a silently
+    truncated table. Counting characters instead of bytes does exactly that on
+    multi-byte data, and the cap alone would still look honoured."""
+    store.connection.execute('CREATE TABLE "wide_uni" (a VARCHAR)')
+    store.connection.executemany(
+        'INSERT INTO "wide_uni" VALUES (?)', [("日" * 40,) for _ in range(20)]
+    )
+    store._allowed_objects.add("wide_uni")
+    tool = QueryTool(store, Limits(query_max_bytes=600, max_cell_bytes=512))
+    text = await tool.run('SELECT a FROM "wide_uni"')
+    assert len(text.encode("utf-8")) <= 600
+    assert text.splitlines()[-1].endswith(("shown.", "….", "known.", "cap."))
+    assert "row(s) shown" in text.splitlines()[-1]
+
+
+async def test_byte_cap_counts_bytes_not_characters(store: Store) -> None:
+    """A row of multi-byte characters used to blow a 100-byte cap to 195."""
+    store.connection.execute('CREATE TABLE "uni" (a VARCHAR)')
+    store.connection.executemany('INSERT INTO "uni" VALUES (?)', [("é" * 60,) for _ in range(10)])
+    store._allowed_objects.add("uni")
+    tool = QueryTool(store, Limits(query_max_bytes=100, max_cell_bytes=512))
+    text = await tool.run('SELECT a FROM "uni"')
+    assert len(text.encode("utf-8")) <= 100
+    text.encode("utf-8")
+
+
+async def test_a_long_column_alias_cannot_blow_the_cap(store: Store) -> None:
+    """The header comes from the agent's own SQL, so it is arbitrary text. An
+    unbounded alias returned 5 KB against a 100-byte cap."""
+    name = _seed(store, rows=2)
+    alias = "z" * 5000
+    tool = QueryTool(store, Limits(query_max_bytes=100, max_cell_bytes=64))
+    text = await tool.run(f'SELECT a AS "{alias}" FROM "{name}"')
+    assert len(text.encode("utf-8")) <= 100
+
+
+async def test_headers_are_escaped_like_cells(store: Store) -> None:
+    name = _seed(store, rows=1)
+    text = await QueryTool(store, Limits()).run(f'SELECT a AS "we|ird" FROM "{name}"')
+    # Exactly one expected form. A pipe left raw in a header would break the
+    # table structure the agent is reading.
+    assert "| we\\|ird |" in text
+    assert "| we|ird |" not in text
+
+
 async def test_byte_cap_drops_rows_and_says_so(store: Store) -> None:
     name = _seed(store, rows=40, width="z")
-    tool = QueryTool(store, Limits(query_max_bytes=200, max_cell_bytes=64))
+    tool = QueryTool(store, Limits(query_max_bytes=400, max_cell_bytes=64))
     text = await tool.run(f'SELECT a, b FROM "{name}" ORDER BY a', max_rows=40)
     assert "omitted to stay under the byte cap" in text
-    assert len(text.encode("utf-8")) < 600
+    assert len(text.encode("utf-8")) <= 400
 
 
 async def test_sql_runs_unmodified_with_a_trailing_semicolon(store: Store) -> None:
@@ -170,6 +232,33 @@ async def test_a_long_query_is_interrupted_at_the_timeout(store: Store) -> None:
         await tool.run("SELECT count(*) FROM slow x, slow y, slow z WHERE x.a + y.a + z.a > 0")
     elapsed = time.monotonic() - started
     assert elapsed < 20, f"interrupt did not land promptly ({elapsed:.1f}s)"
+
+
+@pytest.mark.slow
+async def test_cancelling_the_caller_still_bounds_the_query(store: Store) -> None:
+    """Cancellation must not remove the deadline.
+
+    The watchdog used to be a task in a task group, so cancelling the call
+    cancelled the watchdog while the DuckDB worker carried on ignoring
+    cancellation. The query then ran unbounded. A threading.Timer is immune.
+    """
+    store.connection.execute("CREATE TABLE slow (a BIGINT)")
+    store.connection.executemany("INSERT INTO slow VALUES (?)", [(i,) for i in range(1000)])
+    store._allowed_objects.add("slow")
+    tool = QueryTool(store, Limits(query_timeout_seconds=1.0))
+    started = time.monotonic()
+    with anyio.move_on_after(0.05), contextlib.suppress(QueryRejectedError):
+        # Either outcome is correct and which one wins is a race: the deadline
+        # may interrupt the worker (raising) before the cancellation is
+        # delivered, or the other way round. The property under test is that it
+        # is BOUNDED, not which exception surfaces.
+        await tool.run("SELECT count(*) FROM slow x, slow y, slow z WHERE x.a + y.a + z.a > 0")
+    elapsed = time.monotonic() - started
+    # Bounded by the deadline, not by the cancellation, and nowhere near the
+    # minutes the query would take on its own.
+    assert elapsed < 15, f"cancelled query ran unbounded ({elapsed:.1f}s)"
+    # And the store still works afterwards.
+    assert store.connection.execute("SELECT count(*) FROM slow").fetchall() == [(1000,)]
 
 
 @pytest.mark.slow

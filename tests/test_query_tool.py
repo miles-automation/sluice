@@ -165,3 +165,61 @@ async def test_a_large_result_never_returns_the_whole_payload(
     assert "Additional rows exist" in text
     assert "row-0399" not in text
     assert len(text) < len(json.dumps(rows_payload(400)))
+
+
+async def test_a_nested_cte_cannot_shadow_its_way_to_the_envelope(
+    sluice_client: Client,
+) -> None:
+    """Regression for a complete gate bypass.
+
+    Collecting CTE names globally rather than by lexical scope meant a CTE
+    defined inside a subquery whitelisted that name for the whole statement.
+    This exact query returned every scope's `flat_tables` through the real
+    Sluice path.
+    """
+    await _materialize(sluice_client, "rows", {"n": 5})
+    result = await sluice_client.call_tool(
+        "query",
+        {
+            "sql": (
+                "SELECT scope_id, flat_tables FROM sluice_calls s "
+                "WHERE EXISTS (WITH sluice_calls AS (SELECT 1) SELECT * FROM sluice_calls)"
+            )
+        },
+    )
+    assert result.is_error is True
+    assert "unknown table" in _text(result)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM sqlite_master WHERE EXISTS "
+        "(WITH sqlite_master AS (SELECT 1) SELECT * FROM sqlite_master)",
+        "SELECT * FROM duckdb_tables() WHERE EXISTS "
+        "(WITH duckdb_tables AS (SELECT 1) SELECT * FROM duckdb_tables)",
+        "WITH x AS (SELECT 1) SELECT * FROM (WITH y AS (SELECT 1) SELECT 1) t, sluice_calls",
+    ],
+)
+async def test_shadowing_variants_are_all_rejected(sluice_client: Client, sql: str) -> None:
+    result = await sluice_client.call_tool("query", {"sql": sql})
+    assert result.is_error is True
+
+
+async def test_legitimate_ctes_still_work_through_the_product_path(
+    sluice_client: Client,
+) -> None:
+    """The scoping fix must not cost the agent ordinary CTEs."""
+    handle = await _materialize(sluice_client, "rows", {"n": 30})
+    table = handle["tables"][0]["name"]  # type: ignore[index]
+    result = await sluice_client.call_tool(
+        "query",
+        {
+            "sql": (
+                f'WITH high AS (SELECT score FROM "{table}" WHERE score > 0) '
+                "SELECT count(*) AS n FROM high"
+            )
+        },
+    )
+    assert result.is_error is not True
+    assert "| 3" in _text(result) or "| 2" in _text(result)

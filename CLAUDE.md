@@ -87,8 +87,13 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
 - **Sluice owns type inference** (§5.5), because of the above. Never infer
   `TIMESTAMP` from a string; mixed scalars become `VARCHAR`, never `JSON`
   (`median()` on `JSON` returns a lexicographic answer).
-- **Read-only means three layers** (§6.1): statement gate, engine lockdown,
-  catalog denylist. `SELECT * FROM read_csv('/etc/passwd')` is a SELECT.
+- **Read-only means three layers** (§6.1): statement gate, engine lockdown, and
+  an **allowlist** over the parsed AST. Not a denylist: an allowlist is closed by
+  construction. The statement gate does NOT stop `SHOW`, `DESCRIBE`, or
+  `PRAGMA` — DuckDB types all of them as SELECT. CTE names are honoured by
+  lexical scope; collecting them globally is a complete bypass.
+- **The physical `sluice_calls` is never queryable** (§3.3). It lists every
+  scope's tables. Each scope gets a filtered view instead.
 - **No table discovery** (§12). Enumeration is what isolation blocks. Do not add
   a `sluice_schema` view back.
 - **Sluice never answers an elicitation** (§11). Round trips are relayed

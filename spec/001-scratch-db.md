@@ -518,8 +518,18 @@ And it would not have been enough, because layer 1 does not catch what revision
 `SELECT`**. The claim that the statement gate stops `PRAGMA` was false. Only the
 object check stops any of them.
 
-CTE names bound by the statement itself appear in the AST as base tables and are
-allowed, so `WITH x AS (...) SELECT * FROM x` still works.
+CTE names bound by the statement appear in the AST as base tables and are
+allowed, so `WITH x AS (...) SELECT * FROM x` still works. **They must be honoured
+by lexical scope.** Collecting them for the whole statement is a complete bypass:
+a CTE defined inside a subquery whitelists that name everywhere, so
+
+```sql
+SELECT scope_id, flat_tables FROM sluice_calls s
+WHERE EXISTS (WITH sluice_calls AS (SELECT 1) SELECT * FROM sluice_calls)
+```
+
+reads the real envelope, and the same shape reaches `sqlite_master` and
+`duckdb_tables`. Verified against a build that collected globally.
 
 ### 6.2 Timeout
 
@@ -557,7 +567,15 @@ other.
   `query_max_bytes` (default 64 KB). All truncation cuts on character boundaries;
   slicing UTF-8 at a byte offset produces invalid text.
 - Every truncation is stated. A silently truncated result is a correctness bug in
-  a tool that sells determinism.
+  a tool that sells determinism. The cap is counted **in bytes over the whole
+  output**, header and notices included, and space is reserved so the notices
+  cannot themselves be truncated away.
+- The gate runs on the worker thread, under the same deadline as the query.
+  `extract_statements` and `json_serialize_sql` are synchronous DuckDB calls, so
+  running them on the event loop blocks the whole server on pathological SQL.
+- The deadline is a plain timer, not a task in a task group. A task-group
+  watchdog is cancelled along with everything else when the caller cancels,
+  while the DuckDB worker ignores cancellation, leaving the query unbounded.
 
 ### 6.4 Recovering a full payload
 
@@ -788,6 +806,13 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
 24. `query` raised its failures inside an anyio task group, so they arrived as
     an `ExceptionGroup` that slipped past the caller's `except` and crashed the
     tool call rather than returning an error result (§6.2).
+25. CTE names were collected for the whole statement rather than by lexical
+    scope, which was a complete bypass of the allowlist (§6.1).
+26. The byte cap counted characters and excluded the header and notices, so a
+    100-byte cap returned 195 bytes of Unicode and 5 KB for one long alias
+    (§6.3).
+27. The deadline lived in a task group, so cancelling the caller removed it and
+    the query ran unbounded (§6.2).
 
 ## 14. Open questions
 

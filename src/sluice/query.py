@@ -1,6 +1,7 @@
 """The `query` tool: gate, timeout, caps, rendering (spec 6)."""
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -68,22 +69,38 @@ def escape_cell(value: object, max_bytes: int) -> tuple[str, bool]:
     return (rendered + "…" if cut else rendered), cut
 
 
+NOTES_RESERVE = 256
+"""Bytes held back from the body so the truncation notices always fit. A result
+that silently dropped its own "rows were omitted" line would be the exact bug
+the notices exist to prevent."""
+
+
+def _size(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
 def render(outcome: QueryOutcome, limits: Limits) -> str:
     """A markdown table plus an explicit account of everything withheld.
 
-    Every truncation is stated. A silently truncated result is a correctness bug
-    in a tool whose whole claim is that its answers are exact.
+    The cap is counted in **bytes**, over the whole output including the header
+    and the notes. Counting characters and excluding the header let a 100-byte
+    cap return 195 bytes of Unicode, and a single long column alias return 5 KB.
     """
     lines: list[str] = []
+    shown = 0
     if not outcome.columns:
         lines.append("(no columns)")
     else:
-        header = "| " + " | ".join(outcome.columns) + " |"
-        divider = "| " + " | ".join("---" for _ in outcome.columns) + " |"
+        # Headers are escaped and truncated like any other cell: they come from
+        # the agent's own SQL aliases, which are arbitrary text.
+        headers = [escape_cell(name, limits.max_cell_bytes)[0] for name in outcome.columns]
+        header = "| " + " | ".join(headers) + " |"
+        divider = "| " + " | ".join("---" for _ in headers) + " |"
         lines.append(header)
         lines.append(divider)
-        used = len(header) + len(divider) + 2
-        for row in outcome.rows:
+        used = _size(header) + _size(divider) + 2
+        budget = max(limits.query_max_bytes - NOTES_RESERVE, 0)
+        for index, row in enumerate(outcome.rows):
             cells = []
             for value in row:
                 rendered, cut = escape_cell(value, limits.max_cell_bytes)
@@ -91,13 +108,13 @@ def render(outcome: QueryOutcome, limits: Limits) -> str:
                     outcome.truncated_cells += 1
                 cells.append(rendered)
             line = "| " + " | ".join(cells) + " |"
-            if used + len(line) + 1 > limits.query_max_bytes:
-                outcome.dropped_rows = len(outcome.rows) - len(lines) + 2
+            if used + _size(line) + 1 > budget:
+                outcome.dropped_rows = len(outcome.rows) - index
                 break
-            used += len(line) + 1
+            used += _size(line) + 1
             lines.append(line)
+            shown += 1
 
-    shown = max(len(lines) - 2, 0) if outcome.columns else 0
     notes: list[str] = [f"{shown} row(s) shown."]
     if outcome.more_rows:
         # `max_rows + 1` proves at least one more row exists. It cannot give a
@@ -107,9 +124,10 @@ def render(outcome: QueryOutcome, limits: Limits) -> str:
         notes.append(f"{outcome.dropped_rows} row(s) omitted to stay under the byte cap.")
     if outcome.truncated_cells > 0:
         notes.append(f"{outcome.truncated_cells} cell(s) truncated, marked with a trailing ….")
-    lines.append("")
-    lines.append(" ".join(notes))
-    return "\n".join(lines)
+    text = "\n".join([*lines, "", " ".join(notes)])
+    # Backstop: whatever happened above, the result never exceeds the cap.
+    bounded, _ = truncate_to_bytes(text, limits.query_max_bytes)
+    return bounded
 
 
 class QueryTool:
@@ -121,16 +139,7 @@ class QueryTool:
 
     async def run(self, sql: str, max_rows: int | None = None) -> str:
         limit = self._resolve_limit(max_rows)
-        cursor = self._store.connection.cursor()
-        try:
-            check(sql, cursor, self._store.allowed_objects)
-        except QueryRejectedError:
-            cursor.close()
-            raise
-        try:
-            outcome = await self._execute(cursor, sql, limit)
-        finally:
-            cursor.close()
+        outcome = await self._execute(sql, limit)
         return render(outcome, self._limits)
 
     def _resolve_limit(self, max_rows: int | None) -> int:
@@ -140,56 +149,59 @@ class QueryTool:
             raise QueryRejectedError(f"max_rows must be at least 1, got {max_rows}")
         return min(max_rows, self._limits.query_max_rows)
 
-    async def _execute(
-        self, cursor: duckdb.DuckDBPyConnection, sql: str, limit: int
-    ) -> QueryOutcome:
-        """Execute the SQL unmodified, with a watchdog on this exact connection.
+    async def _execute(self, sql: str, limit: int) -> QueryOutcome:
+        """Gate and run on a connection of this query's own.
 
-        Unmodified matters: wrapping as `SELECT * FROM (<sql>) LIMIT n+1` breaks
-        on trailing semicolons and on duplicate output column names, both of
-        which the gate accepts. Rejecting SQL the agent was told is legal is
-        worse than the cap it would buy.
+        Two things are deliberate.
 
-        The watchdog interrupts `cursor`, which is the connection the query is
-        actually running on. Interrupting its parent does nothing, measured, and
-        would look like a working timeout because short queries finish anyway.
+        The deadline is a `threading.Timer`, not a task in a task group. A task
+        group's watchdog is cancelled along with everything else when the client
+        cancels the call, while the DuckDB worker ignores cancellation entirely,
+        so the query then ran unbounded. A timer is immune to that: a cancelled
+        query is still interrupted no later than the deadline.
+
+        The gate runs **inside** the worker. `extract_statements` and
+        `json_serialize_sql` are synchronous DuckDB calls, so running them on the
+        event loop blocked the whole server on pathological SQL, and running them
+        before the deadline started left them unbounded.
         """
+        cursor = self._store.connection.cursor()
+        allowed = self._store.allowed_objects
         outcome = QueryOutcome()
 
         def blocking() -> tuple[list[str], list[tuple[Any, ...]]]:
+            check(sql, cursor, allowed)
             executed = cursor.execute(sql)
             description = executed.description or []
-            columns = [str(column[0]) for column in description]
-            return columns, executed.fetchmany(limit + 1)
+            return [str(column[0]) for column in description], executed.fetchmany(limit + 1)
 
         failure: QueryRejectedError | None = None
         columns: list[str] = []
         rows: list[tuple[Any, ...]] = []
+        timer = threading.Timer(self._limits.query_timeout_seconds, cursor.interrupt)
+        timer.daemon = True
+        timer.start()
+        try:
+            columns, rows = await anyio.to_thread.run_sync(blocking)
+        except QueryRejectedError as exc:
+            failure = exc
+        except duckdb.InterruptException:
+            failure = QueryRejectedError(
+                f"query exceeded the {self._limits.query_timeout_seconds}s timeout "
+                "and was interrupted"
+            )
+        except duckdb.Error as exc:
+            # Never an empty success: a failing query has to look like a
+            # failure, not like a result set with no rows.
+            failure = QueryRejectedError(f"{type(exc).__name__}: {exc}")
+        finally:
+            timer.cancel()
+            # `abandon_on_cancel` is left at its default, so the worker has
+            # finished by the time this runs even when the caller cancelled.
+            # Closing the cursor out from under a live thread would be worse
+            # than any timeout.
+            cursor.close()
 
-        async with anyio.create_task_group() as group:
-
-            async def watchdog() -> None:
-                await anyio.sleep(self._limits.query_timeout_seconds)
-                cursor.interrupt()
-
-            group.start_soon(watchdog)
-            try:
-                columns, rows = await anyio.to_thread.run_sync(blocking)
-            except duckdb.InterruptException:
-                failure = QueryRejectedError(
-                    f"query exceeded the {self._limits.query_timeout_seconds}s timeout "
-                    "and was interrupted"
-                )
-            except duckdb.Error as exc:
-                # Never an empty success: a failing query has to look like a
-                # failure, not like a result set with no rows.
-                failure = QueryRejectedError(f"{type(exc).__name__}: {exc}")
-            finally:
-                group.cancel_scope.cancel()
-
-        # Raised out here, not inside the task group. anyio wraps anything
-        # raised within a group into an ExceptionGroup, which slips straight
-        # past the caller's `except QueryRejectedError` and crashes the tool call.
         if failure is not None:
             raise failure
 

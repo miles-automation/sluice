@@ -157,7 +157,7 @@ strings stay `VARCHAR`, and a mixed int-and-float column with an integer past
 2^53 is marked non-exact. `test_shape.py` covers every fake-server tool;
 `two_arrays()` yields **two** tables and `mixed_elements()` yields none.
 
-### M4. The `query` tool  [COMPLETE]
+### M4. The `query` tool  [IMPLEMENTED, REVIEW PENDING]
 
 `query.py`. Three-layer gate, per-in-flight-query connection, watchdog interrupt
 on that exact object, `fetchmany`, defined markdown escaping, character-safe
