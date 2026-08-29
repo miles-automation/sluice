@@ -63,10 +63,15 @@ async def sluice_client(fake_config: Config, store: Store) -> AsyncIterator[Clie
     unguarded, and a mutation stripping result `_meta` inside the interceptor or
     the upstream server passed the entire suite.
     """
+    from sluice.query import QueryTool
     from sluice.server import build_server
 
     async with AsyncExitStack() as stack:
         started = await Proxy.start(fake_config, stack)
-        server = build_server(started, Interceptor(store, fake_config.limits))
+        server = build_server(
+            started,
+            Interceptor(store, fake_config.limits, query_available=True),
+            QueryTool(store, fake_config.limits),
+        )
         async with Client(server) as client:
             yield client

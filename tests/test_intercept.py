@@ -11,7 +11,7 @@ from sluice.config import Limits
 from sluice.intercept import Interceptor
 from sluice.models import PayloadChannel
 from sluice.proxy import Proxy
-from sluice.store import ENVELOPE_TABLE, Store
+from sluice.store import ENVELOPE_TABLE, Store, scope_view_name
 
 pytestmark = pytest.mark.anyio
 
@@ -63,7 +63,11 @@ async def test_structured_content_mirrors_the_handle(
 ) -> None:
     result = await _run(interceptor, proxy, "rows", {"n": 10})
     assert result.structured_content is not None
-    assert result.structured_content["envelope_table"] == ENVELOPE_TABLE
+    # The scope-filtered view, never the physical envelope: that table holds
+    # `flat_tables` for every scope, so exposing it would hand any conversation
+    # every other one's table names.
+    scope_id = result.structured_content["scope_id"]
+    assert result.structured_content["envelope_table"] == scope_view_name(scope_id)
     assert result.structured_content["source_channel"] == "text"
     assert result.structured_content["call_id"]
     assert result.structured_content["scope_id"]

@@ -1,6 +1,6 @@
 # Spec 001: Scratch DB for MCP tool results
 
-Status: draft (revision 4, post-M0, post-review, post-M2)
+Status: draft (revision 5, post-M0, post-review, post-M4)
 Date: 2026-08-28
 Implements: intent/001-scratch-db.md
 Evidence: plan/001-notes-m0.md
@@ -212,7 +212,17 @@ question entirely: there is no shared view for a late-finishing call to claim.
 The agent reaches a table by the name in its own handle. That is the whole
 addressing model.
 
-### 3.3 No schema view
+### 3.3 The envelope is not directly queryable
+
+`sluice_calls` holds `flat_tables` for **every** scope. Exposing it to `query`
+would hand any conversation the table names of every other one and defeat §12
+with a single `SELECT`, so it is never in the allowlist.
+
+Each scope instead gets a view, `sluice_calls__<scope_id>`, filtered to that
+scope and created inside the same transaction as the call it belongs to. The
+handle names the view, and recovery (§6.4) goes through it.
+
+### 3.4 No schema view
 
 Revision 1 defined `sluice_schema` for discovery. It is removed. Enumeration is
 what §12's isolation has to block, so a view whose purpose is enumeration cannot
@@ -490,10 +500,26 @@ Verified **not** blocked: `PRAGMA database_list`, which only layer 1 stops.
 **This lockdown is why §5.4 cannot use `read_json`.** Do not "fix" a
 materialization failure by relaxing it.
 
-**Layer 3, catalog denylist.** Reject SQL referencing `duckdb_tables`,
-`duckdb_columns`, `duckdb_views`, `information_schema`, `pg_catalog`, or
-`sqlite_master`. This enforces FR-18 and §12. It is a denylist and therefore
-weaker than the other two layers; §12 states the residual risk.
+**Layer 3, object allowlist.** Parse the statement with DuckDB's own
+`json_serialize_sql` and require that every referenced object is one Sluice
+created: a flat table, or the caller's envelope view. Reject every table
+function, every schema-qualified name, and every `SHOW`/`DESCRIBE` reference.
+Anything that cannot be serialized to an AST is rejected too, which fails closed
+and removes the whole `PRAGMA` family without naming any of them.
+
+Revision 4 specified a **denylist** of catalog names. That was wrong twice over.
+A denylist has to enumerate `duckdb_tables()`, `duckdb_columns()`,
+`information_schema`, `pg_catalog`, `sqlite_master`, and whatever the next
+DuckDB release adds; an allowlist is closed by construction.
+
+And it would not have been enough, because layer 1 does not catch what revision
+4 assumed. Measured on DuckDB 1.5.5, `extract_statements` types **`SHOW TABLES`,
+`SHOW ALL TABLES`, `DESCRIBE x`, `SUMMARIZE x`, and `PRAGMA show_tables` all as
+`SELECT`**. The claim that the statement gate stops `PRAGMA` was false. Only the
+object check stops any of them.
+
+CTE names bound by the statement itself appear in the AST as base tables and are
+allowed, so `WITH x AS (...) SELECT * FROM x` still works.
 
 ### 6.2 Timeout
 
@@ -523,8 +549,10 @@ other.
   count, and the output must say "additional rows exist" rather than a number
   Sluice cannot know without a second execution.
 - Render as a markdown table. Escaping is defined, not left to the implementer:
-  `|` becomes `\|`, newlines become `\n`, `NULL` renders as the literal `NULL`
-  and an empty string as `''` so the two are distinguishable.
+  `\` becomes `\\`, `|` becomes `\|`, newlines become `\n`, SQL `NULL`
+  renders as the literal `NULL`, and an empty string as `''` so those two are
+  distinguishable. SQL `NULL` and the *string* `"NULL"` render identically; that
+  ambiguity is accepted and stated rather than hidden.
 - Per-cell truncation at `max_cell_bytes` (default 512), total output at
   `query_max_bytes` (default 64 KB). All truncation cuts on character boundaries;
   slicing UTF-8 at a byte offset produces invalid text.
@@ -537,8 +565,8 @@ There is no `fetch` tool. Recovery is channel-aware, because `result_text` holds
 only the prose when the payload came from `structuredContent`:
 
 ```sql
-SELECT result_structured FROM sluice_calls WHERE call_id = '...'   -- structured
-SELECT result_blocks     FROM sluice_calls WHERE call_id = '...'   -- text
+SELECT result_structured FROM sluice_calls__<scope> WHERE call_id = '...'  -- structured
+SELECT result_blocks     FROM sluice_calls__<scope> WHERE call_id = '...'  -- text
 ```
 
 `max_cell_bytes` (512 by default) truncates these long before the 64 KB output
@@ -546,7 +574,7 @@ cap, so a single select does not recover a large payload. Recovery is chunked an
 the handle documents the pattern:
 
 ```sql
-SELECT substr(result_text, 1, 4000) FROM sluice_calls WHERE call_id = '...'
+SELECT substr(result_text, 1, 4000) FROM sluice_calls__<scope> WHERE call_id = '...'
 ```
 
 `substr` on `VARCHAR` counts characters, so chunks are character-safe by
@@ -751,6 +779,15 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
     leave orphaned tables the envelope did not know about (FR-10a).
 20. An 8-character scope tag was 32 bits, not capability strength, for the one
     mechanism separating conversations. Now 128 (§12).
+21. Layer 1 was said to stop `PRAGMA`. It does not: `SHOW TABLES`, `DESCRIBE`,
+    `SUMMARIZE`, and `PRAGMA show_tables` all type as `SELECT` (§6.1).
+22. Layer 3 was a catalog denylist, which cannot be complete. It is now an
+    allowlist over the parsed AST (§6.1).
+23. The envelope was directly queryable and lists every scope's tables, which
+    defeated §12 with one `SELECT`. Per-scope views instead (§3.3).
+24. `query` raised its failures inside an anyio task group, so they arrived as
+    an `ExceptionGroup` that slipped past the caller's `except` and crashed the
+    tool call rather than returning an error result (§6.2).
 
 ## 14. Open questions
 

@@ -9,6 +9,7 @@ import anyio
 import duckdb
 
 from sluice.config import Limits
+from sluice.gate import SCOPE_PATTERN
 from sluice.infer import ColumnSpec, coerce
 from sluice.models import CallRecord, TablePlan
 from sluice.naming import quote_ident
@@ -28,6 +29,17 @@ LOCKDOWN_TEMPLATE: tuple[str, ...] = (
 )
 
 ENVELOPE_TABLE = "sluice_calls"
+"""The physical envelope. Never queryable by the agent.
+
+It holds `flat_tables` for every scope, so exposing it would hand any
+conversation the table names of every other one and defeat spec 12 with a single
+SELECT. Each scope gets a filtered view instead (`scope_view_name`), and the
+gate's allowlist admits the views, never this."""
+
+
+def scope_view_name(scope_id: str) -> str:
+    return f"{ENVELOPE_TABLE}__{scope_id}"
+
 
 ENVELOPE_DDL = f"""
 CREATE TABLE {ENVELOPE_TABLE} (
@@ -79,6 +91,9 @@ class Store:
         self._lock = anyio.Lock()
         self._call_sequences: dict[str, int] = {}
         self._table_sequences: dict[str, int] = {}
+        # Exactly the objects the gate will admit. Nothing else in the catalog
+        # is reachable, whether or not anyone thought to deny it by name.
+        self._allowed_objects: set[str] = set()
 
     @classmethod
     def open(cls, limits: Limits) -> Self:
@@ -93,6 +108,10 @@ class Store:
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
         return self._connection
+
+    @property
+    def allowed_objects(self) -> set[str]:
+        return set(self._allowed_objects)
 
     def close(self) -> None:
         self._connection.close()
@@ -145,10 +164,28 @@ class Store:
             for plan in plans:
                 self._create_flat(plan, record.call_id)
             self._insert_envelope(record)
+            view = self._ensure_scope_view(record.scope_id)
         except Exception:
             self._connection.execute("ROLLBACK")
             raise
         self._connection.execute("COMMIT")
+        # Only after the commit succeeds: an object the agent can name has to be
+        # one that actually exists.
+        self._allowed_objects.update(plan.name for plan in plans)
+        self._allowed_objects.add(view)
+
+    def _ensure_scope_view(self, scope_id: str) -> str:
+        if not SCOPE_PATTERN.match(scope_id):
+            # Scope ids are hex by construction, and this value is interpolated
+            # into SQL. Refuse anything that is not, rather than trusting the
+            # caller.
+            raise ValueError(f"scope id is not 32 hex characters: {scope_id!r}")
+        name = scope_view_name(scope_id)
+        self._connection.execute(
+            f"CREATE OR REPLACE VIEW {quote_ident(name)} AS "
+            f"SELECT * FROM {quote_ident(ENVELOPE_TABLE)} WHERE scope_id = '{scope_id}'"
+        )
+        return name
 
     def _insert_envelope(self, record: CallRecord) -> None:
         payload = record.payload

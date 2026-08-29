@@ -6,7 +6,7 @@ from typing import Any
 from mcp import types
 
 from sluice.models import Handle, TableRef
-from sluice.store import ENVELOPE_TABLE
+from sluice.store import scope_view_name
 
 QUERY_HINT = "Run SQL over this with the `query` tool."
 
@@ -43,7 +43,8 @@ def render_text(handle: Handle) -> str:
     if not handle.tables:
         reason = handle.flat_reason or "no tabular rows found"
         lines.append(f"no table: {reason}")
-    lines.append(f"envelope: {ENVELOPE_TABLE} WHERE call_id = '{handle.call_id}'")
+    envelope = scope_view_name(handle.scope_id)
+    lines.append(f"envelope: {envelope} WHERE call_id = '{handle.call_id}'")
     if handle.preview_complete:
         lines.append(f"preview (complete, {handle.byte_size} B):")
     elif handle.preview_rows is not None and handle.total_rows is not None:
@@ -68,7 +69,7 @@ def render_structured(handle: Handle) -> dict[str, Any]:
     return {
         "call_id": handle.call_id,
         "scope_id": handle.scope_id,
-        "envelope_table": ENVELOPE_TABLE,
+        "envelope_table": scope_view_name(handle.scope_id),
         "source_channel": str(handle.channel),
         "channel_conflict": handle.conflict,
         "tables": [

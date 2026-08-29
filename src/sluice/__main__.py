@@ -14,6 +14,7 @@ from sluice.errors import DownstreamError
 from sluice.intercept import Interceptor
 from sluice.naming import NameCollisionError
 from sluice.proxy import Proxy
+from sluice.query import QueryTool
 from sluice.server import build_server, initialization_options
 from sluice.store import Store
 
@@ -48,8 +49,8 @@ async def serve(config: Config) -> None:
     async with AsyncExitStack() as stack:
         proxy = await Proxy.start(config, stack)
         store = stack.enter_context(Store.open(config.limits))
-        interceptor = Interceptor(store, config.limits)
-        server = build_server(proxy, interceptor)
+        interceptor = Interceptor(store, config.limits, query_available=True)
+        server = build_server(proxy, interceptor, QueryTool(store, config.limits))
         async with stdio_server() as (read_stream, write_stream):
             await server.run(read_stream, write_stream, initialization_options(server))  # type: ignore[arg-type]
 

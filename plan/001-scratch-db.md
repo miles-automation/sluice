@@ -157,7 +157,7 @@ strings stay `VARCHAR`, and a mixed int-and-float column with an integer past
 2^53 is marked non-exact. `test_shape.py` covers every fake-server tool;
 `two_arrays()` yields **two** tables and `mixed_elements()` yields none.
 
-### M4. The `query` tool
+### M4. The `query` tool  [COMPLETE]
 
 `query.py`. Three-layer gate, per-in-flight-query connection, watchdog interrupt
 on that exact object, `fetchmany`, defined markdown escaping, character-safe
@@ -325,7 +325,9 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 | `test_handle.py` | handle carries channel, scope, every table with path, renamed columns, and the `exact` flags; `structuredContent` mirrors it; complete-preview rule below budget; `channel_conflict` surfaced |
 | `test_proxy.py` | `paged()` mounts the page-2 tool; the whole tool object survives cloning including `annotations.destructiveHint`; `needs_input()` completes across a relayed round trip; Sluice advertises no sampling or elicitation capability |
 | `test_errors.py` | all four failure classes produce distinct `failure_class` values and correct upstream results; `bad_schema()` produces an `output_schema` failure rather than an unhandled `RuntimeError` |
-| `test_query_safety.py` | the M4 rejection table including layer-3 catalog blocks; the must-succeed list |
+| `test_query_safety.py` | every enumeration and filesystem vector rejected **with its specific reason**, so nothing passes because the parser choked on it; `SHOW`/`DESCRIBE`/`SUMMARIZE`/`PRAGMA`, which layer 1 types as SELECT; a test pinning that layer 1 alone would pass them; rejection messages that name no other table; 16 legal queries that must still run |
+| `test_query_tool.py` | the tool mounted read-only; the handle's table reachable; median and GROUP BY matching the source exactly; envelope recovery through the scope view; the physical envelope unreachable; rejections are `isError`, never an empty result set; a large result never returns the payload |
+| `test_concurrency.py` | a timing-out query leaves a concurrent query intact; leaves a concurrent write intact; four concurrent queries all return |
 | `test_query_limits.py` | row cap reported as "additional rows exist" and never as a count; byte and cell caps; timeout; character-boundary truncation on multi-byte UTF-8; defined markdown escaping for `|`, newlines, NULL, and empty string |
 | `test_passthrough.py` | whole parsed model equal to a direct call for every shape; result `_meta` and content annotations survive; the same asserted through the **full product path** (`build_server` + interceptor), not only `Proxy.call`; oversize passthrough leaves payload columns NULL |
 | `test_concurrency.py` | a timed-out `query` leaves a concurrent write intact and its own connection closed; two concurrent queries do not interrupt each other; `max_concurrent_materializations` actually gates parsing |
