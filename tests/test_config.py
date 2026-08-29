@@ -71,6 +71,32 @@ def test_rejected_limits(field: str, value: int) -> None:
         parse_config({**MINIMAL, "limits": {field: value}})
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        # TOML supplies these types happily. Before type checking,
+        # max_payload_bytes = "100" raised an uncaught TypeError from the range
+        # comparison, and duckdb_max_memory = 5 an uncaught AttributeError.
+        ("max_payload_bytes", "100", "must be an integer"),
+        ("max_columns", True, "must be an integer"),
+        ("preview_rows", 2.5, "must be an integer"),
+        ("query_timeout_seconds", True, "must be a number"),
+        ("query_timeout_seconds", "10", "must be a number"),
+        ("query_timeout_seconds", float("nan"), "must be finite"),
+        ("query_timeout_seconds", float("inf"), "must be finite"),
+        ("duckdb_max_memory", 5, "must be a string"),
+    ],
+)
+def test_rejected_limit_types(field: str, value: object, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        parse_config({**MINIMAL, "limits": {field: value}})
+
+
+def test_a_fractional_timeout_is_still_allowed() -> None:
+    """Type checking must not narrow what was legitimately accepted."""
+    assert parse_config({**MINIMAL, "limits": {"query_timeout_seconds": 2.5}})
+
+
 def test_limits_are_validated_when_built_in_code_too() -> None:
     """Validation lives on the dataclass, not only in the parser, so a Limits
     constructed by a caller cannot smuggle a deadlock in."""

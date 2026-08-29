@@ -400,7 +400,6 @@ async def test_no_orphan_tables_when_materialization_fails(
 ) -> None:
     """Tables and the envelope go in as one transaction, so a failure leaves the
     database untouched rather than leaving tables nothing points at."""
-    from sluice import intercept as intercept_module
 
     def explode(*args: object, **kwargs: object) -> None:
         raise RuntimeError("insert blew up")
@@ -414,11 +413,14 @@ async def test_no_orphan_tables_when_materialization_fails(
     ).fetchall()
     assert tables == []
     # The call is still recorded, and the handle says why there is no table.
-    row = store.connection.execute(
-        f"SELECT flat_tables, flat_reason FROM {ENVELOPE_TABLE}"
+    flat_tables, source_paths, flat_reason = store.connection.execute(
+        f"SELECT flat_tables, source_paths, flat_reason FROM {ENVELOPE_TABLE}"
     ).fetchall()[0]
-    assert row[0] == []
-    assert row[1].startswith("load_failed")
+    assert flat_tables == []
+    # flat_tables and source_paths describe the same tables, so a degraded
+    # envelope keeping paths for tables that were rolled back is a lie about
+    # what the database holds.
+    assert source_paths == []
+    assert flat_reason.startswith("load_failed")
     assert result.structured_content is not None
     assert result.structured_content["tables"] == []
-    assert intercept_module is not None

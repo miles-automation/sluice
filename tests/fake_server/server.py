@@ -140,6 +140,7 @@ async def _call(
         return types.CallToolResult(
             content=[types.TextContent(type="text", text="downstream says no")],
             is_error=True,
+            _meta={"vendor.example/errorCode": "E_NOPE"},
         )
     if name == "picture":
         return types.CallToolResult(
@@ -149,7 +150,8 @@ async def _call(
                     data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
                     mime_type="image/png",
                 )
-            ]
+            ],
+            _meta={"vendor.example/assetId": "img-7"},
         )
     if name == "two_arrays":
         return _ok(

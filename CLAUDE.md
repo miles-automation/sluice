@@ -62,8 +62,10 @@ client --stdio--> server.py  tools/list = downstream union + query
 
 Data model: one `sluice_calls` envelope row per call. Plus one typed table per
 candidate array, never appended to, named
-`<server>__<tool>__<hash>__<scope>__<seq>` with a `__latest` view on the highest
-`seq`.
+`<server>__<tool>__<hash>__<scope>__<seq>`. There is no `__latest` view: with
+scope minted per call it would name one table, and reaching a table whose name
+you lost is discovery, which isolation blocks. Tables and the envelope row are
+written in one transaction.
 
 Pinned: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 1.5.5. Every normative
 claim in the spec is against those; do not generalize across revisions.

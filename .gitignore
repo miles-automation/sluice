@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 sluice.toml
 uv.lock
+.coverage
+coverage.xml
+htmlcov/

@@ -1,8 +1,10 @@
 import sys
 from collections.abc import AsyncIterator, Iterator
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import pytest
+from mcp import Client
 
 from sluice.config import Config, Limits, ServerConfig
 from sluice.intercept import Interceptor
@@ -50,3 +52,21 @@ def store() -> Iterator[Store]:
 @pytest.fixture
 def interceptor(store: Store) -> Interceptor:
     return Interceptor(store, Limits())
+
+
+@pytest.fixture
+async def sluice_client(fake_config: Config, store: Store) -> AsyncIterator[Client]:
+    """A client talking to the real Sluice server WITH interception on.
+
+    Distinct from the `proxy` fixture on purpose: whole-model passthrough
+    assertions made only against `Proxy.call` left the rest of the product path
+    unguarded, and a mutation stripping result `_meta` inside the interceptor or
+    the upstream server passed the entire suite.
+    """
+    from sluice.server import build_server
+
+    async with AsyncExitStack() as stack:
+        started = await Proxy.start(fake_config, stack)
+        server = build_server(started, Interceptor(store, fake_config.limits))
+        async with Client(server) as client:
+            yield client

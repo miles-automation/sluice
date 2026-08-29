@@ -109,6 +109,9 @@ class Interceptor:
             # still recorded, and say why the tables are missing.
             logger.exception("commit failed for %s; retrying envelope-only", tool)
             tables = []
+            # flat_tables and source_paths are parallel arrays describing the
+            # same tables, so clearing one without the other leaves an envelope
+            # claiming paths for tables that do not exist.
             degraded = replace(
                 record,
                 flat_tables=[],

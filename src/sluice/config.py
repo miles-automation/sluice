@@ -1,5 +1,6 @@
 """Configuration loading (spec 7)."""
 
+import math
 import os
 import re
 import tomllib
@@ -57,17 +58,41 @@ class Limits:
         # checked too. `max_concurrent_materializations = 0` is the sharp one:
         # a zero-sized admission semaphore blocks every materialization forever
         # rather than failing.
+        #
+        # Types are checked before values because TOML hands us strings, floats,
+        # and booleans that reach here happily: `max_payload_bytes = "100"` used
+        # to raise an uncaught TypeError from the comparison below, and
+        # `max_columns = true` was accepted because bool subclasses int.
+        for name in (*_POSITIVE, *_NON_NEGATIVE):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ConfigError(
+                    f"[limits].{name} must be an integer, got {type(value).__name__}: {value!r}"
+                )
         for name in _POSITIVE:
-            value = getattr(self, name)
-            if value < 1:
-                raise ConfigError(f"[limits].{name} must be at least 1, got {value}")
+            if getattr(self, name) < 1:
+                raise ConfigError(f"[limits].{name} must be at least 1, got {getattr(self, name)}")
         for name in _NON_NEGATIVE:
-            value = getattr(self, name)
-            if value < 0:
-                raise ConfigError(f"[limits].{name} must not be negative, got {value}")
-        if self.query_timeout_seconds <= 0:
+            if getattr(self, name) < 0:
+                raise ConfigError(
+                    f"[limits].{name} must not be negative, got {getattr(self, name)}"
+                )
+
+        timeout = self.query_timeout_seconds
+        if isinstance(timeout, bool) or not isinstance(timeout, int | float):
             raise ConfigError(
-                f"[limits].query_timeout_seconds must be positive, got {self.query_timeout_seconds}"
+                f"[limits].query_timeout_seconds must be a number, "
+                f"got {type(timeout).__name__}: {timeout!r}"
+            )
+        if not math.isfinite(timeout):
+            raise ConfigError(f"[limits].query_timeout_seconds must be finite, got {timeout}")
+        if timeout <= 0:
+            raise ConfigError(f"[limits].query_timeout_seconds must be positive, got {timeout}")
+
+        if not isinstance(self.duckdb_max_memory, str):
+            raise ConfigError(
+                f"[limits].duckdb_max_memory must be a string, "
+                f"got {type(self.duckdb_max_memory).__name__}"
             )
         if not self.duckdb_max_memory.strip():
             raise ConfigError("[limits].duckdb_max_memory must not be empty")

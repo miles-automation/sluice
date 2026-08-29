@@ -257,10 +257,20 @@ already. After M3, all 148 tests passed against builds that stored every `_row`
 as 0, stored the wrong `_call_id`, dropped downstream `structuredContent`,
 discarded result `_meta`, and derived scopes from a process-randomized hash. The
 suite asserted schemas and counts but almost never asserted stored values.
+A second review round found three more survivors after those fixes: whole-model
+comparisons covered `Proxy.call` but not the rest of the product path, so
+stripping result `_meta` in the interceptor or the upstream server still passed;
+a degraded envelope could keep `source_paths` for tables that were rolled back;
+and a fault-injection test ended in `assert intercept_module is not None`, which
+asserts nothing.
+
 Mitigation: full-record assertions rather than field subsets, whole-model
-comparison in passthrough tests, fault injection at each write boundary, and a
-periodic mutation pass. Coverage alone does not catch this class; every one of
-those mutants ran covered lines.
+comparison at the **product** boundary and not only at an internal seam, fault
+injection at each write boundary, and a mutation pass as a standing step rather
+than a one-off. Coverage alone does not catch this class; every one of those
+mutants ran covered lines. Watch for assertions that cannot fail: a test whose
+last line is `assert <import> is not None` is a placeholder wearing a test's
+clothes.
 
 **R10. Downstream pagination of results.** Severity: low. A tool that pages
 produces N tables the agent must UNION by hand. README note, not code.
@@ -306,7 +316,7 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 | `test_engine_contract.py` | the measured DuckDB and SDK behaviors the design rests on, asserted against installed versions; the tripwire that makes unpinned dependencies safe |
 | `test_naming.py` | injectivity: `a-b` vs `a_b` and `Foo` vs `foo` get different tables; 128-char mounted-name validation fails startup loudly; sequence widening past 9999; identifier quoting |
 | `test_scope.py` | scope from client `_meta` when present, minted otherwise; a stale handle from a prior process cannot resolve to a live table; a fixed BLAKE2 digest vector; cross-process stability under three `PYTHONHASHSEED` values; minting draws from `secrets`; 128-bit width |
-| `test_config.py` | every rejection path; limit validation including `max_concurrent_materializations = 0`; env expansion; file loading; `find_config` precedence; the shipped example config loads |
+| `test_config.py` | every rejection path; limit value AND type validation (TOML supplies strings, floats, and bools that reached the comparisons uncaught); env expansion; file loading; `find_config` precedence; the shipped example config loads |
 | `test_cli.py` | a real `python -m sluice` subprocess serving over stdio and returning a handle; exit codes and clean diagnostics for a missing config, invalid limits, and an unreachable downstream; startup errors unwrapped from anyio ExceptionGroups |
 | `test_shape.py` | extraction for every payload shape; every candidate array materialized; `mixed_elements` and `empty` reported rather than degraded; depth-1 projection; missing key and JSON `null` both NULL; reserved-column collisions allocated recursively; column cap with a deterministic tie-break |
 | `test_infer.py` | every row of §5.5; mixed scalars `VARCHAR` not `JSON`; ISO-8601 stays `VARCHAR`; int128 gets `HUGEINT`; the ±2^53 rule and non-finite floats set `exact: false`; bool checked before int; value coercion |
@@ -317,7 +327,7 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 | `test_errors.py` | all four failure classes produce distinct `failure_class` values and correct upstream results; `bad_schema()` produces an `output_schema` failure rather than an unhandled `RuntimeError` |
 | `test_query_safety.py` | the M4 rejection table including layer-3 catalog blocks; the must-succeed list |
 | `test_query_limits.py` | row cap reported as "additional rows exist" and never as a count; byte and cell caps; timeout; character-boundary truncation on multi-byte UTF-8; defined markdown escaping for `|`, newlines, NULL, and empty string |
-| `test_passthrough.py` | `isError` and image results semantically equal to direct calls, compared as parsed models; oversize passthrough leaves payload columns NULL |
+| `test_passthrough.py` | whole parsed model equal to a direct call for every shape; result `_meta` and content annotations survive; the same asserted through the **full product path** (`build_server` + interceptor), not only `Proxy.call`; oversize passthrough leaves payload columns NULL |
 | `test_concurrency.py` | a timed-out `query` leaves a concurrent write intact and its own connection closed; two concurrent queries do not interrupt each other; `max_concurrent_materializations` actually gates parsing |
 | `test_end_to_end.py` | full stdio loop: list tools, see the appended description and absent `outputSchema`, call `rows(400)`, get a handle, `query` a median, get the right number |
 

@@ -106,3 +106,50 @@ async def test_full_loop_through_the_sluice_server(fake_config: Config) -> None:
             block = result.content[0]
             assert isinstance(block, types.TextContent)
             assert '"items"' in block.text
+
+
+# --------------------------------------------------------------------------
+# The complete product path, not just Proxy.call
+# --------------------------------------------------------------------------
+
+
+async def test_error_metadata_survives_the_whole_product_path(sluice_client: object) -> None:
+    """Errors pass through the interceptor and the upstream server untouched.
+
+    Asserting this only against `Proxy.call` left both later hops unguarded:
+    stripping result `_meta` in `Interceptor._passthrough` or in the server's
+    call handler passed all 204 tests.
+    """
+    from mcp import Client
+
+    assert isinstance(sluice_client, Client)
+    result = await sluice_client.call_tool(naming.mounted_name("fake", "boom"))
+    assert result.is_error is True
+    assert result.meta is not None
+    assert result.meta["vendor.example/errorCode"] == "E_NOPE"
+    block = result.content[0]
+    assert isinstance(block, types.TextContent)
+    assert block.text == "downstream says no"
+
+
+async def test_image_metadata_survives_the_whole_product_path(sluice_client: object) -> None:
+    from mcp import Client
+
+    assert isinstance(sluice_client, Client)
+    result = await sluice_client.call_tool(naming.mounted_name("fake", "picture"))
+    assert isinstance(result.content[0], types.ImageContent)
+    assert result.meta is not None
+    assert result.meta["vendor.example/assetId"] == "img-7"
+    # Not intercepted, so no handle was substituted.
+    assert result.structured_content is None
+
+
+async def test_rich_text_metadata_survives_the_whole_product_path(sluice_client: object) -> None:
+    """`rich_result` is non-JSON text, so it is recorded but its content is
+    still returned as-is inside the handle path."""
+    from mcp import Client
+
+    assert isinstance(sluice_client, Client)
+    result = await sluice_client.call_tool(naming.mounted_name("fake", "rich_result"))
+    assert result.structured_content is not None
+    assert result.structured_content["flat_reason"].startswith("not_json")
