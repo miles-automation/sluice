@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import anyio
@@ -22,12 +23,13 @@ pytestmark = pytest.mark.anyio
 async def _intercept(
     interceptor: Interceptor,
     mounted: str,
-    value: dict[str, object],
+    value: Mapping[str, object],
     *,
     mode: str = "text",
     meta: object | None = None,
 ) -> types.CallToolResult:
-    text = json.dumps(value) if mode in ("text", "dual") else "summary"
+    payload = dict(value)
+    text = json.dumps(payload) if mode in ("text", "dual") else "summary"
     return await interceptor.intercept(
         server="fake",
         tool="rows",
@@ -35,7 +37,7 @@ async def _intercept(
         arguments={"filter": "a|b"},
         result=types.CallToolResult(
             content=[types.TextContent(type="text", text=text)],
-            structured_content=value if mode in ("structured", "dual") else None,
+            structured_content=payload if mode in ("structured", "dual") else None,
         ),
         meta=meta,
         started_at=datetime.now(UTC).replace(tzinfo=None),
