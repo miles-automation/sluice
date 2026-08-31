@@ -224,13 +224,15 @@ handle cannot resolve to live data holding different contents, does hold.
 
 **R6. Peak memory is a multiple of payload size.** Severity: high. The file-free
 pipeline was re-measured across flat, nested, wide, and mixed payloads at 1, 4,
-and 16 MiB with one and two concurrent calls, plus flat 24 and 30 MiB stress
-cases. The 30 MiB × 2 case reached 950,288,384 bytes RSS (about 906 MiB), so
-the existing 32 MiB default is too close to the configured `1GB` DuckDB ceiling
-for a 1 GB deployment. The 24 MiB × 2 case reached about 690 MiB; see
-`benchmarks/results/memory-2026-08-30.md` for methodology and the recommended
-deployment decision. `structuredContent` is already decoded by the SDK before
-the check, so the ceiling bounds what Sluice does next, not what already
+and 16 MiB with one and two concurrent calls, plus 24 MiB × 2 for every shape
+and flat 30 MiB stress cases. The worst 24 MiB × 2 case (wide) reached
+836,239,360 bytes RSS (about 797 MiB), while flat 30 MiB × 2 reached
+950,288,384 bytes (about 906 MiB). For the target assumption of a 1 GiB
+process-memory budget, the product default is therefore lowered to 24 MiB;
+the `1GB` DuckDB setting is an engine allocation limit, not a process RSS
+ceiling. See `benchmarks/results/memory-2026-08-30.md` for methodology and the
+deployment assumptions. `structuredContent` is already decoded by the SDK
+before the check, so the ceiling bounds what Sluice does next, not what already
 happened. `max_concurrent_materializations` gates the whole pipeline, not just
 the write.
 

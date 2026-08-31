@@ -623,7 +623,7 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 
 [limits]
-max_payload_bytes = 33554432   # see 5.1 on what this does and does not bound
+max_payload_bytes = 25165824   # 24 MiB; see 5.1 on what this does and does not bound
 max_concurrent_materializations = 2
 preview_bytes = 2048
 preview_rows = 3
@@ -634,6 +634,14 @@ query_max_bytes = 65536
 max_cell_bytes = 512
 duckdb_max_memory = "1GB"
 ```
+
+The 24 MiB payload default is sized for a deployment with a 1 GiB process-memory
+budget and two admitted materializations, based on the file-free measurements
+in `benchmarks/results/memory-2026-08-30.md`. `duckdb_max_memory = "1GB"` is an
+engine allocation limit, not a process RSS or container-memory ceiling. The
+payload limit is therefore a conservative deployment default, not an OOM
+guarantee; a deployment with a different memory budget should re-run the
+benchmark on its target host.
 
 Every limit is validated where it is constructed, not only where it is parsed.
 `max_concurrent_materializations = 0` is the sharp one: a zero-sized admission

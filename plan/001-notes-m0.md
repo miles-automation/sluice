@@ -685,10 +685,13 @@ tracemalloc was reset after input construction and gives the cleaner Python
 allocation multiple, but it does not see DuckDB's native allocations. Both
 measurements are retained rather than treating either as the whole process.
 
-On this machine and data shape, scaling the absolute 9.720-times observation to
-the 32 MiB default implies roughly 311 MiB process RSS. This supports 32 MiB as
-a starting ceiling on this host, not as a cross-platform guarantee or a bound
-under concurrent materializations.
+This was the discarded file-based pipeline and is superseded by the file-free
+benchmark in `benchmarks/results/memory-2026-08-30.md`. That benchmark measured
+the current path across four shapes and two-call concurrency, and lowered the
+product default to 24 MiB for the target assumption of a 1 GiB process-memory
+budget. Neither measurement is a cross-platform guarantee; `ru_maxrss` is a
+process high-water mark and the SDK may decode `structuredContent` before the
+Sluice ceiling is applied.
 
 The success-path NDJSON file was absent after loading. A deliberately malformed
 NDJSON file raised InvalidInputException and was also absent after the finally

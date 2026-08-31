@@ -18,6 +18,10 @@ def test_minimal_config_parses() -> None:
     assert config.limits == Limits()
 
 
+def test_default_payload_limit_is_24_mib() -> None:
+    assert Limits().max_payload_bytes == 24 * 1024 * 1024
+
+
 def test_env_expansion() -> None:
     raw: dict[str, Any] = {"servers": {"gh": {"command": "echo", "env": {"TOKEN": "${SECRET}"}}}}
     config = parse_config(raw, environ={"SECRET": "s3cret"})
