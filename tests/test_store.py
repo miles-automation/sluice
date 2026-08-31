@@ -1,8 +1,10 @@
 """The scratch database: lockdown, envelope, atomicity."""
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
+import anyio
 import duckdb
 import pytest
 
@@ -195,6 +197,34 @@ async def test_the_connection_stays_usable_after_a_rollback(store: Store) -> Non
         await store.commit_call(_record(), [_plan(records=[{"a": {"x": 1}, "_row": 0}])])
     await store.commit_call(_record("after"), [_plan("later")])
     assert _user_tables(store) == ["later"]
+
+
+async def test_cancelled_direct_waiter_releases_its_fifo_ticket(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_sequence = await store.next_retention_seq()
+    allocated = anyio.Event()
+    original_next = store.next_retention_seq
+
+    async def tracked_next() -> int:
+        sequence = await original_next()
+        allocated.set()
+        return sequence
+
+    monkeypatch.setattr(store, "next_retention_seq", tracked_next)
+    waiting = asyncio.create_task(store.commit_call(_record("waiting"), []))
+    await allocated.wait()
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+
+    await store.commit_call(_record("first", retention_seq=first_sequence), [])
+    with anyio.fail_after(1):
+        await store.commit_call(_record("after"), [])
+    call_ids = store.connection.execute(
+        f"SELECT call_id FROM {ENVELOPE_TABLE} ORDER BY call_id"
+    ).fetchall()
+    assert call_ids == [("after",), ("first",)]
 
 
 # --------------------------------------------------------------------------

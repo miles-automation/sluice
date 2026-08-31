@@ -23,7 +23,7 @@ from sluice.models import (
     TablePlan,
     TableRef,
 )
-from sluice.store import Store
+from sluice.store import Store, bounded_flat_reason, retention_budget_reason
 
 logger = logging.getLogger(__name__)
 
@@ -60,15 +60,23 @@ class Interceptor:
         # parsing, projection, plans, DuckDB insertion, and handle rendering),
         # so admission starts at the outermost interception boundary.
         async with self._admission:
-            return await self._intercept(
-                server=server,
-                tool=tool,
-                mounted=mounted,
-                arguments=arguments,
-                result=result,
-                meta=meta,
-                started_at=started_at,
-            )
+            retention_seq = await self._store.next_retention_seq()
+            try:
+                return await self._intercept(
+                    server=server,
+                    tool=tool,
+                    mounted=mounted,
+                    arguments=arguments,
+                    result=result,
+                    meta=meta,
+                    started_at=started_at,
+                    retention_seq=retention_seq,
+                )
+            finally:
+                # Cancellation or an unexpected selector/planner exception must
+                # not leave a missing FIFO ticket that wedges every later call.
+                with anyio.CancelScope(shield=True):
+                    await self._store.abandon_commit(retention_seq)
 
     async def _intercept(
         self,
@@ -80,29 +88,41 @@ class Interceptor:
         result: types.CallToolResult,
         meta: object | None,
         started_at: datetime,
+        retention_seq: int,
     ) -> types.CallToolResult:
         ended_at = _now()
         scope_id, _ = scope.derive(meta)
         seq = await self._store.next_call_seq(mounted)
-        retention_seq = await self._store.next_retention_seq()
         call_id = str(uuid4())
 
-        reason = payload_select.passthrough_reason(result, self._limits.max_payload_bytes)
+        selection_failure: str | None = None
+        try:
+            reason = payload_select.passthrough_reason(result, self._limits.max_payload_bytes)
 
-        if reason is not None:
-            # Passthrough is intentionally a metadata-only retention path. The
-            # original result is returned below, while no error/binary/oversize
-            # text is copied into any envelope payload column.
-            selected = payload_select.metadata_only(result)
-        else:
-            selected = payload_select.select(result)
+            if reason is not None:
+                # Passthrough is intentionally a metadata-only retention path.
+                # The original result is returned below, while no payload is
+                # copied into an envelope column.
+                selected = payload_select.metadata_only(result)
+            else:
+                selected = payload_select.select(result)
+        except Exception as exc:
+            # A working downstream call must never fail because its payload was
+            # too deeply nested or otherwise hostile to Sluice's selector.
+            logger.exception("payload selection failed for %s; passing through", tool)
+            reason = Passthrough.SELECTION_FAILED
+            selected = SelectedPayload(channel=PayloadChannel.NONE)
+            selection_failure = bounded_flat_reason(
+                f"selection_failed: {type(exc).__name__}: {exc}"
+            )
 
         plans: list[TablePlan] = []
         tables: list[TableRef] = []
-        flat_reason: str | None = None
+        flat_reason: str | None = selection_failure
         preview_rows: list[object] = []
         if reason is None:
             plans, tables, flat_reason, preview_rows = await self._plan(mounted, scope_id, selected)
+            flat_reason = bounded_flat_reason(flat_reason)
 
         record = CallRecord(
             call_id=call_id,
@@ -134,7 +154,7 @@ class Interceptor:
                     record,
                     flat_tables=[],
                     source_paths=[],
-                    flat_reason="retention_budget_exceeded",
+                    flat_reason=retention_budget_reason(record.flat_reason),
                 )
         except Exception as exc:
             # The tables and the envelope go in together, so a failure here has
@@ -149,14 +169,14 @@ class Interceptor:
                 record,
                 flat_tables=[],
                 source_paths=[],
-                flat_reason=f"load_failed: {type(exc).__name__}: {exc}",
+                flat_reason=bounded_flat_reason(f"load_failed: {type(exc).__name__}: {exc}"),
             )
             try:
                 retry_retained = await self._store.commit_call(degraded, [])
                 if not retry_retained:
                     record = replace(
                         degraded,
-                        flat_reason="retention_budget_exceeded",
+                        flat_reason=retention_budget_reason(degraded.flat_reason),
                     )
                 else:
                     record = degraded
@@ -166,7 +186,6 @@ class Interceptor:
                 # returned rather than fail a call that worked.
                 logger.exception("envelope write failed for %s; passing through", tool)
                 return result
-            record = degraded
 
         if reason is not None:
             return self._passthrough(result, reason, selected)
@@ -205,7 +224,12 @@ class Interceptor:
             return await self._build_plans(mounted, scope_id, selected)
         except Exception as exc:
             logger.exception("planning failed for %s", mounted)
-            return [], [], f"load_failed: {type(exc).__name__}: {exc}", []
+            return (
+                [],
+                [],
+                bounded_flat_reason(f"load_failed: {type(exc).__name__}: {exc}"),
+                [],
+            )
 
     async def _build_plans(
         self, mounted: str, scope_id: str, selected: SelectedPayload
@@ -217,7 +241,7 @@ class Interceptor:
         tables: list[TableRef] = []
         preview_rows: list[object] = []
         for row_set in extraction.row_sets:
-            if not preview_rows:
+            if not plans:
                 preview_rows = payload_select.bounded_preview_rows(
                     row_set.rows, self._limits.preview_rows, self._limits.preview_bytes
                 )

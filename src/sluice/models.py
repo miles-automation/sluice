@@ -18,6 +18,7 @@ class Passthrough(StrEnum):
     ERROR = "is_error"
     NON_TEXT = "non_text_content"
     OVERSIZE = "oversize"
+    SELECTION_FAILED = "selection_failed"
 
 
 @dataclass(frozen=True, slots=True)

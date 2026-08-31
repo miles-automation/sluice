@@ -138,17 +138,43 @@ def test_engine_lockdown_does_not_block_pragma() -> None:
 
 
 def test_locked_engine_supports_atomic_retention_ddl_and_envelope_update() -> None:
-    """Retention relies on CREATE/INSERT/DROP/UPDATE in one transaction."""
+    """Pin every transactional DDL/DML operation used by retention."""
     con = _locked_connection()
-    con.execute("CREATE TABLE sluice_calls (call_id VARCHAR PRIMARY KEY, flat_reason VARCHAR)")
+    con.execute(
+        "CREATE TABLE sluice_calls ("
+        "call_id VARCHAR PRIMARY KEY, scope_id VARCHAR, flat_reason VARCHAR)"
+    )
     con.execute("BEGIN TRANSACTION")
     con.execute("CREATE TABLE retained (value BIGINT)")
     con.execute("INSERT INTO retained VALUES (1)")
-    con.execute("INSERT INTO sluice_calls VALUES ('c1', NULL)")
+    con.execute("INSERT INTO sluice_calls VALUES ('c1', 'scope', NULL)")
+    con.execute(
+        "CREATE OR REPLACE VIEW scope_view AS SELECT * FROM sluice_calls WHERE scope_id = 'scope'"
+    )
     con.execute("DROP TABLE retained")
     con.execute("UPDATE sluice_calls SET flat_reason = 'retention_evicted' WHERE call_id = 'c1'")
+    con.execute("DELETE FROM sluice_calls WHERE call_id = 'c1'")
+    assert (
+        con.execute("SELECT 1 FROM sluice_calls WHERE scope_id = 'scope' LIMIT 1").fetchone()
+        is None
+    )
+    con.execute("DROP VIEW IF EXISTS scope_view")
     con.execute("COMMIT")
-    assert con.execute("SELECT * FROM sluice_calls").fetchall() == [("c1", "retention_evicted")]
+    assert con.execute("SELECT * FROM sluice_calls").fetchall() == []
+
+
+def test_retention_ddl_rolls_back_as_one_unit() -> None:
+    con = _locked_connection()
+    con.execute("CREATE TABLE sluice_calls (call_id VARCHAR PRIMARY KEY)")
+    con.execute("BEGIN TRANSACTION")
+    con.execute("CREATE TABLE transient (value BIGINT)")
+    con.execute("INSERT INTO transient VALUES (1)")
+    con.execute("INSERT INTO sluice_calls VALUES ('c1')")
+    con.execute("ROLLBACK")
+
+    with pytest.raises(duckdb.CatalogException):
+        con.execute("SELECT * FROM transient")
+    assert con.execute("SELECT * FROM sluice_calls").fetchall() == []
 
 
 @pytest.mark.parametrize(

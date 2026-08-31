@@ -79,6 +79,155 @@ async def test_admission_covers_selection_and_commit(monkeypatch: pytest.MonkeyP
         await asyncio.gather(first, second)
 
 
+async def test_selector_exception_passes_through_and_releases_fifo_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits = Limits(max_payload_bytes=1_000, max_session_bytes=10_000)
+    with Store.open(limits) as store:
+        interceptor = Interceptor(store, limits)
+        original_select = payload_module.select
+        calls = 0
+
+        def fail_once(result: types.CallToolResult) -> object:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RecursionError("synthetic deeply nested payload")
+            return original_select(result)
+
+        monkeypatch.setattr(payload_module, "select", fail_once)
+        first = await _intercept(interceptor, "fake__rows", {"items": [{"id": 1}]})
+        assert first.structured_content is None
+        block = first.content[0]
+        assert isinstance(block, types.TextContent)
+        assert json.loads(block.text) == {"items": [{"id": 1}]}
+        failure = store.connection.execute(
+            f"SELECT flat_reason FROM {ENVELOPE_TABLE} WHERE seq = 1"
+        ).fetchone()
+        assert failure is not None
+        assert failure[0].startswith("selection_failed: RecursionError")
+        with anyio.fail_after(1):
+            result = await _intercept(interceptor, "fake__rows", {"items": [{"id": 2}]})
+        assert result.structured_content is not None
+        assert result.structured_content["tables"]
+
+
+async def test_cancelled_planning_releases_fifo_ticket(monkeypatch: pytest.MonkeyPatch) -> None:
+    limits = Limits(max_payload_bytes=1_000, max_session_bytes=10_000)
+    with Store.open(limits) as store:
+        interceptor = Interceptor(store, limits)
+        original_build = interceptor._build_plans
+        started = anyio.Event()
+
+        async def block_first(mounted, scope_id, selected):  # type: ignore[no-untyped-def]
+            if selected.value["items"][0]["id"] == 1:
+                started.set()
+                await anyio.sleep_forever()
+            return await original_build(mounted, scope_id, selected)
+
+        monkeypatch.setattr(interceptor, "_build_plans", block_first)
+        cancelled = asyncio.create_task(
+            _intercept(interceptor, "fake__rows", {"items": [{"id": 1}]})
+        )
+        await started.wait()
+        cancelled.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled
+        with anyio.fail_after(1):
+            result = await _intercept(interceptor, "fake__rows", {"items": [{"id": 2}]})
+        assert result.structured_content is not None
+        assert result.structured_content["tables"]
+
+
+async def test_degraded_commit_retry_resolves_ticket_and_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits = Limits(max_payload_bytes=500, max_session_bytes=500)
+    with Store.open(limits) as store:
+        interceptor = Interceptor(store, limits)
+        original_commit = store._commit
+        calls = 0
+
+        def fail_first(record, plans):  # type: ignore[no-untyped-def]
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("synthetic write failure")
+            return original_commit(record, plans)
+
+        monkeypatch.setattr(store, "_commit", fail_first)
+        first = await _intercept(
+            interceptor,
+            "fake__rows",
+            {"items": [{"id": 1, "padding": "x" * 100}]},
+        )
+        assert first.structured_content is not None
+        expected = (
+            "retention_budget_exceeded; prior=load_failed: RuntimeError: synthetic write failure"
+        )
+        assert first.structured_content["flat_reason"] == expected
+        row = store.connection.execute(
+            f"SELECT flat_reason FROM {ENVELOPE_TABLE} WHERE seq = 1"
+        ).fetchone()
+        assert row == (expected,)
+        with anyio.fail_after(1):
+            second = await _intercept(interceptor, "fake__rows", {"items": [{"id": 2}]})
+        assert second.structured_content is not None
+
+
+async def test_overbudget_passthrough_metadata_is_bounded() -> None:
+    limits = Limits(max_payload_bytes=500, max_session_bytes=500)
+    content: list[types.ContentBlock] = [
+        types.ImageContent(type="image", data="AA==", mime_type="image/png") for _ in range(100)
+    ]
+    with Store.open(limits) as store:
+        interceptor = Interceptor(store, limits)
+        result = types.CallToolResult(content=content)
+        returned = await interceptor.intercept(
+            server="fake",
+            tool="images",
+            mounted="fake__images",
+            arguments={"untrusted": "x" * 1_000},
+            result=result,
+            meta=None,
+            started_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+        assert returned is result
+        row = store.connection.execute(
+            f"SELECT args, content_kinds, result, result_text, result_blocks, "
+            f"result_structured FROM {ENVELOPE_TABLE}"
+        ).fetchone()
+        assert row is not None
+        assert row[0] is None
+        assert row[1] == [*["image"] * payload_module.MAX_CONTENT_KINDS, "truncated"]
+        assert row[2:] == (None, None, None, None)
+
+
+async def test_row_preview_never_switches_to_a_later_table() -> None:
+    limits = Limits(
+        max_payload_bytes=5_000,
+        max_session_bytes=100_000,
+        preview_bytes=64,
+    )
+    with Store.open(limits) as store:
+        interceptor = Interceptor(store, limits)
+        result = await _intercept(
+            interceptor,
+            "fake__rows",
+            {
+                "first": [{"blob": "x" * 200}],
+                "second": [{"id": 2}],
+            },
+            mode="structured",
+        )
+        assert result.structured_content is not None
+        assert result.structured_content["preview"] == ""
+        assert result.structured_content["tables"][0]["source_path"] == "$.first"
+        block = result.content[0]
+        assert isinstance(block, types.TextContent)
+        assert "preview (first 0 of 1 rows" in block.text
+
+
 async def test_dual_channel_retention_accounts_for_both_channels() -> None:
     limits = Limits(max_payload_bytes=1_000, max_session_bytes=10_000)
     with Store.open(limits) as store:
@@ -131,14 +280,16 @@ async def test_sequential_retention_evicts_oldest_call_coherently() -> None:
         with pytest.raises(QueryRejectedError, match="was evicted"):
             await QueryTool(store, limits).run(f'SELECT * FROM "{first_table}"')
         rows = store.connection.execute(
-            f"SELECT tool, flat_tables, flat_reason, result IS NULL FROM {ENVELOPE_TABLE} "
+            f"SELECT tool, content_kinds, flat_tables, flat_reason, result IS NULL "
+            f"FROM {ENVELOPE_TABLE} "
             "ORDER BY seq"
         ).fetchall()
         assert rows[0][0] == "rows"
-        assert rows[0][1] == []
-        assert rows[0][2] == "retention_evicted"
-        assert rows[0][3] is True
-        assert rows[1][1] == [second_table]
+        assert rows[0][1] == ["text"]
+        assert rows[0][2] == []
+        assert rows[0][3] == "retention_evicted"
+        assert rows[0][4] is True
+        assert rows[1][2] == [second_table]
 
 
 async def test_out_of_order_planning_still_commits_in_arrival_order(

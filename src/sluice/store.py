@@ -3,6 +3,7 @@
 import json
 import logging
 from collections import deque
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from types import TracebackType
 from typing import Any, Self
@@ -13,11 +14,37 @@ import duckdb
 from sluice.config import SESSION_CALLS_DEFAULT, SESSION_RETENTION_DEFAULT, Limits
 from sluice.gate import SCOPE_PATTERN
 from sluice.infer import ColumnSpec, coerce
-from sluice.models import CallRecord, PayloadChannel, SelectedPayload, TablePlan
+from sluice.models import CallRecord, SelectedPayload, TablePlan
 from sluice.naming import quote_ident
 from sluice.shape import CALL_COLUMN, ROW_COLUMN
 
 logger = logging.getLogger(__name__)
+
+MAX_FLAT_REASON_BYTES = 512
+
+
+def bounded_flat_reason(reason: str | None) -> str | None:
+    """Bound diagnostic text that may include a downstream-controlled value."""
+    if reason is None:
+        return None
+    encoded = reason.encode("utf-8")
+    if len(encoded) <= MAX_FLAT_REASON_BYTES:
+        return reason
+    cut = encoded[:MAX_FLAT_REASON_BYTES]
+    while cut:
+        try:
+            return cut.decode("utf-8")
+        except UnicodeDecodeError:
+            cut = cut[:-1]
+    return ""
+
+
+def retention_budget_reason(prior: str | None) -> str:
+    reason = "retention_budget_exceeded"
+    if prior:
+        reason += f"; prior={prior}"
+    return bounded_flat_reason(reason) or "retention_budget_exceeded"
+
 
 LOCKDOWN_TEMPLATE: tuple[str, ...] = (
     "SET enable_external_access = false",
@@ -115,7 +142,7 @@ class Store:
         self._commit_condition = anyio.Condition()
         self._next_commit_seq = 1
         self._retry_seq: int | None = None
-        self._committing_seq: int | None = None
+        self._abandoned_sequences: set[int] = set()
         self._call_sequences: dict[str, int] = {}
         self._table_sequences: dict[str, int] = {}
         self._retention_sequence = 0
@@ -210,43 +237,75 @@ class Store:
         fully recorded or the database is untouched.
         """
         # Records created by the interceptor carry a sequence assigned before
-        # planning. Waiting here makes physical commit order independent of
-        # how long each plan took. Direct Store users (and old callers) retain
-        # the original serialized-writer behavior with sequence 0.
-        if record.retention_seq <= 0:
-            async with self._lock:
-                return await anyio.to_thread.run_sync(self._commit, record, plans)
+        # planning. Direct Store users receive a ticket here. Waiting makes
+        # physical commit order independent of how long each plan took.
+        direct_ticket = record.retention_seq <= 0
+        if direct_ticket:
+            record = replace(record, retention_seq=await self.next_retention_seq())
 
         sequence = record.retention_seq
-        async with self._commit_condition:
-            while sequence != self._next_commit_seq and sequence != self._retry_seq:
-                await self._commit_condition.wait()
-            retry = sequence == self._retry_seq
-            self._committing_seq = sequence
+        ready = False
+        retry = False
         try:
+            async with self._commit_condition:
+                while sequence != self._next_commit_seq and sequence != self._retry_seq:
+                    if sequence < self._next_commit_seq:
+                        raise RuntimeError(f"retention ticket {sequence} is no longer active")
+                    await self._commit_condition.wait()
+                retry = sequence == self._retry_seq
+                ready = True
             async with self._lock:
                 outcome = await anyio.to_thread.run_sync(self._commit, record, plans)
-        except Exception:
-            async with self._commit_condition:
-                if retry:
-                    self._finish_commit(sequence)
+        except BaseException as exc:
+            # Cancellation remains active while unwinding, so cleanup must be
+            # shielded. A caller cancelled while waiting abandons only its own
+            # future ticket; it must not skip the call currently committing.
+            with anyio.CancelScope(shield=True):
+                if not ready:
+                    await self.abandon_commit(sequence)
                 else:
-                    self._retry_seq = sequence
-                    self._committing_seq = None
-                    self._commit_condition.notify_all()
+                    async with self._commit_condition:
+                        # Interceptor commits retry one ordinary write failure
+                        # with an envelope-only record. Direct Store callers
+                        # have no such protocol, so release their ticket now.
+                        if direct_ticket or retry or not isinstance(exc, Exception):
+                            self._finish_commit(sequence)
+                        else:
+                            self._retry_seq = sequence
+                            self._commit_condition.notify_all()
             raise
-        async with self._commit_condition:
-            self._finish_commit(sequence)
+        # Do not let cancellation land between a successful database commit
+        # and advancing the FIFO sequence.
+        with anyio.CancelScope(shield=True):
+            async with self._commit_condition:
+                self._finish_commit(sequence)
         return outcome
 
     def _finish_commit(self, sequence: int) -> None:
         if self._retry_seq == sequence:
             self._retry_seq = None
         self._next_commit_seq = max(self._next_commit_seq, sequence + 1)
-        self._committing_seq = None
+        self._drain_abandoned()
         self._commit_condition.notify_all()
 
+    async def abandon_commit(self, sequence: int) -> None:
+        """Release a ticket whose call failed or was cancelled before commit."""
+        async with self._commit_condition:
+            if sequence < self._next_commit_seq:
+                return
+            self._abandoned_sequences.add(sequence)
+            if self._retry_seq == sequence:
+                self._retry_seq = None
+            self._drain_abandoned()
+            self._commit_condition.notify_all()
+
+    def _drain_abandoned(self) -> None:
+        while self._next_commit_seq in self._abandoned_sequences:
+            self._abandoned_sequences.remove(self._next_commit_seq)
+            self._next_commit_seq += 1
+
     def _commit(self, record: CallRecord, plans: list[TablePlan]) -> bool:
+        record = replace(record, flat_reason=bounded_flat_reason(record.flat_reason))
         size = self._retention_size(record, plans)
         order = record.retention_seq or self._retention_sequence + 1
         fits_budget = size <= self._max_session_bytes
@@ -254,9 +313,10 @@ class Store:
         if not fits_budget:
             stored_record = replace(
                 record,
+                args=None,
                 flat_tables=[],
                 source_paths=[],
-                flat_reason="retention_budget_exceeded",
+                flat_reason=retention_budget_reason(record.flat_reason),
                 payload=self._metadata_payload(record.payload),
             )
         new_entry = _RetainedCall(
@@ -288,11 +348,7 @@ class Store:
                 self._evict(
                     victim_id,
                     byte_victim,
-                    reason=(
-                        "retention_budget_exceeded"
-                        if victim_id == record.call_id
-                        else "retention_evicted"
-                    ),
+                    reason="retention_evicted",
                 )
             while len(metadata) > self._max_session_calls:
                 victim_id = min(metadata, key=lambda call_id: (metadata[call_id].order, call_id))
@@ -301,10 +357,13 @@ class Store:
                 # for the same call from the candidate retained set.
                 retained.pop(victim_id, None)
                 self._delete_call(victim_id, metadata_victim)
-        except Exception:
-            self._connection.execute("ROLLBACK")
+            self._connection.execute("COMMIT")
+        except BaseException:
+            # COMMIT failures may already have closed the transaction. Preserve
+            # the original failure for the envelope-only retry.
+            with suppress(duckdb.Error):
+                self._connection.execute("ROLLBACK")
             raise
-        self._connection.execute("COMMIT")
         # Only after the commit succeeds: an object the agent can name has to be
         # one that actually exists.
         all_entries = self._retained | {record.call_id: new_entry}
@@ -345,10 +404,10 @@ class Store:
         payload = record.payload
         stored_blocks = (
             None
-            if payload.channel is PayloadChannel.NONE
-            and payload.value is None
+            if payload.value is None
             and payload.text is None
             and payload.structured is None
+            and not payload.blocks
             else payload.blocks
         )
         # Charge each envelope representation independently. In particular,
@@ -400,12 +459,10 @@ class Store:
     def _metadata_payload(payload: SelectedPayload) -> SelectedPayload:
         return replace(
             payload,
-            channel=PayloadChannel.NONE,
             value=None,
             text=None,
             blocks=[],
             structured=None,
-            conflict=False,
         )
 
     def _evict(self, call_id: str, entry: _RetainedCall, *, reason: str) -> None:
@@ -415,8 +472,10 @@ class Store:
         self._connection.execute(
             f"UPDATE {quote_ident(ENVELOPE_TABLE)} SET args = NULL, result = NULL, "
             "result_text = NULL, result_blocks = NULL, result_structured = NULL, "
-            "flat_tables = [], source_paths = [], flat_reason = ? WHERE call_id = ?",
-            (reason, call_id),
+            "flat_tables = [], source_paths = [], "
+            "flat_reason = CASE WHEN flat_reason IS NULL THEN ? "
+            "ELSE ? || '; prior=' || flat_reason END WHERE call_id = ?",
+            (reason, reason, call_id),
         )
 
     def _remember_evicted(self, tables: tuple[str, ...]) -> None:
@@ -464,10 +523,10 @@ class Store:
         # in-memory selector kept a metadata-only description for the handle.
         blocks = (
             None
-            if payload.channel is PayloadChannel.NONE
-            and payload.value is None
+            if payload.value is None
             and payload.text is None
             and payload.structured is None
+            and not payload.blocks
             else payload.blocks
         )
         row: tuple[Any, ...] = (

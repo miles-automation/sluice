@@ -11,10 +11,19 @@ from mcp import types
 from sluice.models import Passthrough, PayloadChannel, SelectedPayload
 
 TEXT_KIND = "text"
+MAX_CONTENT_KINDS = 32
+MAX_CONTENT_KIND_CHARS = 64
 
 
 def content_kinds(result: types.CallToolResult) -> list[str]:
-    return [getattr(block, "type", "unknown") for block in result.content]
+    """Return a bounded diagnostic summary, never one entry per untrusted block."""
+    kinds = [
+        str(getattr(block, "type", "unknown"))[:MAX_CONTENT_KIND_CHARS]
+        for block in result.content[:MAX_CONTENT_KINDS]
+    ]
+    if len(result.content) > MAX_CONTENT_KINDS:
+        kinds.append("truncated")
+    return kinds
 
 
 def text_blocks(result: types.CallToolResult) -> list[types.TextContent]:
@@ -46,7 +55,6 @@ def metadata_only(result: types.CallToolResult) -> SelectedPayload:
     """
     return SelectedPayload(
         channel=PayloadChannel.NONE,
-        blocks=[{"type": getattr(block, "type", "unknown")} for block in result.content],
         byte_size=candidate_size(result),
         wire_bytes=wire_bytes(result),
     )
@@ -80,7 +88,7 @@ def passthrough_reason(result: types.CallToolResult, max_payload_bytes: int) -> 
     """Why this result must be returned unmodified, or None."""
     if result.is_error:
         return Passthrough.ERROR
-    if any(kind != TEXT_KIND for kind in content_kinds(result)):
+    if any(getattr(block, "type", "unknown") != TEXT_KIND for block in result.content):
         return Passthrough.NON_TEXT
     if candidate_size(result) > max_payload_bytes:
         return Passthrough.OVERSIZE
