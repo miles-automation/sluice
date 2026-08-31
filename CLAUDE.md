@@ -16,11 +16,14 @@ the rules below.
 uv sync                       # install
 uv run sluice --config sluice.toml   # run as an MCP stdio server
 uv run pytest                 # full suite
-uv run pytest -m "not slow"   # skip the Hypothesis property test
+uv run pytest -m "not slow"   # skip timing-sensitive tests (concurrency, timeouts)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
-uv run python -m demo.median  # the eval; not part of CI, calls a model
 ```
+
+M5 (the Hypothesis correctness property test and the model-eval demo under
+`demo/`, per `plan/001-scratch-db.md`) has not been built yet. Do not reference
+`demo/` or a property test module until they exist.
 
 ## Python version rules
 
@@ -42,22 +45,24 @@ uv run python -m demo.median  # the eval; not part of CI, calls a model
   transport and must never be written to).
 - `shape.py`, `infer.py`, `naming.py` are pure: no DuckDB, no MCP, no IO. They
   hold the logic most likely to be wrong and are cheapest to test. Keep them pure.
-- DuckDB calls are blocking: dispatch through `asyncio.to_thread`, serialize
-  writes behind an `asyncio.Lock`, one connection per in-flight query.
-- pytest, function-style tests, Hypothesis for the correctness property.
+- DuckDB calls are blocking: dispatch through `anyio.to_thread.run_sync`,
+  serialize writes behind an `anyio.Lock`, one connection per in-flight query.
+- pytest, function-style tests. The Hypothesis correctness property test (M5)
+  does not exist yet — do not claim it does.
 
 ## Architecture
 
 ```
 client --stdio--> server.py  tools/list = downstream union + query
                   proxy.py   downstream session, paginated list, round-trip relay
+                  gate.py    the query tool's three-layer read-only gate
                   shape.py   extract rows -> depth-1 projection        (pure)
                   infer.py   column types + the `exact` flag           (pure)
                   naming.py  injective names, quoting, collisions      (pure)
                   scope.py   scope ids; stale handles fail loudly
                   store.py   envelope row + typed tables
                   handle.py  preview + tables + columns -> the agent
-                  query.py   three-layer gate, timeout, caps
+                  query.py   per-query connection, timeout, result shaping
 ```
 
 Data model: one `sluice_calls` envelope row per call. Plus one typed table per
