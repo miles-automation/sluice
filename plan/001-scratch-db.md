@@ -246,6 +246,10 @@ The benchmark demonstrates these effects but does not fix them. Before either
 memory default is treated as a bound, move admission around the whole pipeline,
 define a retention policy or budget, and measure current process memory on the
 target deployment.
+The implementation now admits the whole selection-through-handle pipeline and
+uses `max_session_bytes` for deterministic oldest-first logical retention
+eviction. Eviction drops tables and payload columns but preserves envelope
+metadata; a call larger than the budget degrades to an envelope-only handle.
 
 **R7. MRTR relay is stateful.** Severity: medium, new in v0 scope. Relaying
 `request_state` means Sluice carries an in-flight call across round trips. The
@@ -352,6 +356,7 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 | `test_query_limits.py` | row cap reported as "additional rows exist" and never as a count; byte and cell caps; timeout; character-boundary truncation on multi-byte UTF-8; defined markdown escaping for `|`, newlines, NULL, and empty string |
 | `test_passthrough.py` | whole parsed model equal to a direct call for every shape; result `_meta` and content annotations survive; the same asserted through the **full product path** (`build_server` + interceptor), not only `Proxy.call`; oversize passthrough leaves payload columns NULL |
 | `test_concurrency.py` | a timed-out `query` leaves a concurrent write intact and its own connection closed; two concurrent queries do not interrupt each other; `max_concurrent_materializations` actually gates parsing |
+| `test_memory_bounds.py` | admission gates selection and commit together; dual-channel payloads are retained coherently; sequential eviction removes old tables and payloads; over-budget calls degrade safely |
 | `test_end_to_end.py` | full stdio loop: list tools, see the appended description and absent `outputSchema`, call `rows(400)`, get a handle, `query` a median, get the right number |
 
 ### Not in CI

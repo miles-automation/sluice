@@ -84,6 +84,7 @@ class CallRecord:
     flat_tables: list[str] = field(default_factory=list)
     source_paths: list[str] = field(default_factory=list)
     flat_reason: str | None = None
+    retention_seq: int = 0
 
     @property
     def duration_ms(self) -> int:

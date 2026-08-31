@@ -13,3 +13,11 @@ never re-sent on later turns of the agent loop.
 Status: pre-implementation. `intent/`, `spec/`, and `plan/` hold the design;
 `plan/001-notes-m0.md` holds the measured evidence behind it. Read the spec
 before changing behavior.
+
+Runtime memory is bounded in two places: `max_concurrent_materializations`
+admits only a configured number of complete interception pipelines at once, and
+`max_session_bytes` bounds retained payload/table state. Oldest calls are
+evicted deterministically when the retention budget is full; their envelope
+metadata remains available, but their tables are no longer queryable. These are
+logical bounds rather than process-RSS guarantees, and `max_payload_bytes`
+retains its existing default.

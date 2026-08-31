@@ -55,9 +55,36 @@ class Interceptor:
         meta: object | None,
         started_at: datetime,
     ) -> types.CallToolResult:
+        # The SDK has already decoded structuredContent before this method is
+        # called.  Everything Sluice does next can multiply that memory (text
+        # parsing, projection, plans, DuckDB insertion, and handle rendering),
+        # so admission starts at the outermost interception boundary.
+        async with self._admission:
+            return await self._intercept(
+                server=server,
+                tool=tool,
+                mounted=mounted,
+                arguments=arguments,
+                result=result,
+                meta=meta,
+                started_at=started_at,
+            )
+
+    async def _intercept(
+        self,
+        *,
+        server: str,
+        tool: str,
+        mounted: str,
+        arguments: dict[str, object] | None,
+        result: types.CallToolResult,
+        meta: object | None,
+        started_at: datetime,
+    ) -> types.CallToolResult:
         ended_at = _now()
         scope_id, _ = scope.derive(meta)
         seq = await self._store.next_call_seq(mounted)
+        retention_seq = await self._store.next_retention_seq()
         call_id = str(uuid4())
 
         reason = payload_select.passthrough_reason(result, self._limits.max_payload_bytes)
@@ -96,13 +123,25 @@ class Interceptor:
             content_kinds=payload_select.content_kinds(result),
             started_at=started_at,
             ended_at=ended_at,
+            retention_seq=retention_seq,
             flat_tables=[table.name for table in tables],
             source_paths=[table.source_path for table in tables],
             flat_reason=flat_reason,
         )
 
         try:
-            await self._store.commit_call(record, plans)
+            retained = await self._store.commit_call(record, plans)
+            if not retained:
+                # The call itself exceeded the session retention budget. The
+                # envelope remains as metadata, but no handle may advertise
+                # tables that were immediately evicted.
+                tables = []
+                record = replace(
+                    record,
+                    flat_tables=[],
+                    source_paths=[],
+                    flat_reason="retention_budget_exceeded",
+                )
         except Exception as exc:
             # The tables and the envelope go in together, so a failure here has
             # left the database untouched. Retry with no tables so the call is
@@ -131,7 +170,7 @@ class Interceptor:
         if reason is not None:
             return self._passthrough(result, reason, selected)
 
-        return handle_render.to_result(self._build_handle(record, selected, tables))
+        return handle_render.to_result(self._build_handle(record, selected, tables, plans))
 
     def _passthrough(
         self,
@@ -155,17 +194,17 @@ class Interceptor:
         """Compute every table without touching the database.
 
         Planning is separated from writing so the write can be one transaction.
-        A failure here is reported on the envelope row; it never fails the tool
-        call (FR-10).
+        The caller holds the admission slot across selection, planning, commit,
+        and handle construction. A failure here is reported on the envelope
+        row; it never fails the tool call (FR-10).
         """
         if selected.channel is PayloadChannel.NONE:
             return [], [], "not_json: no channel parsed as JSON"
-        async with self._admission:
-            try:
-                return await self._build_plans(mounted, scope_id, selected)
-            except Exception as exc:
-                logger.exception("planning failed for %s", mounted)
-                return [], [], f"load_failed: {type(exc).__name__}: {exc}"
+        try:
+            return await self._build_plans(mounted, scope_id, selected)
+        except Exception as exc:
+            logger.exception("planning failed for %s", mounted)
+            return [], [], f"load_failed: {type(exc).__name__}: {exc}"
 
     async def _build_plans(
         self, mounted: str, scope_id: str, selected: SelectedPayload
@@ -222,18 +261,20 @@ class Interceptor:
         return plans, tables, None
 
     def _build_handle(
-        self, record: CallRecord, selected: SelectedPayload, tables: list[TableRef]
+        self,
+        record: CallRecord,
+        selected: SelectedPayload,
+        tables: list[TableRef],
+        plans: list[TablePlan],
     ) -> Handle:
         preview, complete = payload_select.render_preview(selected, self._limits.preview_bytes)
         shown: int | None = None
         total: int | None = None
-        if not complete and tables:
-            rows = shape.extract(selected.value).row_sets
-            if rows:
-                preview, shown = payload_select.render_row_preview(
-                    rows[0].rows, self._limits.preview_rows, self._limits.preview_bytes
-                )
-                total = tables[0].row_count
+        if not complete and tables and plans:
+            preview, shown = payload_select.render_row_preview(
+                plans[0].records, self._limits.preview_rows, self._limits.preview_bytes
+            )
+            total = tables[0].row_count
         return Handle(
             call_id=record.call_id,
             scope_id=record.scope_id,

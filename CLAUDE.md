@@ -105,6 +105,11 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
   `annotations.destructiveHint`.
 - **Every truncation is reported** (§6.3). Silent truncation is a correctness bug
   in a tool that sells determinism.
+- **Admission covers the whole interception pipeline** (§7). Selection, parse,
+  projection, commit, and handle rendering all run under the same semaphore.
+- **Session retention is bounded** (§7). `max_session_bytes` evicts oldest calls
+  deterministically, dropping their tables and payload columns while preserving
+  envelope metadata; handles never advertise a table after its call is evicted.
 
 ## Out of scope for v0
 

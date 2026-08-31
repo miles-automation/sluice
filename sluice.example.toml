@@ -15,6 +15,9 @@ env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 # under it is still materialized. See spec 5.1 for what it does and does not bound.
 max_payload_bytes = 33554432
 max_concurrent_materializations = 2
+# Logical bytes retained by payloads and materialized table rows in this
+# process. Old calls are evicted deterministically when the budget is full.
+max_session_bytes = 268435456
 preview_bytes = 2048
 preview_rows = 3
 max_columns = 64

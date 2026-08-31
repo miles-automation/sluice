@@ -2,13 +2,14 @@
 
 import json
 import logging
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Self
 
 import anyio
 import duckdb
 
-from sluice.config import Limits
+from sluice.config import SESSION_RETENTION_DEFAULT, Limits
 from sluice.gate import SCOPE_PATTERN
 from sluice.infer import ColumnSpec, coerce
 from sluice.models import CallRecord, TablePlan
@@ -78,6 +79,14 @@ def _json_or_none(value: object) -> str | None:
     return json.dumps(value, default=str)
 
 
+@dataclass(frozen=True, slots=True)
+class _RetainedCall:
+    order: int
+    size: int
+    scope_id: str
+    tables: tuple[str, ...]
+
+
 class Store:
     """Owns the connection Sluice writes through.
 
@@ -86,11 +95,19 @@ class Store:
     (spec 5.4). Do not relax it to fix a write.
     """
 
-    def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
+    def __init__(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        max_session_bytes: int = SESSION_RETENTION_DEFAULT,
+    ) -> None:
         self._connection = connection
+        self._max_session_bytes = max_session_bytes
         self._lock = anyio.Lock()
         self._call_sequences: dict[str, int] = {}
         self._table_sequences: dict[str, int] = {}
+        self._retention_sequence = 0
+        self._retained: dict[str, _RetainedCall] = {}
+        self._retained_bytes = 0
         # Exactly the objects the gate will admit. Nothing else in the catalog
         # is reachable, whether or not anyone thought to deny it by name.
         self._allowed_objects: set[str] = set()
@@ -103,7 +120,7 @@ class Store:
         # CREATE TABLE still works after the lockdown; only external access and
         # further configuration changes are closed off.
         connection.execute(ENVELOPE_DDL)
-        return cls(connection)
+        return cls(connection, limits.max_session_bytes)
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
@@ -112,6 +129,15 @@ class Store:
     @property
     def allowed_objects(self) -> set[str]:
         return set(self._allowed_objects)
+
+    @property
+    def retained_bytes(self) -> int:
+        """Logical bytes retained by payload and table row representations."""
+        return self._retained_bytes
+
+    @property
+    def retained_call_ids(self) -> set[str]:
+        return set(self._retained)
 
     def close(self) -> None:
         self._connection.close()
@@ -140,13 +166,19 @@ class Store:
         """
         return await self._bump(self._table_sequences, mounted)
 
+    async def next_retention_seq(self) -> int:
+        """Assign a deterministic arrival order before payload work begins."""
+        async with self._lock:
+            self._retention_sequence += 1
+            return self._retention_sequence
+
     async def _bump(self, counters: dict[str, int], key: str) -> int:
         async with self._lock:
             nxt = counters.get(key, 0) + 1
             counters[key] = nxt
             return nxt
 
-    async def commit_call(self, record: CallRecord, plans: list[TablePlan]) -> None:
+    async def commit_call(self, record: CallRecord, plans: list[TablePlan]) -> bool:
         """Write the flat tables and the envelope row as one transaction.
 
         Atomicity matters here for a specific reason: the envelope is the only
@@ -156,23 +188,86 @@ class Store:
         fully recorded or the database is untouched.
         """
         async with self._lock:
-            await anyio.to_thread.run_sync(self._commit, record, plans)
+            return await anyio.to_thread.run_sync(self._commit, record, plans)
 
-    def _commit(self, record: CallRecord, plans: list[TablePlan]) -> None:
+    def _commit(self, record: CallRecord, plans: list[TablePlan]) -> bool:
+        size = self._retention_size(record, plans)
+        order = record.retention_seq or self._retention_sequence + 1
+        new_entry = _RetainedCall(
+            order=order,
+            size=size,
+            scope_id=record.scope_id,
+            tables=tuple(plan.name for plan in plans),
+        )
+        retained = dict(self._retained)
+        retained[record.call_id] = new_entry
         self._connection.execute("BEGIN TRANSACTION")
         try:
             for plan in plans:
                 self._create_flat(plan, record.call_id)
             self._insert_envelope(record)
             view = self._ensure_scope_view(record.scope_id)
+            while self._retained_total(retained) > self._max_session_bytes:
+                victim_id = min(
+                    retained,
+                    key=lambda call_id: (retained[call_id].order, call_id),
+                )
+                victim = retained.pop(victim_id)
+                self._evict(
+                    victim_id,
+                    victim,
+                    reason=(
+                        "retention_budget_exceeded"
+                        if victim_id == record.call_id
+                        else "retention_evicted"
+                    ),
+                )
         except Exception:
             self._connection.execute("ROLLBACK")
             raise
         self._connection.execute("COMMIT")
         # Only after the commit succeeds: an object the agent can name has to be
         # one that actually exists.
-        self._allowed_objects.update(plan.name for plan in plans)
+        all_entries = self._retained | {record.call_id: new_entry}
+        evicted = set(all_entries) - set(retained)
+        for call_id in evicted:
+            self._allowed_objects.difference_update(all_entries[call_id].tables)
+        self._retained = retained
+        self._retained_bytes = self._retained_total(retained)
+        self._allowed_objects.update(table for entry in retained.values() for table in entry.tables)
         self._allowed_objects.add(view)
+        return record.call_id in retained
+
+    @staticmethod
+    def _retained_total(retained: dict[str, _RetainedCall]) -> int:
+        return sum(entry.size for entry in retained.values())
+
+    def _retention_size(self, record: CallRecord, plans: list[TablePlan]) -> int:
+        """Estimate retained state using deterministic serialized representations.
+
+        DuckDB's allocator is deliberately not used as a budget meter: its
+        accounting is engine-version and query-plan dependent. Counting the
+        envelope's wire payload plus the rows Sluice asks DuckDB to retain gives
+        a stable, conservative measure for eviction and includes both channels.
+        """
+        size = max(record.payload.wire_bytes, record.payload.byte_size, 1)
+        if record.args is not None:
+            size += len(json.dumps(record.args, default=str).encode("utf-8"))
+        for plan in plans:
+            size += len(plan.name) + len(plan.source_path)
+            size += sum(len(json.dumps(row, default=str).encode("utf-8")) for row in plan.records)
+        return size
+
+    def _evict(self, call_id: str, entry: _RetainedCall, *, reason: str) -> None:
+        """Drop a call's tables and clear payload columns, preserving metadata."""
+        for table in entry.tables:
+            self._connection.execute(f"DROP TABLE IF EXISTS {quote_ident(table)}")
+        self._connection.execute(
+            f"UPDATE {quote_ident(ENVELOPE_TABLE)} SET args = NULL, result = NULL, "
+            "result_text = NULL, result_blocks = NULL, result_structured = NULL, "
+            "flat_tables = [], source_paths = [], flat_reason = ? WHERE call_id = ?",
+            (reason, call_id),
+        )
 
     def _ensure_scope_view(self, scope_id: str) -> str:
         if not SCOPE_PATTERN.match(scope_id):

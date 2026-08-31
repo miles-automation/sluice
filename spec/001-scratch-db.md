@@ -139,6 +139,15 @@ CREATE TABLE sluice_calls (
 );
 ```
 
+The session retains only a bounded logical representation of payloads and flat
+table rows. When the retention budget is exceeded, oldest retained calls are
+evicted in deterministic arrival order: their flat tables are dropped and
+their payload columns are cleared, while the envelope metadata row remains.
+An evicted handle's table is therefore no longer queryable; the envelope view
+still reports the call with `flat_reason='retention_evicted'`. If a new call is
+larger than the whole budget, it is recorded envelope-only with
+`flat_reason='retention_budget_exceeded'`, and its handle names no tables.
+
 `result_blocks` exists because `result_text` alone is lossy: two text blocks
 concatenate irreversibly, and §6.4's recovery path must be able to return what
 the server actually sent.
@@ -633,6 +642,7 @@ query_max_rows = 100
 query_max_bytes = 65536
 max_cell_bytes = 512
 duckdb_max_memory = "1GB"
+max_session_bytes = 268435456
 ```
 
 The payload default is a policy starting point, not a process RSS or
@@ -656,6 +666,12 @@ bound this because parsing and projection happen before the lock is taken. The
 current implementation does not yet cover payload selection or commit; plan R11
 tracks that runtime blocker, so these limits must not be described as a complete
 process-memory bound until it is fixed.
+The implementation now admits the whole interception pipeline: payload
+selection, parsing, projection, commit, and handle rendering. `max_session_bytes`
+is a positive logical retention budget for serialized envelope/table state; it
+is not a process-RSS or physical DuckDB-byte guarantee. Eviction is oldest-first
+by admission order, with call id as a stable tie-breaker, and preserves envelope
+metadata while dropping payload columns and flat tables.
 
 ## 8. Failure behavior
 
@@ -679,6 +695,8 @@ structured content.
 | Result is not JSON on any channel | Envelope-only handle, head-and-tail preview |
 | Payload exceeds `max_payload_bytes` | Passthrough with a size note, payload columns NULL |
 | Inference or insert fails | Envelope-only handle, `flat_reason` records the cause |
+| Session retention budget is full | Oldest calls lose tables and payload columns; metadata remains queryable in the scope view |
+| One call exceeds the session retention budget | Envelope-only handle with `flat_reason='retention_budget_exceeded'` |
 | `query` rejects the SQL | Tool error naming the reason, never a silent empty result |
 | `query` times out | Tool error stating the timeout and elapsed budget |
 
@@ -698,7 +716,9 @@ two boundaries, both named rather than implied:
 - **One dedicated DuckDB connection per in-flight query**, closed when the query
   finishes. The timeout interrupts that exact object (§6.2).
 - Materialization admission gated by `max_concurrent_materializations` (§7),
-  covering parse and projection, not only the write.
+  covering selection, parse, projection, commit, and handle rendering.
+- Session retention is bounded by `max_session_bytes` (§7); eviction drops flat
+  tables and clears payload columns while preserving envelope metadata.
 - All DuckDB calls are blocking and dispatched through `anyio.to_thread.run_sync`
   with an `anyio.Lock`, matching the SDK's concurrency library rather than
   assuming an asyncio backend.
