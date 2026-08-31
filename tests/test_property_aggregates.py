@@ -38,6 +38,7 @@ _SAFE_FLOAT = st.floats(
     allow_infinity=False,
     width=64,
 )
+_DYADIC_COEFFICIENT = st.integers(min_value=-4000, max_value=4000)
 _GROUP = st.sampled_from(["alpha", "beta", "gamma"])
 
 
@@ -217,6 +218,43 @@ def test_aggregates_match_the_normalized_source(rows: list[dict[str, object]]) -
     anyio.run(_assert_generated_aggregates, rows)
 
 
+@settings(max_examples=25, deadline=None)
+@given(coefficients=st.lists(_DYADIC_COEFFICIENT, min_size=1, max_size=500))
+@pytest.mark.slow
+def test_float_tolerances_on_bounded_dyadic_values(coefficients: list[int]) -> None:
+    """Measure avg/sum tolerance on a deliberately safe binary64 domain.
+
+    Every value is a quarter-step float.  With at most 500 coefficients in
+    [-4000, 4000], the scaled sum is at most 2,000,000, well inside the exact
+    binary64 integer range.  This is positive regression evidence, not a
+    guarantee for arbitrary DOUBLE columns (which remain exact=False).
+    """
+    values = [coefficient / 4.0 for coefficient in coefficients]
+    assert values and isinstance(values[0], float)
+
+    async def check() -> None:
+        limits = Limits()
+        with Store.open(limits) as store:
+            interceptor = Interceptor(store, limits, query_available=True)
+            query = QueryTool(store, limits)
+            result = await _materialize(
+                interceptor,
+                {"items": [{"value": value} for value in values]},
+                tool="bounded_float_regression",
+            )
+            columns = _table_columns(result)
+            assert columns["value"]["type"] == "DOUBLE"
+            assert columns["value"]["exact"] is False
+            table = _table_name(result)
+            row = _data_rows(await query.run(f'SELECT avg(value), sum(value) FROM "{table}"'))[0]
+            assert math.isclose(
+                float(row[0]), statistics.fmean(values), rel_tol=1e-9, abs_tol=1e-12
+            )
+            assert math.isclose(float(row[1]), sum(values), rel_tol=1e-9, abs_tol=1e-12)
+
+    anyio.run(check)
+
+
 _FIXED_CASES: tuple[tuple[list[object], str, float], ...] = (
     (
         [0, 2**63 - 2, 2**63 - 1],
@@ -320,6 +358,6 @@ def test_advertised_row_boundaries_are_materialized(count: int) -> None:
     ]
 
     async def check() -> None:
-        await _assert_generated_aggregates(rows, mixed_exact=None)
+        await _assert_generated_aggregates(rows, mixed_exact=count == 1)
 
     anyio.run(check)
