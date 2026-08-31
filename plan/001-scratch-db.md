@@ -222,12 +222,17 @@ names plus a catalog denylist, and denylists are weaker than the other two query
 layers. Spec §12 states the residual risk. The unconditional half, that a stale
 handle cannot resolve to live data holding different contents, does hold.
 
-**R6. Peak memory is a multiple of payload size.** Severity: high. Measured 9.72×
-RSS on the discarded file-based pipeline; the file-free pipeline has **not** been
-re-measured and must be before `max_payload_bytes` is trusted. `structuredContent`
-is already decoded by the SDK before the check, so the ceiling bounds what Sluice
-does next, not what already happened. `max_concurrent_materializations` gates the
-whole pipeline, not just the write.
+**R6. Peak memory is a multiple of payload size.** Severity: high. The file-free
+pipeline was re-measured across flat, nested, wide, and mixed payloads at 1, 4,
+and 16 MiB with one and two concurrent calls, plus flat 24 and 30 MiB stress
+cases. The 30 MiB × 2 case reached 950,288,384 bytes RSS (about 906 MiB), so
+the existing 32 MiB default is too close to the configured `1GB` DuckDB ceiling
+for a 1 GB deployment. The 24 MiB × 2 case reached about 690 MiB; see
+`benchmarks/results/memory-2026-08-30.md` for methodology and the recommended
+deployment decision. `structuredContent` is already decoded by the SDK before
+the check, so the ceiling bounds what Sluice does next, not what already
+happened. `max_concurrent_materializations` gates the whole pipeline, not just
+the write.
 
 **R7. MRTR relay is stateful.** Severity: medium, new in v0 scope. Relaying
 `request_state` means Sluice carries an in-flight call across round trips. The
