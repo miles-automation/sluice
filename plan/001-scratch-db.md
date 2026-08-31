@@ -230,22 +230,31 @@ payload size alone cannot bound process memory: the SDK-decoded structured
 value, retained text channel, and accumulated session tables all contribute.
 The `1GB` DuckDB setting is an engine allocation limit, not a process RSS
 ceiling. The 32 MiB default therefore remains unchanged and **untrusted** until
-the runtime-memory blocker R11 is resolved; see
+post-fix memory evidence is collected; see
 `benchmarks/results/memory-2026-08-30.md`. `structuredContent` is already
 decoded by the SDK before the check, so the ceiling bounds what Sluice does next,
 not what already happened. The admission semaphore currently wraps only
-`_build_plans`, not payload selection or commit, so its claimed whole-pipeline
-bound also remains a runtime blocker to resolve separately.
+`_build_plans`, not payload selection or commit, in the pre-fix benchmark.
 
 **R11. Runtime memory accounting and retention.** Severity: high, blocker for
 trusting R6. The SDK may decode `structuredContent` before Sluice can apply its
 payload limit; dual-channel results retain both representations; and a long
 session retains every materialized table and envelope row. The current
 admission semaphore wraps `_build_plans` only, not payload selection or commit.
-The benchmark demonstrates these effects but does not fix them. Before either
-memory default is treated as a bound, move admission around the whole pipeline,
-define a retention policy or budget, and measure current process memory on the
-target deployment.
+The benchmark demonstrates these effects but does not calibrate defaults. The
+post-fix implementation moves admission around the whole pipeline, charges
+every serialized retained envelope/table representation, bounds retained
+metadata/catalog cardinality, and degrades safely before collateral eviction.
+Post-fix process-memory measurement is still required before either memory
+default is treated as calibrated for a target deployment.
+The implementation now admits the whole selection-through-handle pipeline and
+uses `max_session_bytes` for deterministic oldest-first logical retention
+eviction. Eviction drops tables and payload columns but preserves envelope
+metadata; a call larger than the budget degrades to an envelope-only handle.
+The separate `max_session_calls` cap bounds metadata rows and scope views,
+deleting old rows and dropping unused views. These are logical state bounds, not
+RSS calibration; the 256 MiB default remains explicitly provisional for a 1 GiB
+RSS target until a post-fix benchmark.
 
 **R7. MRTR relay is stateful.** Severity: medium, new in v0 scope. Relaying
 `request_state` means Sluice carries an in-flight call across round trips. The
@@ -352,6 +361,7 @@ max([9007199254740993, 0.5])                           duck 9007199254740992.0  
 | `test_query_limits.py` | row cap reported as "additional rows exist" and never as a count; byte and cell caps; timeout; character-boundary truncation on multi-byte UTF-8; defined markdown escaping for `|`, newlines, NULL, and empty string |
 | `test_passthrough.py` | whole parsed model equal to a direct call for every shape; result `_meta` and content annotations survive; the same asserted through the **full product path** (`build_server` + interceptor), not only `Proxy.call`; oversize passthrough leaves payload columns NULL |
 | `test_concurrency.py` | a timed-out `query` leaves a concurrent write intact and its own connection closed; two concurrent queries do not interrupt each other; `max_concurrent_materializations` actually gates parsing |
+| `test_memory_bounds.py` | admission gates selection and commit together; dual-channel payloads are retained coherently; sequential eviction removes old tables and payloads; over-budget calls degrade safely |
 | `test_end_to_end.py` | full stdio loop: list tools, see the appended description and absent `outputSchema`, call `rows(400)`, get a handle, `query` a median, get the right number |
 
 ### Not in CI

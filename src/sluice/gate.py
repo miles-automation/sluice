@@ -39,10 +39,15 @@ class QueryRejectedError(ValueError):
     """The SQL did not pass the gate. Never executed."""
 
 
-def check(sql: str, connection: duckdb.DuckDBPyConnection, allowed_objects: set[str]) -> None:
+def check(
+    sql: str,
+    connection: duckdb.DuckDBPyConnection,
+    allowed_objects: set[str],
+    evicted_objects: set[str] | frozenset[str] = frozenset(),
+) -> None:
     """Raise `QueryRejectedError` unless `sql` is a single read over allowed objects."""
     _check_single_select(sql, connection)
-    _check_objects(sql, connection, allowed_objects)
+    _check_objects(sql, connection, allowed_objects, evicted_objects)
 
 
 def _check_single_select(sql: str, connection: duckdb.DuckDBPyConnection) -> None:
@@ -77,10 +82,13 @@ def _serialize(sql: str, connection: duckdb.DuckDBPyConnection) -> dict[str, Any
 
 
 def _check_objects(
-    sql: str, connection: duckdb.DuckDBPyConnection, allowed_objects: set[str]
+    sql: str,
+    connection: duckdb.DuckDBPyConnection,
+    allowed_objects: set[str],
+    evicted_objects: set[str] | frozenset[str],
 ) -> None:
     document = _serialize(sql, connection)
-    _validate(document, frozenset(), allowed_objects)
+    _validate(document, frozenset(), allowed_objects, evicted_objects)
 
 
 def _cte_names(node: dict[str, Any]) -> frozenset[str]:
@@ -95,7 +103,12 @@ def _cte_names(node: dict[str, Any]) -> frozenset[str]:
     return frozenset(names)
 
 
-def _validate(node: Any, visible: frozenset[str], allowed_objects: set[str]) -> None:
+def _validate(
+    node: Any,
+    visible: frozenset[str],
+    allowed_objects: set[str],
+    evicted_objects: set[str] | frozenset[str],
+) -> None:
     """Check every referenced object, honouring lexical scope.
 
     Scope is the whole point. Collecting CTE names globally and then allowing
@@ -121,6 +134,11 @@ def _validate(node: Any, visible: frozenset[str], allowed_objects: set[str]) -> 
                 raise QueryRejectedError(
                     f"schema-qualified tables are not available: {schema}.{name}"
                 )
+            if name not in local and name in evicted_objects:
+                raise QueryRejectedError(
+                    f"table {name!r} was evicted by the session retention budget; "
+                    "rerun the source tool call to materialize it again"
+                )
             if name not in local and name not in allowed_objects:
                 raise QueryRejectedError(
                     f"unknown table {name!r}. You can only query tables named in the "
@@ -137,7 +155,7 @@ def _validate(node: Any, visible: frozenset[str], allowed_objects: set[str]) -> 
                 "in the handles you were given"
             )
         for child in node.values():
-            _validate(child, local, allowed_objects)
+            _validate(child, local, allowed_objects, evicted_objects)
     elif isinstance(node, list):
         for child in node:
-            _validate(child, visible, allowed_objects)
+            _validate(child, visible, allowed_objects, evicted_objects)

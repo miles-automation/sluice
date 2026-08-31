@@ -24,7 +24,8 @@ QUERY_DESCRIPTION = (
     "come verbatim from the source payload, so quote any that are not plain "
     "identifiers. Columns marked JSON need json_extract and a cast before "
     "arithmetic, and columns marked inexact fall outside the range where results "
-    "are guaranteed to match the source exactly."
+    "are guaranteed to match the source exactly. Older tables may be evicted by "
+    "the session retention budget; rerun the source tool call if that happens."
 )
 
 QUERY_SCHEMA: dict[str, Any] = {
@@ -167,10 +168,11 @@ class QueryTool:
         """
         cursor = self._store.connection.cursor()
         allowed = self._store.allowed_objects
+        evicted = self._store.evicted_tables
         outcome = QueryOutcome()
 
         def blocking() -> tuple[list[str], list[tuple[Any, ...]]]:
-            check(sql, cursor, allowed)
+            check(sql, cursor, allowed, evicted)
             executed = cursor.execute(sql)
             description = executed.description or []
             return [str(column[0]) for column in description], executed.fetchmany(limit + 1)
