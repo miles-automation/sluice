@@ -222,12 +222,30 @@ names plus a catalog denylist, and denylists are weaker than the other two query
 layers. Spec §12 states the residual risk. The unconditional half, that a stale
 handle cannot resolve to live data holding different contents, does hold.
 
-**R6. Peak memory is a multiple of payload size.** Severity: high. Measured 9.72×
-RSS on the discarded file-based pipeline; the file-free pipeline has **not** been
-re-measured and must be before `max_payload_bytes` is trusted. `structuredContent`
-is already decoded by the SDK before the check, so the ceiling bounds what Sluice
-does next, not what already happened. `max_concurrent_materializations` gates the
-whole pipeline, not just the write.
+**R6. Peak memory is a multiple of payload size.** Severity: high. The file-free
+pipeline was re-measured across flat, nested, wide, and mixed payloads at 1, 4,
+and 16 MiB with one and two concurrent calls, plus channel-mode and
+long-session follow-ups. The dual-channel and sequential measurements show that
+payload size alone cannot bound process memory: the SDK-decoded structured
+value, retained text channel, and accumulated session tables all contribute.
+The `1GB` DuckDB setting is an engine allocation limit, not a process RSS
+ceiling. The 32 MiB default therefore remains unchanged and **untrusted** until
+the runtime-memory blocker R11 is resolved; see
+`benchmarks/results/memory-2026-08-30.md`. `structuredContent` is already
+decoded by the SDK before the check, so the ceiling bounds what Sluice does next,
+not what already happened. The admission semaphore currently wraps only
+`_build_plans`, not payload selection or commit, so its claimed whole-pipeline
+bound also remains a runtime blocker to resolve separately.
+
+**R11. Runtime memory accounting and retention.** Severity: high, blocker for
+trusting R6. The SDK may decode `structuredContent` before Sluice can apply its
+payload limit; dual-channel results retain both representations; and a long
+session retains every materialized table and envelope row. The current
+admission semaphore wraps `_build_plans` only, not payload selection or commit.
+The benchmark demonstrates these effects but does not fix them. Before either
+memory default is treated as a bound, move admission around the whole pipeline,
+define a retention policy or budget, and measure current process memory on the
+target deployment.
 
 **R7. MRTR relay is stateful.** Severity: medium, new in v0 scope. Relaying
 `request_state` means Sluice carries an in-flight call across round trips. The

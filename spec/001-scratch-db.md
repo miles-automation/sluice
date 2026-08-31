@@ -623,7 +623,7 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 
 [limits]
-max_payload_bytes = 33554432   # see 5.1 on what this does and does not bound
+max_payload_bytes = 33554432   # 32 MiB; see 5.1 on what this does and does not bound
 max_concurrent_materializations = 2
 preview_bytes = 2048
 preview_rows = 3
@@ -635,14 +635,27 @@ max_cell_bytes = 512
 duckdb_max_memory = "1GB"
 ```
 
+The payload default is a policy starting point, not a process RSS or
+container-memory bound. `duckdb_max_memory = "1GB"` is an engine allocation
+limit, not a process RSS or container-memory ceiling. The file-free benchmark
+in `benchmarks/results/memory-2026-08-30.md` found that payload size alone
+cannot establish a safe process-memory bound while structured-content decoding,
+dual-channel retention, and long-session table retention remain in the runtime.
+The runtime-memory blocker in plan R11 must be resolved before this limit is
+treated as trusted. Deployments should size and validate those runtime behaviors
+on the target host.
+
 Every limit is validated where it is constructed, not only where it is parsed.
 `max_concurrent_materializations = 0` is the sharp one: a zero-sized admission
 semaphore blocks every materialization forever rather than failing.
 
-`max_concurrent_materializations` is an admission gate over the whole pipeline,
-not just the write. Peak memory is a multiple of payload size, so N concurrent
-materializations multiply it; the write lock alone does not bound this because
-parsing and projection happen before the lock is taken.
+`max_concurrent_materializations` is intended as an admission gate over the
+whole pipeline, not just the write. Peak memory is a multiple of payload size,
+so N concurrent materializations multiply it; the write lock alone does not
+bound this because parsing and projection happen before the lock is taken. The
+current implementation does not yet cover payload selection or commit; plan R11
+tracks that runtime blocker, so these limits must not be described as a complete
+process-memory bound until it is fixed.
 
 ## 8. Failure behavior
 
