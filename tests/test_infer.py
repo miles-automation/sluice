@@ -18,7 +18,7 @@ from sluice.infer import ColumnType, coerce, infer_column
         ([2**64 + 1, 0], ColumnType.HUGEINT, False),
         ([2**127 - 1], ColumnType.HUGEINT, False),
         ([2**200, 1], ColumnType.VARCHAR, False),
-        ([1.5, 2], ColumnType.DOUBLE, True),
+        ([1.5, 2], ColumnType.DOUBLE, False),
         (["a", "b"], ColumnType.VARCHAR, True),
         ([{"a": 1}], ColumnType.JSON, False),
         ([[1, 2]], ColumnType.JSON, False),
@@ -72,10 +72,10 @@ def test_large_finite_float_columns_are_inexact_for_tolerance_aggregates() -> No
     assert not exact
 
 
-def test_integers_inside_the_exact_float_range_stay_exact() -> None:
+def test_mixed_numeric_columns_are_never_claimed_exact() -> None:
     column_type, exact = infer_column([2**53, 0.5])
     assert column_type is ColumnType.DOUBLE
-    assert exact
+    assert not exact
 
 
 @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])

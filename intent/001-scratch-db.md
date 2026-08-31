@@ -163,14 +163,17 @@ equal the same aggregate computed directly over the raw source data.** This is
 mechanically checkable and belongs in CI.
 
 "Equal" is bounded by a domain and splits in two inside it, both measured rather
-than assumed. Outside the domain (integers past 2^53 in a float column,
-non-finite values, mixed scalar types) no guarantee is claimed and the handle
-flags the column. Inside it: `count`, `min`, `max`, `median`, `count(DISTINCT)`, `GROUP BY` counts, and
-integer `sum` are exactly equal to their Python equivalents on DuckDB 1.5.5.
-`avg` and float `sum` are not, because summation order differs, so those assert
-within a stated relative and absolute tolerance. A criterion demanding exact
-equality everywhere would be false on arrival: `avg([-1e308, 1, 2, 1e308])` is
-`0.0` in DuckDB and `0.75` in Python.
+than assumed. Integer columns within ±2^53 can claim exactness; larger integer
+columns and every floating-point column are flagged non-exact. A column-level
+flag cannot encode operation-dependent floating-point error: even
+`[1e6, 1e-10, -1e6]` misses both stated tolerances for `avg` and `sum`.
+Therefore `count`, `min`, `max`, `median`, `count(DISTINCT)`, `GROUP BY` counts,
+and integer `sum` are the exactness property in v0. `avg` and float `sum` remain
+bounded regression measurements using relative tolerance `1e-9` and absolute
+tolerance `1e-12`; they are not guarantees attached to an exact column.
+Per-aggregate exactness metadata is future design work. A criterion demanding
+universal floating-point equality would be false on arrival:
+`avg([-1e308, 1, 2, 1e308])` is `0.0` in DuckDB and `0.75` in Python.
 
 The demonstration is separate and is not a test: an agent asked for a median over
 roughly 400 rows gets it wrong reading the payload and right reading the table.

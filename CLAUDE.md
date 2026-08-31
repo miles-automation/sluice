@@ -80,8 +80,10 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
 - **The handle rides in `content`** (§4.1); `structuredContent` mirrors it.
   **On the way in, `structuredContent` wins** (§5.1): a tool may put data there
   and prose in `content`, and flattening the prose discards the data.
-- **Exactness is domain-bounded** (§5.6). `median` equals Python exactly inside
-  the domain, not outside; `avg` never does. Never state the claim without it.
+- **Exactness is domain-bounded** (§5.6). Integer columns within ±2^53 can claim
+  exact aggregate results; larger integers and every `DOUBLE` column are
+  marked inexact. `avg` and float `sum` have only bounded regression evidence.
+  Never state the claim without its domain.
 - **Materialization is file-free** (§5.4). The lockdown is database-global and
   blocks DuckDB's own readers. Do not "fix" a load failure by relaxing it.
 - **Sluice owns type inference** (§5.5), because of the above. Never infer

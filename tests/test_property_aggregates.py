@@ -26,8 +26,6 @@ from sluice.intercept import Interceptor
 from sluice.query import QueryTool
 from sluice.store import Store
 
-pytestmark = pytest.mark.slow
-
 # Keep generated integer aggregates in the binary64-safe portion of the
 # correctness domain.  The fixed table below separately pins large-int
 # counterexamples where DuckDB's median loses precision.
@@ -68,7 +66,8 @@ def _rows(draw: DrawFn) -> list[dict[str, object]]:
     rows[1]["float_value"] = draw(_FLOAT_SAFE_INT)
     rows[0]["mixed_value"] = draw(_SAFE_INT)
     rows[1]["mixed_value"] = "a string"
-    rows[0].pop("optional", None)
+    # `optional` is deliberately absent from the first row; this exercises
+    # missing-key normalization.  The second row carries explicit JSON null.
     rows[1]["optional"] = None
     for row in rows[2:]:
         if draw(st.booleans()):
@@ -112,7 +111,6 @@ def _data_rows(markdown: str) -> list[list[str]]:
 
 
 async def _materialize(
-    store: Store,
     interceptor: Interceptor,
     payload: object,
     tool: str = "generated_rows",
@@ -132,20 +130,25 @@ async def _materialize(
     return intercepted
 
 
-async def _assert_generated_aggregates(rows: list[dict[str, object]]) -> None:
+async def _assert_generated_aggregates(
+    rows: list[dict[str, object]], *, mixed_exact: bool | None = False
+) -> None:
     limits = Limits()
     with Store.open(limits) as store:
         interceptor = Interceptor(store, limits, query_available=True)
         query = QueryTool(store, limits)
-        result = await _materialize(store, interceptor, {"items": rows})
+        result = await _materialize(interceptor, {"items": rows})
         table = _table_name(result)
         columns = _table_columns(result)
         assert columns["int_value"]["type"] == "BIGINT"
         assert columns["int_value"]["exact"] is True
         assert columns["float_value"]["type"] == "DOUBLE"
-        assert columns["float_value"]["exact"] is True
+        # DOUBLE aggregates have no universal exactness claim: summation order
+        # can defeat even the documented tolerance under cancellation.
+        assert columns["float_value"]["exact"] is False
         assert columns["mixed_value"]["type"] == "VARCHAR"
-        assert columns["mixed_value"]["exact"] is False
+        if mixed_exact is not None:
+            assert columns["mixed_value"]["exact"] is mixed_exact
 
         quoted = f'"{table}"'
         int_values = [
@@ -182,11 +185,13 @@ async def _assert_generated_aggregates(rows: list[dict[str, object]]) -> None:
         assert int(aggregate[7]) == len(present_optional)
         assert int(aggregate[8]) == len(set(present_optional))
 
+        # These order statistics are still checked over generated bounded
+        # values, but the handle's false exact flag prevents this from being a
+        # promise to callers for arbitrary DOUBLE columns.
         float_aggregate = _data_rows(
             await query.run(
                 f"SELECT count(float_value), min(float_value), max(float_value), "
-                f"count(DISTINCT float_value), median(float_value), avg(float_value), "
-                f"sum(float_value) FROM {quoted}"
+                f"count(DISTINCT float_value), median(float_value) FROM {quoted}"
             )
         )[0]
         assert int(float_aggregate[0]) == len(float_values)
@@ -194,12 +199,6 @@ async def _assert_generated_aggregates(rows: list[dict[str, object]]) -> None:
         assert float(float_aggregate[2]) == max(float_values)
         assert int(float_aggregate[3]) == len(set(float_values))
         assert float(float_aggregate[4]) == statistics.median(float_values)
-        assert math.isclose(
-            float(float_aggregate[5]), statistics.fmean(float_values), rel_tol=1e-9, abs_tol=1e-12
-        )
-        assert math.isclose(
-            float(float_aggregate[6]), sum(float_values), rel_tol=1e-9, abs_tol=1e-12
-        )
 
         grouped = _data_rows(
             await query.run(
@@ -212,32 +211,31 @@ async def _assert_generated_aggregates(rows: list[dict[str, object]]) -> None:
 
 @settings(max_examples=25, deadline=None)
 @given(rows=_rows())
+@pytest.mark.slow
 def test_aggregates_match_the_normalized_source(rows: list[dict[str, object]]) -> None:
     """Fuzz materialization, inference, and query together."""
     anyio.run(_assert_generated_aggregates, rows)
 
 
-_FIXED_CASES: tuple[tuple[list[object], str, float, float], ...] = (
+_FIXED_CASES: tuple[tuple[list[object], str, float], ...] = (
     (
         [0, 2**63 - 2, 2**63 - 1],
         "median(value)",
         9.223372036854776e18,
-        2**63 - 2,
     ),
-    ([1e308, 1e308], "median(value)", 1e308, math.inf),
+    ([1e308, 1e308], "median(value)", 1e308),
     (
         [-1e308, 1.0, 2.0, 1e308],
         "avg(value)",
         0.0,
-        0.75,
     ),
-    ([9007199254740993, 0.5], "max(value)", 9007199254740992.0, 9007199254740993),
+    ([9007199254740993, 0.5], "max(value)", 9007199254740992.0),
 )
 
 
-@pytest.mark.parametrize("values, expression, duck_value, python_value", _FIXED_CASES)
+@pytest.mark.parametrize("values, expression, duck_value", _FIXED_CASES)
 def test_out_of_domain_cases_are_explicitly_inexact(
-    values: list[object], expression: str, duck_value: object, python_value: object
+    values: list[object], expression: str, duck_value: float
 ) -> None:
     """Pin the §5.6 counterexamples rather than relying on random discovery."""
 
@@ -247,7 +245,6 @@ def test_out_of_domain_cases_are_explicitly_inexact(
             interceptor = Interceptor(store, limits, query_available=True)
             query = QueryTool(store, limits)
             result = await _materialize(
-                store,
                 interceptor,
                 {"items": [{"value": value} for value in values]},
                 tool="fixed_counterexample",
@@ -261,6 +258,68 @@ def test_out_of_domain_cases_are_explicitly_inexact(
             observed = float(row[0])
             assert isinstance(duck_value, float)
             assert math.isclose(observed, duck_value, rel_tol=0.0, abs_tol=0.0)
-            assert python_value != duck_value
+            source = [
+                value
+                for value in values
+                if isinstance(value, int | float) and not isinstance(value, bool)
+            ]
+            if expression == "median(value)":
+                python_value = statistics.median(source)
+            elif expression == "avg(value)":
+                python_value = statistics.fmean(source)
+            elif expression == "max(value)":
+                python_value = max(source)
+            else:
+                raise AssertionError(f"unhandled fixed expression: {expression}")
+            assert python_value != observed
+
+    anyio.run(check)
+
+
+def test_float_cancellation_is_a_bounded_regression_not_a_guarantee() -> None:
+    """Even moderate cancellation can exceed both documented tolerances."""
+
+    values: list[object] = [1e6, 1e-10, -1e6]
+
+    async def check() -> None:
+        limits = Limits()
+        with Store.open(limits) as store:
+            interceptor = Interceptor(store, limits, query_available=True)
+            query = QueryTool(store, limits)
+            result = await _materialize(
+                interceptor,
+                {"items": [{"value": value} for value in values]},
+                tool="float_cancellation",
+            )
+            columns = _table_columns(result)
+            assert columns["value"]["type"] == "DOUBLE"
+            assert columns["value"]["exact"] is False
+            table = _table_name(result)
+            row = _data_rows(await query.run(f'SELECT avg(value), sum(value) FROM "{table}"'))[0]
+            reference = [float(value) for value in values if isinstance(value, int | float)]
+            assert not math.isclose(
+                float(row[0]), statistics.fmean(reference), rel_tol=1e-9, abs_tol=1e-12
+            )
+            assert not math.isclose(float(row[1]), sum(reference), rel_tol=1e-9, abs_tol=1e-12)
+
+    anyio.run(check)
+
+
+@pytest.mark.parametrize("count", [1, 500])
+def test_advertised_row_boundaries_are_materialized(count: int) -> None:
+    """Pin the lower and upper row-count boundaries used by the design."""
+    rows: list[dict[str, object]] = [
+        {
+            "int_value": index,
+            "float_value": index + 0.5,
+            "group": "alpha" if index % 2 == 0 else "beta",
+            "mixed_value": "only" if count == 1 else index if index % 2 == 0 else "mixed",
+            "optional": None if index == 0 else index,
+        }
+        for index in range(count)
+    ]
+
+    async def check() -> None:
+        await _assert_generated_aggregates(rows, mixed_exact=None)
 
     anyio.run(check)
