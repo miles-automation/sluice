@@ -1,0 +1,83 @@
+{
+  "demo": "sluice median comparison (plan/001-scratch-db.md, M5, DoD 5)",
+  "generated_at_utc": "20260831T040623Z",
+  "rows": 400,
+  "prompt": "You have access to a tool that fetches rows of data; each row has a numeric 'score' field. Call it requesting 400 rows. Then compute the median of the 'score' field across all 400 rows. Reply with ONLY the numeric median value and nothing else -- no units, no explanation.",
+  "model_requested": "haiku",
+  "expected_median": 72.5,
+  "tolerance": {
+    "rel_tol": 1e-06,
+    "abs_tol": 0.005
+  },
+  "conditions": {
+    "baseline": {
+      "name": "baseline",
+      "argv": [
+        "claude",
+        "-p",
+        "You have access to a tool that fetches rows of data; each row has a numeric 'score' field. Call it requesting 400 rows. Then compute the median of the 'score' field across all 400 rows. Reply with ONLY the numeric median value and nothing else -- no units, no explanation.",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--mcp-config",
+        "/var/folders/1d/9l26_7015fv6gxzk9w3by19w0000gn/T/sluice-demo-0ibgadgx/baseline.mcp.json",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "dontAsk",
+        "--no-session-persistence",
+        "--tools",
+        "ToolSearch,mcp__fake__rows",
+        "--allowedTools",
+        "ToolSearch,mcp__fake__rows",
+        "--max-turns",
+        "8",
+        "--model",
+        "haiku"
+      ],
+      "status": "ok",
+      "reason": null,
+      "exit_code": 0,
+      "timed_out": false,
+      "duration_seconds": 144.42744258302264,
+      "model_used": "claude-haiku-4-5-20251001",
+      "parsed_answer": 71.5,
+      "correct": false,
+      "transcript_path": "demo/transcripts/20260831T040623Z/baseline.txt"
+    },
+    "treatment": {
+      "name": "treatment",
+      "argv": [
+        "claude",
+        "-p",
+        "You have access to a tool that fetches rows of data; each row has a numeric 'score' field. Call it requesting 400 rows. Then compute the median of the 'score' field across all 400 rows. Reply with ONLY the numeric median value and nothing else -- no units, no explanation.",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--mcp-config",
+        "/var/folders/1d/9l26_7015fv6gxzk9w3by19w0000gn/T/sluice-demo-0ibgadgx/treatment.mcp.json",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "dontAsk",
+        "--no-session-persistence",
+        "--tools",
+        "ToolSearch,mcp__sluice__fake__rows__e498daa779d6,mcp__sluice__query",
+        "--allowedTools",
+        "ToolSearch,mcp__sluice__fake__rows__e498daa779d6,mcp__sluice__query",
+        "--max-turns",
+        "8",
+        "--model",
+        "haiku"
+      ],
+      "status": "ok",
+      "reason": null,
+      "exit_code": 0,
+      "timed_out": false,
+      "duration_seconds": 16.154222208075225,
+      "model_used": "claude-haiku-4-5-20251001",
+      "parsed_answer": 72.5,
+      "correct": true,
+      "transcript_path": "demo/transcripts/20260831T040623Z/treatment.txt"
+    }
+  },
+  "non_determinism_note": "This is a single sampled run of a live model, not a deterministic test. `claude` may pick a different tool, retry differently, or phrase its final numeric answer differently on every invocation, and CLI/model updates change behavior out from under a pinned prompt. Do not treat one green run as proof of anything beyond that run; the repo does not gate CI on this file for exactly that reason (plan/001-scratch-db.md, 'Not in CI')."
+}
