@@ -14,9 +14,9 @@ from sluice.infer import ColumnType, coerce, infer_column
     [
         ([True, False, None], ColumnType.BOOLEAN, True),
         ([1, 2, 3], ColumnType.BIGINT, True),
-        ([2**63 - 1, 0], ColumnType.BIGINT, True),
-        ([2**64 + 1, 0], ColumnType.HUGEINT, True),
-        ([2**127 - 1], ColumnType.HUGEINT, True),
+        ([2**63 - 1, 0], ColumnType.BIGINT, False),
+        ([2**64 + 1, 0], ColumnType.HUGEINT, False),
+        ([2**127 - 1], ColumnType.HUGEINT, False),
         ([2**200, 1], ColumnType.VARCHAR, False),
         ([1.5, 2], ColumnType.DOUBLE, True),
         (["a", "b"], ColumnType.VARCHAR, True),
@@ -54,6 +54,20 @@ def test_timestamp_shaped_strings_stay_varchar(value: str) -> None:
 def test_integers_past_the_exact_float_range_are_marked_inexact() -> None:
     """Measured: `max([9007199254740993, 0.5])` as DOUBLE returns ...992.0."""
     column_type, exact = infer_column([9007199254740993, 0.5])
+    assert column_type is ColumnType.DOUBLE
+    assert not exact
+
+
+def test_large_integer_columns_are_inexact_for_median() -> None:
+    """DuckDB returns DOUBLE for median(BIGINT), losing large integer units."""
+    column_type, exact = infer_column([0, 2**63 - 2, 2**63 - 1])
+    assert column_type is ColumnType.BIGINT
+    assert not exact
+
+
+def test_large_finite_float_columns_are_inexact_for_tolerance_aggregates() -> None:
+    """Large finite values can erase small terms during avg/sum cancellation."""
+    column_type, exact = infer_column([-1e308, 1.0, 2.0, 1e308])
     assert column_type is ColumnType.DOUBLE
     assert not exact
 

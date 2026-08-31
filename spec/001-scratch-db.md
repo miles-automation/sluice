@@ -412,11 +412,12 @@ Per column, over every non-null value in the complete row set:
 | Values observed | Column type | `exact` |
 |---|---|---|
 | all bool | `BOOLEAN` | true |
-| all int, within int64 | `BIGINT` | true |
-| all int, within int128 | `HUGEINT` | true |
+| all int, within int64, every value within ±2^53 | `BIGINT` | true |
+| all int, within int64, some value outside ±2^53 | `BIGINT` | false |
+| all int, within int128 and some value outside int64 | `HUGEINT` | false |
 | all int, beyond int128 | `VARCHAR` | false |
-| all numeric, at least one float, **every int within ±2^53** | `DOUBLE` | true |
-| all numeric, at least one float, some int beyond ±2^53 | `VARCHAR` | false |
+| all numeric, at least one float, **every value within ±2^53** | `DOUBLE` | true |
+| all numeric, at least one float, some value outside ±2^53 | `DOUBLE` | false |
 | any non-finite float (`inf`, `nan`) present | `DOUBLE` | false |
 | all strings | `VARCHAR` | true |
 | any object or array | `JSON` | false |
@@ -434,10 +435,16 @@ Rules that exist because of measured behavior:
    `median()` succeeds and returns a lexicographic result: over integers 0 to 299
    plus one string it returned `'232'`. A number-shaped lie is the exact failure
    this project exists to prevent.
-3. **The ±2^53 rule.** `[9007199254740993, 0.5]` typed `DOUBLE` returns
-   `max = 9007199254740992.0`, against a true maximum of `9007199254740993`.
-   Measured. A mixed int-and-float column containing integers outside binary64's
-   exact range is marked non-exact.
+3. **The aggregate-safe ±2^53 rule.** DuckDB's `median()` returns `DOUBLE`
+   even for `BIGINT` and `HUGEINT`, so an integer outside binary64's exact
+   range can lose units (`median([0, 2^63-2, 2^63-1])`). Large finite floats
+   can also erase small terms from `avg()` and `sum()` under cancellation
+   (`avg([-1e308, 1.0, 2.0, 1e308])`). Therefore a numeric column is marked
+   exact only when every non-null value, integer or float, is within ±2^53;
+   larger values retain their physical type but are marked non-exact. The
+   mixed int-and-float case `[9007199254740993, 0.5]` remains the direct
+   `DOUBLE` precision example: DuckDB returns `max = 9007199254740992.0`
+   against a true maximum of `9007199254740993`.
 
 ### 5.6 The correctness contract
 
