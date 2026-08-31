@@ -33,11 +33,13 @@ from mcp import types
 
 from sluice.config import Limits
 from sluice.intercept import Interceptor
+from sluice.naming import quote_ident
 from sluice.store import Store
 
 SHAPES = ("flat", "nested", "wide", "mixed")
 SIZES_MIB = (1, 4, 16, 24, 30)
 CONCURRENCIES = (1, 2, 4)
+MODES = ("structured", "text", "dual")
 # The default matrix covers the configured concurrency and the useful scaling
 # points without making a full run needlessly long.  30 MiB and concurrency 4
 # remain available as one-off stress scenarios.
@@ -126,7 +128,7 @@ def make_payload(shape: str, target_bytes: int) -> tuple[dict[str, Any], int, in
     return payload, len(rows), actual
 
 
-async def run_pipeline(payloads: Iterable[dict[str, Any]], concurrency: int) -> None:
+async def run_pipeline(payloads: Iterable[dict[str, Any]], concurrency: int, mode: str) -> None:
     """Run the production interception path for all payloads."""
     payload_list = list(payloads)
     limits = Limits(
@@ -137,9 +139,14 @@ async def run_pipeline(payloads: Iterable[dict[str, Any]], concurrency: int) -> 
         interceptor = Interceptor(store, limits)
 
         async def one(index: int, payload: dict[str, Any]) -> types.CallToolResult:
+            text = json.dumps(payload)
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text="")],
-                structuredContent=payload,
+                content=(
+                    [types.TextContent(type="text", text=text)]
+                    if mode in ("text", "dual")
+                    else [types.TextContent(type="text", text="")]
+                ),
+                structuredContent=payload if mode in ("structured", "dual") else None,
             )
             return await interceptor.intercept(
                 server="benchmark",
@@ -156,9 +163,66 @@ async def run_pipeline(payloads: Iterable[dict[str, Any]], concurrency: int) -> 
         )
         if len(results) != len(payload_list):
             raise RuntimeError("not every benchmark payload completed")
+        for result in results:
+            content = result.structured_content
+            if not isinstance(content, dict) or not content.get("tables"):
+                raise RuntimeError("interception did not return a materialized table handle")
+            for table in content["tables"]:
+                name = table.get("name")
+                if not isinstance(name, str):
+                    raise RuntimeError("materialized handle did not name a table")
+                store.connection.execute(f"SELECT count(*) FROM {quote_ident(name)}").fetchone()
+        stored_calls = store.connection.execute("SELECT count(*) FROM sluice_calls").fetchone()
+        if stored_calls != (len(payload_list),):
+            raise RuntimeError(f"expected {len(payload_list)} envelope rows, got {stored_calls}")
 
 
-def run_scenario(shape: str, target_mib: int, concurrency: int) -> dict[str, Any]:
+async def run_sequential(payload: dict[str, Any], calls: int, mode: str) -> tuple[int, list[int]]:
+    """Run calls serially while retaining all materialized tables in one session."""
+    limits = Limits(max_payload_bytes=BENCHMARK_LIMIT, max_concurrent_materializations=2)
+    with Store.open(limits) as store:
+        interceptor = Interceptor(store, limits)
+        baseline = rss_high_water_bytes()
+        peaks: list[int] = []
+        for index in range(calls):
+            # Treat every response as a fresh SDK-decoded object, as a real
+            # downstream call would. The accumulated tables remain live in the
+            # Store for the duration of this long-session scenario.
+            call_payload = copy.deepcopy(payload)
+            text = json.dumps(call_payload)
+            result = types.CallToolResult(
+                content=(
+                    [types.TextContent(type="text", text=text)]
+                    if mode in ("text", "dual")
+                    else [types.TextContent(type="text", text="")]
+                ),
+                structuredContent=call_payload if mode in ("structured", "dual") else None,
+            )
+            intercepted = await interceptor.intercept(
+                server="benchmark",
+                tool=f"rows_{index}",
+                mounted=f"benchmark__rows_{index}",
+                arguments=None,
+                result=result,
+                meta=None,
+                started_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+            content = intercepted.structured_content
+            if not isinstance(content, dict) or not content.get("tables"):
+                raise RuntimeError("sequential interception did not materialize a table")
+            for table in content["tables"]:
+                name = table.get("name")
+                if not isinstance(name, str):
+                    raise RuntimeError("sequential handle did not name a table")
+                store.connection.execute(f"SELECT count(*) FROM {quote_ident(name)}").fetchone()
+            peaks.append(rss_high_water_bytes())
+        stored_calls = store.connection.execute("SELECT count(*) FROM sluice_calls").fetchone()
+        if stored_calls != (calls,):
+            raise RuntimeError(f"expected {calls} envelope rows, got {stored_calls}")
+    return baseline, peaks
+
+
+def run_scenario(shape: str, target_mib: int, concurrency: int, mode: str) -> dict[str, Any]:
     target_bytes = target_mib * 1024 * 1024
     payload, rows, payload_bytes = make_payload(shape, target_bytes)
     # Production receives an independently decoded object for each call. Make
@@ -167,11 +231,12 @@ def run_scenario(shape: str, target_mib: int, concurrency: int) -> dict[str, Any
     payloads = [payload, *(copy.deepcopy(payload) for _ in range(concurrency - 1))]
     baseline = rss_high_water_bytes()
     started = time.perf_counter()
-    asyncio.run(run_pipeline(payloads, concurrency))
+    asyncio.run(run_pipeline(payloads, concurrency, mode))
     elapsed = time.perf_counter() - started
     peak = rss_high_water_bytes()
     result = {
         "shape": shape,
+        "mode": mode,
         "target_mib": target_mib,
         "concurrency": concurrency,
         "payload_bytes": payload_bytes,
@@ -188,6 +253,33 @@ def run_scenario(shape: str, target_mib: int, concurrency: int) -> dict[str, Any
     }
     print(json.dumps(result, sort_keys=True))
     return result
+
+
+def run_sequential_scenario(shape: str, target_mib: int, calls: int, mode: str) -> None:
+    target_bytes = target_mib * 1024 * 1024
+    payload, rows, payload_bytes = make_payload(shape, target_bytes)
+    baseline, peaks = asyncio.run(run_sequential(payload, calls, mode))
+    result = {
+        "shape": shape,
+        "mode": mode,
+        "target_mib": target_mib,
+        "calls": calls,
+        "payload_bytes": payload_bytes,
+        "payload_mib": payload_bytes / 1024 / 1024,
+        "rows_per_call": rows,
+        "baseline_rss_high_water_bytes": baseline,
+        "per_call": [
+            {
+                "call": index,
+                "peak_rss_high_water_bytes": peak,
+                "high_water_increment_bytes": max(0, peak - baseline),
+            }
+            for index, peak in enumerate(peaks, start=1)
+        ],
+        "platform": platform.platform(),
+        "python": platform.python_version(),
+    }
+    print(json.dumps(result, sort_keys=True))
 
 
 def scenarios() -> Iterable[tuple[str, int, int]]:
@@ -209,6 +301,8 @@ def run_all() -> None:
                 str(size),
                 "--concurrency",
                 str(concurrency),
+                "--mode",
+                "structured",
             ],
             check=True,
             text=True,
@@ -223,13 +317,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shape", choices=SHAPES)
     parser.add_argument("--target-mib", type=int, choices=SIZES_MIB)
     parser.add_argument("--concurrency", type=int, choices=CONCURRENCIES)
+    parser.add_argument("--mode", choices=MODES, default="structured")
+    parser.add_argument("--sequential-calls", type=int)
     args = parser.parse_args()
     if args.all:
-        if any(value is not None for value in (args.shape, args.target_mib, args.concurrency)):
+        if any(
+            value is not None
+            for value in (args.shape, args.target_mib, args.concurrency, args.sequential_calls)
+        ):
             parser.error("--all cannot be combined with a single scenario")
         return args
-    if args.shape is None or args.target_mib is None or args.concurrency is None:
-        parser.error("single scenarios require --shape, --target-mib, and --concurrency")
+    if args.shape is None or args.target_mib is None:
+        parser.error("single scenarios require --shape and --target-mib")
+    if args.sequential_calls is None and args.concurrency is None:
+        parser.error("single scenarios require --concurrency or --sequential-calls")
+    if args.sequential_calls is not None and args.concurrency is not None:
+        parser.error("--sequential-calls and --concurrency are mutually exclusive")
+    if args.sequential_calls is not None and args.sequential_calls < 1:
+        parser.error("--sequential-calls must be positive")
     return args
 
 
@@ -237,8 +342,10 @@ def main() -> None:
     args = parse_args()
     if args.all:
         run_all()
+    elif args.sequential_calls is not None:
+        run_sequential_scenario(args.shape, args.target_mib, args.sequential_calls, args.mode)
     else:
-        run_scenario(args.shape, args.target_mib, args.concurrency)
+        run_scenario(args.shape, args.target_mib, args.concurrency, args.mode)
 
 
 if __name__ == "__main__":

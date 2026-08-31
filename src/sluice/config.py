@@ -42,9 +42,7 @@ _NON_NEGATIVE = ("preview_bytes", "preview_rows")
 
 @dataclass(frozen=True, slots=True)
 class Limits:
-    # 24 MiB leaves headroom for the file-free materialization pipeline when
-    # two calls are admitted on a 1 GiB deployment; see benchmark results.
-    max_payload_bytes: int = 25_165_824
+    max_payload_bytes: int = 33_554_432
     max_concurrent_materializations: int = 2
     preview_bytes: int = 2048
     preview_rows: int = 3

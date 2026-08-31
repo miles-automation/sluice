@@ -686,12 +686,11 @@ allocation multiple, but it does not see DuckDB's native allocations. Both
 measurements are retained rather than treating either as the whole process.
 
 This was the discarded file-based pipeline and is superseded by the file-free
-benchmark in `benchmarks/results/memory-2026-08-30.md`. That benchmark measured
-the current path across four shapes and two-call concurrency, and lowered the
-product default to 24 MiB for the target assumption of a 1 GiB process-memory
-budget. Neither measurement is a cross-platform guarantee; `ru_maxrss` is a
-process high-water mark and the SDK may decode `structuredContent` before the
-Sluice ceiling is applied.
+benchmark in `benchmarks/results/memory-2026-08-30.md`. Neither measurement is
+a cross-platform guarantee; `ru_maxrss` is a process high-water mark and the
+SDK may decode `structuredContent` before the Sluice ceiling is applied. The
+follow-up benchmark also found that dual-channel results and long-session table
+retention add memory not captured by this single-call file-based experiment.
 
 The success-path NDJSON file was absent after loading. A deliberately malformed
 NDJSON file raised InvalidInputException and was also absent after the finally

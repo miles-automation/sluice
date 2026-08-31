@@ -13,7 +13,7 @@ env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 [limits]
 # A ceiling applied before parsing, not a size gate on interception: everything
 # under it is still materialized. See spec 5.1 for what it does and does not bound.
-max_payload_bytes = 25165824
+max_payload_bytes = 33554432
 max_concurrent_materializations = 2
 preview_bytes = 2048
 preview_rows = 3
