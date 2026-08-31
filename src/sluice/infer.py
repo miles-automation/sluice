@@ -19,10 +19,13 @@ INT64_MAX = 2**63 - 1
 INT128_MIN = -(2**127)
 INT128_MAX = 2**127 - 1
 EXACT_FLOAT_MAX = 2**53
-"""Beyond this an integer is not exactly representable in binary64.
+"""Integer magnitude boundary for numeric exactness.
 
-Measured: a column of `[9007199254740993, 0.5]` typed DOUBLE returns
-`max = 9007199254740992.0` against a true maximum of `9007199254740993`.
+DuckDB's ``median`` returns ``DOUBLE`` for integer columns, so an integer
+outside this range cannot retain exactness through every aggregate.  The same
+boundary is not sufficient for floating-point columns: condition-dependent
+rounding can defeat even the §5.6 average/sum tolerance at modest magnitudes.
+Floating-point columns are consequently always marked non-exact.
 """
 
 
@@ -92,16 +95,18 @@ def infer_column(values: list[Any]) -> tuple[ColumnType, bool]:
 
     if not floats:
         if all(INT64_MIN <= v <= INT64_MAX for v in ints):
-            return ColumnType.BIGINT, True
+            exact = all(abs(v) <= EXACT_FLOAT_MAX for v in ints)
+            return ColumnType.BIGINT, exact
         if all(INT128_MIN <= v <= INT128_MAX for v in ints):
-            return ColumnType.HUGEINT, True
+            return ColumnType.HUGEINT, False
         return ColumnType.VARCHAR, False
 
     if any(not math.isfinite(v) for v in floats):
         return ColumnType.DOUBLE, False
-    if any(abs(v) > EXACT_FLOAT_MAX for v in ints):
-        return ColumnType.DOUBLE, False
-    return ColumnType.DOUBLE, True
+    # A single column-level flag cannot encode the operation-dependent error
+    # behavior of floating point aggregates. Keep the physical DOUBLE type,
+    # but never claim universal exactness for it.
+    return ColumnType.DOUBLE, False
 
 
 def coerce(value: Any, column_type: ColumnType) -> Any:

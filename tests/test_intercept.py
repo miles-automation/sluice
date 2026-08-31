@@ -336,9 +336,11 @@ async def test_edge_numbers_are_flagged_inexact(interceptor: Interceptor, proxy:
     assert result.structured_content is not None
     columns = {c["name"]: c for c in result.structured_content["tables"][0]["columns"]}
     assert columns["big"]["type"] == "BIGINT"
-    assert columns["big"]["exact"] is True
+    assert columns["big"]["exact"] is False
     assert columns["huge"]["type"] == "HUGEINT"
+    assert columns["huge"]["exact"] is False
     assert columns["mid"]["type"] == "BIGINT"
+    assert columns["mid"]["exact"] is False
     assert columns["f"]["type"] == "DOUBLE"
     assert columns["f"]["exact"] is False  # non-finite present
     assert "inexact" in _text(result)

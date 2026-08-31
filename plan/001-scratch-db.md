@@ -287,20 +287,23 @@ reference computed over the **§5.3 normalization**, not raw JSON: missing key a
 JSON `null` both become `None`, and the reference skips `None` exactly as SQL
 skips `NULL`.
 
-Restrict generated numeric columns to §5.6's safe domain. A mixed int-and-string
-column becomes `VARCHAR` by design and asserting a numeric aggregate over it
-tests the wrong thing.
+Restrict generated integer columns to §5.6's safe domain and keep generated
+floats bounded for reproducible regression measurements. Floating-point columns
+are always `exact: false`; a mixed int-and-string column becomes `VARCHAR` by
+design and asserting a numeric aggregate over it tests the wrong thing.
 
 **Exact:** `count(*)`, `count(col)`, `min`, `max`, `count(DISTINCT)` against
 `len({v for v in col if v is not None})`, `GROUP BY` counts against
 `collections.Counter`, integer `sum`, and `median` against `statistics.median`.
 
-**Within tolerance:** `avg` and float `sum`, via `math.isclose(rel_tol=1e-9,
-abs_tol=1e-12)`. Both bounds are required; relative tolerance alone does not
-survive cancellation.
+**Within tolerance:** bounded regression measurements for `avg` and float `sum`,
+via `math.isclose(rel_tol=1e-9, abs_tol=1e-12)`. Both bounds are required;
+relative tolerance alone does not survive cancellation. Floating-point columns
+are always marked `exact: false` because a single column flag cannot encode
+operation-dependent error. Per-aggregate exactness is future design work.
 
-**Mandatory fixed cases**, outside the domain, asserting the `exact` flag is
-false and no exactness is claimed. Hypothesis will not generate these:
+**Mandatory fixed cases**, asserting the `exact` flag is false and no exactness
+is claimed. Hypothesis will not generate these:
 
 ```
 median([0, 9223372036854775806, 9223372036854775807])  duck 9.223372036854776e+18  py exact int

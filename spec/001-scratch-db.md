@@ -412,11 +412,11 @@ Per column, over every non-null value in the complete row set:
 | Values observed | Column type | `exact` |
 |---|---|---|
 | all bool | `BOOLEAN` | true |
-| all int, within int64 | `BIGINT` | true |
-| all int, within int128 | `HUGEINT` | true |
+| all int, within int64, every value within ±2^53 | `BIGINT` | true |
+| all int, within int64, some value outside ±2^53 | `BIGINT` | false |
+| all int, within int128 and some value outside int64 | `HUGEINT` | false |
 | all int, beyond int128 | `VARCHAR` | false |
-| all numeric, at least one float, **every int within ±2^53** | `DOUBLE` | true |
-| all numeric, at least one float, some int beyond ±2^53 | `VARCHAR` | false |
+| all numeric, at least one float | `DOUBLE` | false |
 | any non-finite float (`inf`, `nan`) present | `DOUBLE` | false |
 | all strings | `VARCHAR` | true |
 | any object or array | `JSON` | false |
@@ -434,10 +434,18 @@ Rules that exist because of measured behavior:
    `median()` succeeds and returns a lexicographic result: over integers 0 to 299
    plus one string it returned `'232'`. A number-shaped lie is the exact failure
    this project exists to prevent.
-3. **The ±2^53 rule.** `[9007199254740993, 0.5]` typed `DOUBLE` returns
-   `max = 9007199254740992.0`, against a true maximum of `9007199254740993`.
-   Measured. A mixed int-and-float column containing integers outside binary64's
-   exact range is marked non-exact.
+3. **The aggregate-safe ±2^53 rule for integers.** DuckDB's `median()` returns
+   `DOUBLE` even for `BIGINT` and `HUGEINT`, so an integer outside binary64's
+   exact range can lose units (`median([0, 2^63-2, 2^63-1])`). Integer columns
+   retain exactness only when every non-null value is within ±2^53; larger
+   integers retain their physical type but are marked non-exact. A column-level
+   flag cannot honestly encode the operation-dependent error of floating point:
+   even moderate cancellation can exceed both the `avg()`/`sum()` tolerances
+   (`[1e6, 1e-10, -1e6]`). Every `DOUBLE` column is therefore marked non-exact;
+   its aggregate behavior is covered by bounded regression measurements only.
+   The mixed int-and-float case `[9007199254740993, 0.5]` remains the direct
+   `DOUBLE` precision example: DuckDB returns `max = 9007199254740992.0`
+   against a true maximum of `9007199254740993`.
 
 ### 5.6 The correctness contract
 
@@ -451,20 +459,26 @@ reference skips `None` explicitly, exactly as SQL aggregates skip `NULL`, and
 `COUNT(DISTINCT)` compares against `len({v for v in col if v is not None})`.
 
 **The safe domain.** Exactness is claimed only for columns marked `exact` in
-§5.5, with no non-finite values present.
+§5.5. Floating-point columns are deliberately never marked exact in v0 because
+the correctness of `avg()` and `sum()` depends on the values and accumulation
+order, not only on the column type. Per-aggregate exactness metadata is future
+work.
 
-**Exact equality**, inside the domain, verified on DuckDB 1.5.5:
+**Exact equality**, for columns marked exact, verified on DuckDB 1.5.5:
 `count(*)`, `count(col)`, `min`, `max`, `count(DISTINCT)`, `GROUP BY` counts,
-integer `sum`, and `median` on `BIGINT` and `DOUBLE` at even and odd row counts.
+integer `sum`, and `median` on bounded integer columns at even and odd row
+counts. Bounded regression checks also exercise floating-point order statistics,
+but they do not create a universal `DOUBLE` guarantee.
 
-**Within tolerance**: `avg` and float `sum`, asserted with `math.isclose` at a
-relative tolerance of `1e-9` **and** an absolute tolerance of `1e-12`. Both are
-required: relative tolerance alone does not survive cancellation. Measured,
-`avg([-1e308, 1.0, 2.0, 1e308])` is `0.0` in DuckDB and `0.75` in
-`statistics.fmean`, an infinite relative error.
+**Within tolerance**: bounded regression measurements for `avg` and float `sum`,
+asserted with `math.isclose` at a relative tolerance of `1e-9` **and** an
+absolute tolerance of `1e-12`. Both are required: relative tolerance alone does
+not survive cancellation. Measured, `avg([-1e308, 1.0, 2.0, 1e308])` is `0.0`
+in DuckDB and `0.75` in `statistics.fmean`, an infinite relative error. The
+v0 handle does not claim those tolerances for every `DOUBLE` column.
 
-**Outside the domain there is no guarantee**, and the handle says so per column
-via `exact: false`. Measured counterexamples, all outside it:
+**For inexact numeric columns there is no guarantee**, and the handle says so per
+column via `exact: false`. Measured counterexamples include:
 `median([0, 2^63-2, 2^63-1])` gives `9.223372036854776e+18` against an exact
 `9223372036854775806`; `median([1e308, 1e308])` gives `1e308` while
 `statistics.median` overflows to `inf`.

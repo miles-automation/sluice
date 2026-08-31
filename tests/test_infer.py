@@ -14,11 +14,11 @@ from sluice.infer import ColumnType, coerce, infer_column
     [
         ([True, False, None], ColumnType.BOOLEAN, True),
         ([1, 2, 3], ColumnType.BIGINT, True),
-        ([2**63 - 1, 0], ColumnType.BIGINT, True),
-        ([2**64 + 1, 0], ColumnType.HUGEINT, True),
-        ([2**127 - 1], ColumnType.HUGEINT, True),
+        ([2**63 - 1, 0], ColumnType.BIGINT, False),
+        ([2**64 + 1, 0], ColumnType.HUGEINT, False),
+        ([2**127 - 1], ColumnType.HUGEINT, False),
         ([2**200, 1], ColumnType.VARCHAR, False),
-        ([1.5, 2], ColumnType.DOUBLE, True),
+        ([1.5, 2], ColumnType.DOUBLE, False),
         (["a", "b"], ColumnType.VARCHAR, True),
         ([{"a": 1}], ColumnType.JSON, False),
         ([[1, 2]], ColumnType.JSON, False),
@@ -58,10 +58,24 @@ def test_integers_past_the_exact_float_range_are_marked_inexact() -> None:
     assert not exact
 
 
-def test_integers_inside_the_exact_float_range_stay_exact() -> None:
+def test_large_integer_columns_are_inexact_for_median() -> None:
+    """DuckDB returns DOUBLE for median(BIGINT), losing large integer units."""
+    column_type, exact = infer_column([0, 2**63 - 2, 2**63 - 1])
+    assert column_type is ColumnType.BIGINT
+    assert not exact
+
+
+def test_large_finite_float_columns_are_inexact_for_tolerance_aggregates() -> None:
+    """Large finite values can erase small terms during avg/sum cancellation."""
+    column_type, exact = infer_column([-1e308, 1.0, 2.0, 1e308])
+    assert column_type is ColumnType.DOUBLE
+    assert not exact
+
+
+def test_mixed_numeric_columns_are_never_claimed_exact() -> None:
     column_type, exact = infer_column([2**53, 0.5])
     assert column_type is ColumnType.DOUBLE
-    assert exact
+    assert not exact
 
 
 @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])
