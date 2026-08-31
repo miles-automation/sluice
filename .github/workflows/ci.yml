@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      # Dependencies deliberately have lower bounds rather than a committed
+      # lock file. The engine contract tests make CI the forward-compatibility
+      # tripwire for new MCP and DuckDB releases.
+      - name: Install current dependencies
+        run: uv sync --upgrade
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Run lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Run type checks
+        run: uv run mypy src tests
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: sluice-dist
+          path: dist/
+          if-no-files-found: error
