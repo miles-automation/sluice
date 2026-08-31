@@ -110,6 +110,7 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
 - **Session retention is bounded** (§7). `max_session_bytes` evicts oldest calls
   deterministically, dropping their tables and payload columns while preserving
   envelope metadata; handles never advertise a table after its call is evicted.
+  `max_session_calls` separately bounds metadata rows and scope views.
 
 ## Out of scope for v0
 

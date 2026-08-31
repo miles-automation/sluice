@@ -137,6 +137,20 @@ def test_engine_lockdown_does_not_block_pragma() -> None:
     assert con.execute("PRAGMA database_list").fetchall()
 
 
+def test_locked_engine_supports_atomic_retention_ddl_and_envelope_update() -> None:
+    """Retention relies on CREATE/INSERT/DROP/UPDATE in one transaction."""
+    con = _locked_connection()
+    con.execute("CREATE TABLE sluice_calls (call_id VARCHAR PRIMARY KEY, flat_reason VARCHAR)")
+    con.execute("BEGIN TRANSACTION")
+    con.execute("CREATE TABLE retained (value BIGINT)")
+    con.execute("INSERT INTO retained VALUES (1)")
+    con.execute("INSERT INTO sluice_calls VALUES ('c1', NULL)")
+    con.execute("DROP TABLE retained")
+    con.execute("UPDATE sluice_calls SET flat_reason = 'retention_evicted' WHERE call_id = 'c1'")
+    con.execute("COMMIT")
+    assert con.execute("SELECT * FROM sluice_calls").fetchall() == [("c1", "retention_evicted")]
+
+
 @pytest.mark.parametrize(
     ("sql", "count", "first_type"),
     [

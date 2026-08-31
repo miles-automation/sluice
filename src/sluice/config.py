@@ -40,6 +40,7 @@ _POSITIVE = (
 _NON_NEGATIVE = ("preview_bytes", "preview_rows")
 
 SESSION_RETENTION_DEFAULT = 256 * 1024 * 1024
+SESSION_CALLS_DEFAULT = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class Limits:
     # Keeping it finite by default prevents a long-lived session from growing
     # without bound while leaving the payload admission defaults unchanged.
     max_session_bytes: int = SESSION_RETENTION_DEFAULT
+    max_session_calls: int = SESSION_CALLS_DEFAULT
 
     def __post_init__(self) -> None:
         # Validated here rather than at parse time so a Limits built in code is
@@ -69,13 +71,13 @@ class Limits:
         # and booleans that reach here happily: `max_payload_bytes = "100"` used
         # to raise an uncaught TypeError from the comparison below, and
         # `max_columns = true` was accepted because bool subclasses int.
-        for name in (*_POSITIVE, "max_session_bytes", *_NON_NEGATIVE):
+        for name in (*_POSITIVE, "max_session_bytes", "max_session_calls", *_NON_NEGATIVE):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ConfigError(
                     f"[limits].{name} must be an integer, got {type(value).__name__}: {value!r}"
                 )
-        for name in (*_POSITIVE, "max_session_bytes"):
+        for name in (*_POSITIVE, "max_session_bytes", "max_session_calls"):
             if getattr(self, name) < 1:
                 raise ConfigError(f"[limits].{name} must be at least 1, got {getattr(self, name)}")
         for name in _NON_NEGATIVE:
@@ -83,6 +85,12 @@ class Limits:
                 raise ConfigError(
                     f"[limits].{name} must not be negative, got {getattr(self, name)}"
                 )
+
+        if self.max_session_bytes < self.max_payload_bytes:
+            raise ConfigError(
+                "[limits].max_session_bytes must be at least max_payload_bytes "
+                f"({self.max_payload_bytes}), got {self.max_session_bytes}"
+            )
 
         timeout = self.query_timeout_seconds
         if isinstance(timeout, bool) or not isinstance(timeout, int | float):

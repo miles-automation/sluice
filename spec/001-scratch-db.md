@@ -156,6 +156,12 @@ On an oversize result (§5.1), the payload columns are `NULL` and only the size
 columns are populated. Revision 2 required both "no parse" and a populated
 `result`, which was self-contradictory.
 
+Errors and results containing non-text blocks follow the same metadata-only
+storage rule: `result`, `result_text`, `result_blocks`, and
+`result_structured` are `NULL`; block kinds and byte sizes remain. The original
+error or non-text result is returned unchanged. Oversize results retain their
+existing size note in an additional text block, but likewise store no payload.
+
 ### 3.2 Naming
 
 One injective algorithm, used for both mounted tool names and table names.
@@ -643,6 +649,7 @@ query_max_bytes = 65536
 max_cell_bytes = 512
 duckdb_max_memory = "1GB"
 max_session_bytes = 268435456
+max_session_calls = 1000
 ```
 
 The payload default is a policy starting point, not a process RSS or
@@ -651,27 +658,35 @@ limit, not a process RSS or container-memory ceiling. The file-free benchmark
 in `benchmarks/results/memory-2026-08-30.md` found that payload size alone
 cannot establish a safe process-memory bound while structured-content decoding,
 dual-channel retention, and long-session table retention remain in the runtime.
-The runtime-memory blocker in plan R11 must be resolved before this limit is
-treated as trusted. Deployments should size and validate those runtime behaviors
-on the target host.
+The runtime-memory blocker in plan R11 is addressed by whole-pipeline admission
+and bounded logical retention, but this limit remains provisional and must not
+be treated as RSS calibration. Deployments should validate post-fix behavior on
+the target host.
 
 Every limit is validated where it is constructed, not only where it is parsed.
 `max_concurrent_materializations = 0` is the sharp one: a zero-sized admission
 semaphore blocks every materialization forever rather than failing.
 
-`max_concurrent_materializations` is intended as an admission gate over the
+`max_concurrent_materializations` is an admission gate over the
 whole pipeline, not just the write. Peak memory is a multiple of payload size,
 so N concurrent materializations multiply it; the write lock alone does not
-bound this because parsing and projection happen before the lock is taken. The
-current implementation does not yet cover payload selection or commit; plan R11
-tracks that runtime blocker, so these limits must not be described as a complete
-process-memory bound until it is fixed.
-The implementation now admits the whole interception pipeline: payload
-selection, parsing, projection, commit, and handle rendering. `max_session_bytes`
+bound this because parsing and projection happen before the lock is taken. It
+covers the whole interception pipeline: payload selection, parsing, projection,
+commit, and handle rendering. `max_session_bytes`
 is a positive logical retention budget for serialized envelope/table state; it
-is not a process-RSS or physical DuckDB-byte guarantee. Eviction is oldest-first
+is not a process-RSS or physical DuckDB-byte guarantee. Its 256 MiB default is
+explicitly provisional and untrusted for a 1 GiB RSS target until a post-fix
+benchmark on the deployment host. Eviction is oldest-first
 by admission order, with call id as a stable tie-breaker, and preserves envelope
 metadata while dropping payload columns and flat tables.
+
+`max_session_calls` is a separate positive cardinality budget for envelope rows
+and scope views/catalog entries. When it is exceeded, the oldest call row and
+its tables are deleted; a scope view is dropped only when no remaining row uses
+that scope. This is independent of `max_session_bytes`, which bounds logical
+payload/table bytes. Evicted table names are retained only in a bounded
+diagnostic cache, so an old stale handle may eventually receive the ordinary
+unknown-table rejection after that cache expires.
 
 ## 8. Failure behavior
 

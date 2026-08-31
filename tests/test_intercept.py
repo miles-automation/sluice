@@ -133,6 +133,10 @@ async def test_errors_pass_through_and_are_still_recorded(
     assert result.structured_content is None
     rows = _envelope(store)
     assert rows[0][3] is True
+    payload_columns = store.connection.execute(
+        f"SELECT result, result_text, result_blocks, result_structured FROM {ENVELOPE_TABLE}"
+    ).fetchone()
+    assert payload_columns == (None, None, None, None)
 
 
 async def test_image_results_pass_through_and_are_still_recorded(
@@ -148,24 +152,34 @@ async def test_image_bytes_are_not_stored(
 ) -> None:
     """FR-13: the envelope records block types and sizes, not the bytes."""
     await _run(interceptor, proxy, "picture")
-    blocks = store.connection.execute(f"SELECT result_blocks FROM {ENVELOPE_TABLE}").fetchall()
-    assert "iVBOR" not in blocks[0][0]
-    assert '"image"' in blocks[0][0]
+    blocks = store.connection.execute(
+        f"SELECT result_blocks, content_kinds FROM {ENVELOPE_TABLE}"
+    ).fetchone()
+    assert blocks == (None, ["image"])
 
 
 async def test_oversize_payloads_pass_through_unparsed(proxy: Proxy, store: Store) -> None:
     tight = Limits(max_payload_bytes=64)
     interceptor = Interceptor(store, tight)
     result = await _run(interceptor, proxy, "rows", {"n": 400})
-    assert "over the 64-byte materialization ceiling" in _text(
-        result.model_copy(update={"content": result.content[-1:]})
+    # Oversize retains its established size note while storing no payload;
+    # the size is available in the envelope metadata too.
+    assert result.structured_content is None
+    assert "row-0399" in _text(result)
+    assert any(
+        isinstance(block, types.TextContent)
+        and "over the 64-byte materialization ceiling" in block.text
+        for block in result.content
     )
-    # Payload columns stay NULL: no parse happened.
-    row = _envelope(store)[0]
-    assert row[6] is True
-    wire = row[5]
-    assert isinstance(wire, int)
-    assert wire > 64
+    row = store.connection.execute(
+        f"SELECT args, result, result_text, result_blocks, result_structured, "
+        f"byte_size, wire_bytes FROM {ENVELOPE_TABLE}"
+    ).fetchone()
+    assert row is not None
+    assert row[1:5] == (None, None, None, None)
+    assert row[0] == '{"n": 400}'
+    assert row[5] > 64
+    assert row[6] > 64
 
 
 async def test_no_query_hint_until_the_query_tool_exists(

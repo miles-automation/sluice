@@ -38,6 +38,20 @@ def describe_blocks(result: types.CallToolResult) -> list[dict[str, Any]]:
     return described
 
 
+def metadata_only(result: types.CallToolResult) -> SelectedPayload:
+    """Describe a passthrough result without retaining its textual payload.
+
+    Error, binary, and oversize results are returned verbatim, but their
+    envelope record must not become a second unbounded payload cache.
+    """
+    return SelectedPayload(
+        channel=PayloadChannel.NONE,
+        blocks=[{"type": getattr(block, "type", "unknown")} for block in result.content],
+        byte_size=candidate_size(result),
+        wire_bytes=wire_bytes(result),
+    )
+
+
 def concatenated_text(result: types.CallToolResult) -> str:
     return "".join(block.text for block in text_blocks(result))
 
@@ -179,3 +193,17 @@ def render_row_preview(rows: list[Any], count: int, limit: int) -> tuple[str, in
     text = "\n".join(json.dumps(row, default=str) for row in shown)
     truncated, _ = truncate_to_bytes(text, limit)
     return truncated, len(shown)
+
+
+def bounded_preview_rows(rows: list[Any], count: int, limit: int) -> list[Any]:
+    """Keep only raw source rows needed for a bounded handle preview."""
+    selected: list[Any] = []
+    used = 0
+    for row in rows[:count]:
+        encoded = json.dumps(row, default=str).encode("utf-8")
+        separator = 1 if selected else 0
+        if used + separator + len(encoded) > limit:
+            break
+        selected.append(row)
+        used += separator + len(encoded)
+    return selected

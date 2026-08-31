@@ -18,6 +18,8 @@ max_concurrent_materializations = 2
 # Logical bytes retained by payloads and materialized table rows in this
 # process. Old calls are evicted deterministically when the budget is full.
 max_session_bytes = 268435456
+# Metadata rows and scope views are capped separately from payload/table bytes.
+max_session_calls = 1000
 preview_bytes = 2048
 preview_rows = 3
 max_columns = 64

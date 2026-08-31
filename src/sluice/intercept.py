@@ -89,26 +89,20 @@ class Interceptor:
 
         reason = payload_select.passthrough_reason(result, self._limits.max_payload_bytes)
 
-        if reason is Passthrough.OVERSIZE:
-            # No parse: the payload columns stay NULL and only the sizes are
-            # recorded (spec 3.1). Revision 2 required both "no parse" and a
-            # populated `result`, which was self-contradictory.
-            selected = SelectedPayload(
-                channel=PayloadChannel.NONE,
-                value=None,
-                text=None,
-                blocks=payload_select.describe_blocks(result),
-                byte_size=payload_select.candidate_size(result),
-                wire_bytes=payload_select.wire_bytes(result),
-            )
+        if reason is not None:
+            # Passthrough is intentionally a metadata-only retention path. The
+            # original result is returned below, while no error/binary/oversize
+            # text is copied into any envelope payload column.
+            selected = payload_select.metadata_only(result)
         else:
             selected = payload_select.select(result)
 
         plans: list[TablePlan] = []
         tables: list[TableRef] = []
         flat_reason: str | None = None
+        preview_rows: list[object] = []
         if reason is None:
-            plans, tables, flat_reason = await self._plan(mounted, scope_id, selected)
+            plans, tables, flat_reason, preview_rows = await self._plan(mounted, scope_id, selected)
 
         record = CallRecord(
             call_id=call_id,
@@ -158,7 +152,14 @@ class Interceptor:
                 flat_reason=f"load_failed: {type(exc).__name__}: {exc}",
             )
             try:
-                await self._store.commit_call(degraded, [])
+                retry_retained = await self._store.commit_call(degraded, [])
+                if not retry_retained:
+                    record = replace(
+                        degraded,
+                        flat_reason="retention_budget_exceeded",
+                    )
+                else:
+                    record = degraded
             except Exception:
                 # FR-8 is conditional on the envelope write. There is no
                 # fallback journal, so hand back what the tool actually
@@ -170,7 +171,7 @@ class Interceptor:
         if reason is not None:
             return self._passthrough(result, reason, selected)
 
-        return handle_render.to_result(self._build_handle(record, selected, tables, plans))
+        return handle_render.to_result(self._build_handle(record, selected, tables, preview_rows))
 
     def _passthrough(
         self,
@@ -178,19 +179,19 @@ class Interceptor:
         reason: Passthrough,
         selected: SelectedPayload,
     ) -> types.CallToolResult:
-        if reason is not Passthrough.OVERSIZE:
-            # FR-12 and FR-13: errors and non-text content go back untouched.
-            # An error is diagnostic and mangling it makes debugging worse;
-            # binary content has nothing to flatten.
-            return result
-        note = handle_render.size_note(selected.byte_size, self._limits.max_payload_bytes)
-        return result.model_copy(
-            update={"content": [*result.content, types.TextContent(type="text", text=note)]}
-        )
+        # FR-12 and FR-13 preserve the downstream object byte-for-byte. The
+        # oversize path adds its established size note while retaining no
+        # payload data in the envelope.
+        if reason is Passthrough.OVERSIZE:
+            note = handle_render.size_note(selected.byte_size, self._limits.max_payload_bytes)
+            return result.model_copy(
+                update={"content": [*result.content, types.TextContent(type="text", text=note)]}
+            )
+        return result
 
     async def _plan(
         self, mounted: str, scope_id: str, selected: SelectedPayload
-    ) -> tuple[list[TablePlan], list[TableRef], str | None]:
+    ) -> tuple[list[TablePlan], list[TableRef], str | None, list[object]]:
         """Compute every table without touching the database.
 
         Planning is separated from writing so the write can be one transaction.
@@ -199,22 +200,27 @@ class Interceptor:
         row; it never fails the tool call (FR-10).
         """
         if selected.channel is PayloadChannel.NONE:
-            return [], [], "not_json: no channel parsed as JSON"
+            return [], [], "not_json: no channel parsed as JSON", []
         try:
             return await self._build_plans(mounted, scope_id, selected)
         except Exception as exc:
             logger.exception("planning failed for %s", mounted)
-            return [], [], f"load_failed: {type(exc).__name__}: {exc}"
+            return [], [], f"load_failed: {type(exc).__name__}: {exc}", []
 
     async def _build_plans(
         self, mounted: str, scope_id: str, selected: SelectedPayload
-    ) -> tuple[list[TablePlan], list[TableRef], str | None]:
+    ) -> tuple[list[TablePlan], list[TableRef], str | None, list[object]]:
         extraction = shape.extract(selected.value)
         if not extraction.row_sets:
-            return [], [], extraction.reason
+            return [], [], extraction.reason, []
         plans: list[TablePlan] = []
         tables: list[TableRef] = []
+        preview_rows: list[object] = []
         for row_set in extraction.row_sets:
+            if not preview_rows:
+                preview_rows = payload_select.bounded_preview_rows(
+                    row_set.rows, self._limits.preview_rows, self._limits.preview_bytes
+                )
             projection = shape.project(row_set.rows, self._limits.max_columns)
             stored_to_source = {v: k for k, v in projection.renamed.items()}
             specs: list[ColumnSpec] = []
@@ -258,21 +264,21 @@ class Interceptor:
                     ],
                 )
             )
-        return plans, tables, None
+        return plans, tables, None, preview_rows
 
     def _build_handle(
         self,
         record: CallRecord,
         selected: SelectedPayload,
         tables: list[TableRef],
-        plans: list[TablePlan],
+        preview_rows: list[object],
     ) -> Handle:
         preview, complete = payload_select.render_preview(selected, self._limits.preview_bytes)
         shown: int | None = None
         total: int | None = None
-        if not complete and tables and plans:
+        if not complete and tables:
             preview, shown = payload_select.render_row_preview(
-                plans[0].records, self._limits.preview_rows, self._limits.preview_bytes
+                preview_rows, len(preview_rows), self._limits.preview_bytes
             )
             total = tables[0].row_count
         return Handle(

@@ -2,17 +2,18 @@
 
 import json
 import logging
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, replace
 from types import TracebackType
 from typing import Any, Self
 
 import anyio
 import duckdb
 
-from sluice.config import SESSION_RETENTION_DEFAULT, Limits
+from sluice.config import SESSION_CALLS_DEFAULT, SESSION_RETENTION_DEFAULT, Limits
 from sluice.gate import SCOPE_PATTERN
 from sluice.infer import ColumnSpec, coerce
-from sluice.models import CallRecord, TablePlan
+from sluice.models import CallRecord, PayloadChannel, SelectedPayload, TablePlan
 from sluice.naming import quote_ident
 from sluice.shape import CALL_COLUMN, ROW_COLUMN
 
@@ -83,6 +84,12 @@ def _json_or_none(value: object) -> str | None:
 class _RetainedCall:
     order: int
     size: int
+    tables: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CallMetadata:
+    order: int
     scope_id: str
     tables: tuple[str, ...]
 
@@ -99,15 +106,25 @@ class Store:
         self,
         connection: duckdb.DuckDBPyConnection,
         max_session_bytes: int = SESSION_RETENTION_DEFAULT,
+        max_session_calls: int = SESSION_CALLS_DEFAULT,
     ) -> None:
         self._connection = connection
         self._max_session_bytes = max_session_bytes
+        self._max_session_calls = max_session_calls
         self._lock = anyio.Lock()
+        self._commit_condition = anyio.Condition()
+        self._next_commit_seq = 1
+        self._retry_seq: int | None = None
+        self._committing_seq: int | None = None
         self._call_sequences: dict[str, int] = {}
         self._table_sequences: dict[str, int] = {}
         self._retention_sequence = 0
         self._retained: dict[str, _RetainedCall] = {}
+        self._metadata: dict[str, _CallMetadata] = {}
         self._retained_bytes = 0
+        self._evicted_tables: set[str] = set()
+        self._evicted_table_order: deque[str] = deque()
+        self._evicted_table_limit = max_session_calls * 64
         # Exactly the objects the gate will admit. Nothing else in the catalog
         # is reachable, whether or not anyone thought to deny it by name.
         self._allowed_objects: set[str] = set()
@@ -120,7 +137,7 @@ class Store:
         # CREATE TABLE still works after the lockdown; only external access and
         # further configuration changes are closed off.
         connection.execute(ENVELOPE_DDL)
-        return cls(connection, limits.max_session_bytes)
+        return cls(connection, limits.max_session_bytes, limits.max_session_calls)
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
@@ -138,6 +155,11 @@ class Store:
     @property
     def retained_call_ids(self) -> set[str]:
         return set(self._retained)
+
+    @property
+    def evicted_tables(self) -> set[str]:
+        """Table names removed by retention, for a precise stale-handle error."""
+        return set(self._evicted_tables)
 
     def close(self) -> None:
         self._connection.close()
@@ -187,41 +209,98 @@ class Store:
         through several candidate tables leaves some of them. Either the call is
         fully recorded or the database is untouched.
         """
-        async with self._lock:
-            return await anyio.to_thread.run_sync(self._commit, record, plans)
+        # Records created by the interceptor carry a sequence assigned before
+        # planning. Waiting here makes physical commit order independent of
+        # how long each plan took. Direct Store users (and old callers) retain
+        # the original serialized-writer behavior with sequence 0.
+        if record.retention_seq <= 0:
+            async with self._lock:
+                return await anyio.to_thread.run_sync(self._commit, record, plans)
+
+        sequence = record.retention_seq
+        async with self._commit_condition:
+            while sequence != self._next_commit_seq and sequence != self._retry_seq:
+                await self._commit_condition.wait()
+            retry = sequence == self._retry_seq
+            self._committing_seq = sequence
+        try:
+            async with self._lock:
+                outcome = await anyio.to_thread.run_sync(self._commit, record, plans)
+        except Exception:
+            async with self._commit_condition:
+                if retry:
+                    self._finish_commit(sequence)
+                else:
+                    self._retry_seq = sequence
+                    self._committing_seq = None
+                    self._commit_condition.notify_all()
+            raise
+        async with self._commit_condition:
+            self._finish_commit(sequence)
+        return outcome
+
+    def _finish_commit(self, sequence: int) -> None:
+        if self._retry_seq == sequence:
+            self._retry_seq = None
+        self._next_commit_seq = max(self._next_commit_seq, sequence + 1)
+        self._committing_seq = None
+        self._commit_condition.notify_all()
 
     def _commit(self, record: CallRecord, plans: list[TablePlan]) -> bool:
         size = self._retention_size(record, plans)
         order = record.retention_seq or self._retention_sequence + 1
+        fits_budget = size <= self._max_session_bytes
+        stored_record = record
+        if not fits_budget:
+            stored_record = replace(
+                record,
+                flat_tables=[],
+                source_paths=[],
+                flat_reason="retention_budget_exceeded",
+                payload=self._metadata_payload(record.payload),
+            )
         new_entry = _RetainedCall(
             order=order,
             size=size,
-            scope_id=record.scope_id,
-            tables=tuple(plan.name for plan in plans),
+            tables=tuple(plan.name for plan in plans) if fits_budget else (),
         )
         retained = dict(self._retained)
-        retained[record.call_id] = new_entry
+        if fits_budget:
+            retained[record.call_id] = new_entry
+        metadata = dict(self._metadata)
+        metadata[record.call_id] = _CallMetadata(
+            order=order,
+            scope_id=record.scope_id,
+            tables=new_entry.tables,
+        )
         self._connection.execute("BEGIN TRANSACTION")
         try:
-            for plan in plans:
+            for plan in plans if fits_budget else []:
                 self._create_flat(plan, record.call_id)
-            self._insert_envelope(record)
-            view = self._ensure_scope_view(record.scope_id)
+            self._insert_envelope(stored_record)
+            view = self._ensure_scope_view(stored_record.scope_id)
             while self._retained_total(retained) > self._max_session_bytes:
                 victim_id = min(
                     retained,
                     key=lambda call_id: (retained[call_id].order, call_id),
                 )
-                victim = retained.pop(victim_id)
+                byte_victim = retained.pop(victim_id)
                 self._evict(
                     victim_id,
-                    victim,
+                    byte_victim,
                     reason=(
                         "retention_budget_exceeded"
                         if victim_id == record.call_id
                         else "retention_evicted"
                     ),
                 )
+            while len(metadata) > self._max_session_calls:
+                victim_id = min(metadata, key=lambda call_id: (metadata[call_id].order, call_id))
+                metadata_victim = metadata.pop(victim_id)
+                # A metadata-cap eviction also removes any byte-retained table
+                # for the same call from the candidate retained set.
+                retained.pop(victim_id, None)
+                self._delete_call(victim_id, metadata_victim)
         except Exception:
             self._connection.execute("ROLLBACK")
             raise
@@ -232,11 +311,24 @@ class Store:
         evicted = set(all_entries) - set(retained)
         for call_id in evicted:
             self._allowed_objects.difference_update(all_entries[call_id].tables)
+            self._remember_evicted(all_entries[call_id].tables)
+            if call_id in metadata:
+                metadata[call_id] = replace(metadata[call_id], tables=())
         self._retained = retained
         self._retained_bytes = self._retained_total(retained)
+        removed_metadata = set(self._metadata) - set(metadata)
+        for call_id in removed_metadata:
+            self._allowed_objects.difference_update(self._metadata[call_id].tables)
+            self._remember_evicted(self._metadata[call_id].tables)
+        remaining_scopes = {entry.scope_id for entry in metadata.values()}
+        for call_id in removed_metadata:
+            scope_id = self._metadata[call_id].scope_id
+            if scope_id not in remaining_scopes:
+                self._allowed_objects.discard(scope_view_name(scope_id))
+        self._metadata = metadata
         self._allowed_objects.update(table for entry in retained.values() for table in entry.tables)
         self._allowed_objects.add(view)
-        return record.call_id in retained
+        return fits_budget
 
     @staticmethod
     def _retained_total(retained: dict[str, _RetainedCall]) -> int:
@@ -250,13 +342,71 @@ class Store:
         envelope's wire payload plus the rows Sluice asks DuckDB to retain gives
         a stable, conservative measure for eviction and includes both channels.
         """
-        size = max(record.payload.wire_bytes, record.payload.byte_size, 1)
-        if record.args is not None:
-            size += len(json.dumps(record.args, default=str).encode("utf-8"))
+        payload = record.payload
+        stored_blocks = (
+            None
+            if payload.channel is PayloadChannel.NONE
+            and payload.value is None
+            and payload.text is None
+            and payload.structured is None
+            else payload.blocks
+        )
+        # Charge each envelope representation independently. In particular,
+        # dual-channel calls retain both the parsed value and the raw text.
+        json_fields = (
+            record.args,
+            payload.value,
+            stored_blocks,
+            payload.structured,
+            record.content_kinds,
+            record.flat_tables,
+            record.source_paths,
+        )
+        size = sum(self._json_size(value) for value in json_fields if value is not None)
+        text_fields = (
+            record.call_id,
+            record.scope_id,
+            record.server,
+            record.tool,
+            payload.text,
+            str(payload.channel),
+            record.failure_class,
+            record.flat_reason,
+        )
+        size += sum(len(value.encode("utf-8")) for value in text_fields if value is not None)
+        size += sum(
+            len(str(value).encode("utf-8"))
+            for value in (
+                record.seq,
+                payload.conflict,
+                payload.byte_size,
+                payload.wire_bytes,
+                record.is_error,
+                record.started_at,
+                record.ended_at,
+                record.duration_ms,
+            )
+        )
         for plan in plans:
-            size += len(plan.name) + len(plan.source_path)
-            size += sum(len(json.dumps(row, default=str).encode("utf-8")) for row in plan.records)
-        return size
+            size += len(plan.name.encode("utf-8")) + len(plan.source_path.encode("utf-8"))
+            size += sum(self._json_size(row) for row in plan.records)
+        return max(size, 1)
+
+    @staticmethod
+    def _json_size(value: object) -> int:
+        return len(json.dumps(value, default=str).encode("utf-8"))
+
+    @staticmethod
+    def _metadata_payload(payload: SelectedPayload) -> SelectedPayload:
+        return replace(
+            payload,
+            channel=PayloadChannel.NONE,
+            value=None,
+            text=None,
+            blocks=[],
+            structured=None,
+            conflict=False,
+        )
 
     def _evict(self, call_id: str, entry: _RetainedCall, *, reason: str) -> None:
         """Drop a call's tables and clear payload columns, preserving metadata."""
@@ -268,6 +418,31 @@ class Store:
             "flat_tables = [], source_paths = [], flat_reason = ? WHERE call_id = ?",
             (reason, call_id),
         )
+
+    def _remember_evicted(self, tables: tuple[str, ...]) -> None:
+        for table in tables:
+            if table in self._evicted_tables:
+                self._evicted_table_order.remove(table)
+            self._evicted_tables.add(table)
+            self._evicted_table_order.append(table)
+            while len(self._evicted_table_order) > self._evicted_table_limit:
+                self._evicted_tables.discard(self._evicted_table_order.popleft())
+
+    def _delete_call(self, call_id: str, entry: _CallMetadata) -> None:
+        """Delete metadata-cap evictions and their catalog objects atomically."""
+        for table in entry.tables:
+            self._connection.execute(f"DROP TABLE IF EXISTS {quote_ident(table)}")
+        self._connection.execute(
+            f"DELETE FROM {quote_ident(ENVELOPE_TABLE)} WHERE call_id = ?", (call_id,)
+        )
+        remaining = self._connection.execute(
+            f"SELECT 1 FROM {quote_ident(ENVELOPE_TABLE)} WHERE scope_id = ? LIMIT 1",
+            (entry.scope_id,),
+        ).fetchone()
+        if remaining is None:
+            self._connection.execute(
+                f"DROP VIEW IF EXISTS {quote_ident(scope_view_name(entry.scope_id))}"
+            )
 
     def _ensure_scope_view(self, scope_id: str) -> str:
         if not SCOPE_PATTERN.match(scope_id):
@@ -284,6 +459,17 @@ class Store:
 
     def _insert_envelope(self, record: CallRecord) -> None:
         payload = record.payload
+        # Passthrough records retain only sizes and block kinds. In particular,
+        # result_blocks is a payload column and must remain NULL even when the
+        # in-memory selector kept a metadata-only description for the handle.
+        blocks = (
+            None
+            if payload.channel is PayloadChannel.NONE
+            and payload.value is None
+            and payload.text is None
+            and payload.structured is None
+            else payload.blocks
+        )
         row: tuple[Any, ...] = (
             record.call_id,
             record.scope_id,
@@ -293,7 +479,7 @@ class Store:
             _json_or_none(record.args),
             _json_or_none(payload.value),
             payload.text,
-            _json_or_none(payload.blocks),
+            _json_or_none(blocks),
             _json_or_none(payload.structured),
             str(payload.channel),
             payload.conflict,

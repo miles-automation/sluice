@@ -110,13 +110,30 @@ def test_empty_memory_limit_is_rejected() -> None:
 
 
 def test_session_retention_limit_parses_and_is_positive() -> None:
-    config = parse_config({**MINIMAL, "limits": {"max_session_bytes": 4096}})
+    config = parse_config(
+        {**MINIMAL, "limits": {"max_payload_bytes": 1000, "max_session_bytes": 4096}}
+    )
     assert config.limits.max_session_bytes == 4096
 
 
 def test_session_retention_limit_rejects_zero() -> None:
     with pytest.raises(ConfigError, match="max_session_bytes"):
         parse_config({**MINIMAL, "limits": {"max_session_bytes": 0}})
+
+
+def test_session_retention_must_cover_payload_limit() -> None:
+    with pytest.raises(ConfigError, match="at least max_payload_bytes"):
+        parse_config(
+            {
+                **MINIMAL,
+                "limits": {"max_payload_bytes": 200, "max_session_bytes": 199},
+            }
+        )
+
+
+def test_session_call_limit_is_positive() -> None:
+    with pytest.raises(ConfigError, match="max_session_calls"):
+        parse_config({**MINIMAL, "limits": {"max_session_calls": 0}})
 
 
 def test_load_config_reads_a_file(tmp_path: Path) -> None:

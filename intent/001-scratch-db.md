@@ -128,7 +128,9 @@ Session lifetime is still process-scoped in v0, but retention is bounded. The
 session budget is a safety valve for long-lived processes, not persistence or a
 claim about the host's RSS. Evicted calls keep envelope metadata for coherent
 history, while their payload columns and flat tables are removed; a call that
-cannot fit the budget returns an envelope-only handle.
+cannot fit the budget returns an envelope-only handle. A separate positive call
+cap bounds metadata rows and scope-view cardinality; stale-table diagnostics are
+best effort within a bounded cache.
 - **No cross-server joins or entity resolution.** Joining a GitHub issue table to
   a Linear ticket table needs identity mapping, which is a product in itself.
 - **No auth, policy enforcement, redaction, or audit layer.** A proxy that sees
