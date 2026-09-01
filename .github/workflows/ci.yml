@@ -51,12 +51,12 @@ jobs:
         run: |
           uv venv --python 3.14 /tmp/sluice-wheel-smoke
           uv pip install --python /tmp/sluice-wheel-smoke/bin/python dist/*.whl
-          /tmp/sluice-wheel-smoke/bin/python -c 'import importlib.resources, sluice; assert importlib.resources.files("sluice").joinpath("py.typed").is_file(); assert sluice.__version__ == "0.1.0"'
+          /tmp/sluice-wheel-smoke/bin/python -c 'import importlib.metadata, importlib.resources, sluice; assert importlib.metadata.version("mcp-sluice") == sluice.__version__; assert importlib.resources.files("sluice").joinpath("py.typed").is_file()'
           /tmp/sluice-wheel-smoke/bin/sluice --help
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
-          name: sluice-dist
+          name: mcp-sluice-dist
           path: dist/
           if-no-files-found: error

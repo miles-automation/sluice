@@ -62,7 +62,7 @@ sluice --config sluice.toml
 ```
 
 Dependency metadata deliberately carries lower bounds, not exact pins, and no
-lock file is committed. Both install paths therefore resolve current releases of
+lock file is committed. All install paths therefore resolve current releases of
 `mcp` and DuckDB, which may be newer than the verified baseline. CI upgrades to
 current dependencies and runs the engine-contract tripwires, but those tests are
 not part of the wheel. For a deployment, build from a checkout at a green commit
@@ -133,8 +133,9 @@ fail loudly.
 These are operational and logical bounds, not a process-RSS guarantee.
 `duckdb_max_memory = "1GB"` limits DuckDB's engine allocations, not the whole
 process, and the MCP SDK may decode structured content before Sluice can measure
-it. The [memory benchmark](benchmarks/results/memory-2026-08-30.md) records the
-four-shape, dual-channel concurrency calibration and long-session evidence.
+it. The [memory benchmark](https://github.com/miles-automation/sluice/blob/main/benchmarks/results/memory-2026-08-30.md)
+records the four-shape, dual-channel concurrency calibration and long-session
+evidence.
 
 ## Architecture
 
@@ -329,4 +330,5 @@ incomplete backlog:
 
 ## License
 
-Sluice is licensed under the [Apache License 2.0](LICENSE).
+Sluice is licensed under the
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
