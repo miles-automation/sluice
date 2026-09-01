@@ -98,7 +98,8 @@ Behavior differs across revisions; do not generalize.
 
 ### Querying
 
-- **FR-15** Sluice exposes one tool, `query(sql: str, max_rows: int = 100)`.
+- **FR-15** Sluice exposes one tool, `query(sql: str, max_rows: int | None = None)`;
+  omitting `max_rows` uses the configured `query_max_rows` ceiling.
 - **FR-16** `query` accepts exactly one statement and only a read statement
   (§6.1). Everything else is rejected before execution.
 - **FR-17** `query` enforces a wall-clock timeout, a returned-row cap, and a
@@ -587,7 +588,8 @@ other.
   semicolons and duplicate column names break inside a subquery even though they
   passed layer 1, and rejecting SQL the agent was told is legal is worse than the
   cap it solves.
-- `max_rows` defaults to 100, capped at 1000.
+- `max_rows` defaults to the configured `query_max_rows` (100 by default) and
+  cannot exceed that configured ceiling.
 - The extra row proves **at least one** row was omitted. It does not give a
   count, and the output must say "additional rows exist" rather than a number
   Sluice cannot know without a second execution.
@@ -820,10 +822,11 @@ every table name (§3.2), so:
 
 **Residual risk, stated plainly.** Without a client-supplied conversation
 identifier this is capability-based isolation, not enforced isolation. It rests on
-unguessable names plus a catalog denylist, and a denylist is weaker than the other
-two query layers. An agent that retains a handle across a conversation boundary
-still reaches that table. Enforced isolation needs either a conversation id from
-the client or one DuckDB database per scope, and both are v1.
+unguessable names plus the parsed-AST object allowlist; that capability model is
+weaker than a hard per-scope database boundary. An agent that retains a handle
+across a conversation boundary still reaches that table. Enforced isolation
+needs either a conversation id from the client or one DuckDB database per scope,
+and both are v1.
 
 The cost is FR-18: no table discovery. The agent's own transcript is the index.
 Isolation and discovery are in direct tension and v0 chooses isolation.

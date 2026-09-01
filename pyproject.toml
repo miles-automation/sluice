@@ -8,6 +8,14 @@ version = "0.1.0"
 description = "Passthrough MCP server that materializes tool results into a DuckDB scratch database"
 readme = "README.md"
 requires-python = ">=3.14"
+keywords = ["mcp", "model-context-protocol", "duckdb"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
 
 # Lower bounds only, deliberately. They encode "we need something that landed
 # here": mcp 2.1.1 for InputRequiredResult and the on_list_tools constructor API,
@@ -20,6 +28,9 @@ dependencies = [
     "duckdb>=1.5.5",
     "mcp>=2.1.1",
 ]
+
+[project.urls]
+Repository = "https://github.com/miles-automation/sluice"
 
 [project.scripts]
 sluice = "sluice.__main__:main"
@@ -51,6 +62,6 @@ files = ["src", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "slow: property tests and anything that generates large inputs",
+    "slow: timing-sensitive tests (concurrency, timeouts) and anything that generates large inputs",
     "contract: asserts measured third-party library behavior (see plan/001-notes-m0.md)",
 ]

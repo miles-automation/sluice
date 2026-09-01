@@ -16,11 +16,15 @@ the rules below.
 uv sync                       # install
 uv run sluice --config sluice.toml   # run as an MCP stdio server
 uv run pytest                 # full suite
-uv run pytest -m "not slow"   # skip the Hypothesis property test
+uv run pytest -m "not slow"   # skip timing-sensitive tests (concurrency, timeouts)
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src
-uv run python -m demo.median  # the eval; not part of CI, calls a model
+uv run mypy src tests
 ```
+
+The M5 Hypothesis correctness property is `tests/test_property_aggregates.py`.
+The non-deterministic model-eval harness is `uv run python -m demo.median`; use
+`--dry-run` to validate its setup without spending a model call. It is evidence,
+never a CI gate.
 
 ## Python version rules
 
@@ -42,22 +46,23 @@ uv run python -m demo.median  # the eval; not part of CI, calls a model
   transport and must never be written to).
 - `shape.py`, `infer.py`, `naming.py` are pure: no DuckDB, no MCP, no IO. They
   hold the logic most likely to be wrong and are cheapest to test. Keep them pure.
-- DuckDB calls are blocking: dispatch through `asyncio.to_thread`, serialize
-  writes behind an `asyncio.Lock`, one connection per in-flight query.
-- pytest, function-style tests, Hypothesis for the correctness property.
+- DuckDB calls are blocking: dispatch through `anyio.to_thread.run_sync`,
+  serialize writes behind an `anyio.Lock`, one connection per in-flight query.
+- pytest, function-style tests, and Hypothesis for the M5 correctness property.
 
 ## Architecture
 
 ```
 client --stdio--> server.py  tools/list = downstream union + query
                   proxy.py   downstream session, paginated list, round-trip relay
+                  gate.py    the query tool's three-layer read-only gate
                   shape.py   extract rows -> depth-1 projection        (pure)
                   infer.py   column types + the `exact` flag           (pure)
                   naming.py  injective names, quoting, collisions      (pure)
                   scope.py   scope ids; stale handles fail loudly
                   store.py   envelope row + typed tables
                   handle.py  preview + tables + columns -> the agent
-                  query.py   three-layer gate, timeout, caps
+                  query.py   per-query connection, timeout, result shaping
 ```
 
 Data model: one `sluice_calls` envelope row per call. Plus one typed table per
@@ -67,8 +72,9 @@ scope minted per call it would name one table, and reaching a table whose name
 you lost is discovery, which isolation blocks. Tables and the envelope row are
 written in one transaction.
 
-Pinned: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 1.5.5. Every normative
-claim in the spec is against those; do not generalize across revisions.
+Verified baseline: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 1.5.5. Every
+normative claim in the spec is against those; dependencies have lower bounds
+rather than exact pins, so do not generalize across revisions.
 
 ## Rules that are load-bearing
 
@@ -105,6 +111,9 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
   `annotations.destructiveHint`.
 - **Every truncation is reported** (§6.3). Silent truncation is a correctness bug
   in a tool that sells determinism.
+- **Agent-sized allocation functions are blocked** (§6.1). Table functions and
+  scalar constructors such as `range`, `lpad`, `list_resize`, and `bitstring`
+  can allocate before output rendering applies its cap.
 - **Admission covers the whole interception pipeline** (§7). Selection, parse,
   projection, commit, and handle rendering all run under the same semaphore.
 - **Session retention is bounded** (§7). `max_session_bytes` evicts oldest calls
