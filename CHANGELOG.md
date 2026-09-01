@@ -61,8 +61,9 @@ milestones in `plan/001-scratch-db.md`, for anyone picking up the repo mid-build
 
 ### Release operations remaining
 
-- Run an end-to-end canary against a real configured downstream MCP server and
-  record evidence.
+- The end-to-end canary against a real configured GitHub MCP server passed; see
+  `review/canary-v0.1.0.md` for the observed handle, query, envelope, and
+  isolation checks.
 - Choose a license and whether the repository/package should be public.
 - Tag and publish v0 after those decisions. There is no license file, license
   package metadata, or tagged release yet.

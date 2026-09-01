@@ -21,11 +21,11 @@ the test suite. The reproducible live-model demo recorded one baseline miss
 not a deterministic guarantee.
 
 CI runs the full test, lint, formatting, strict type-check, and package-build
-gates. Remaining release operations are an end-to-end canary against a real
-configured downstream MCP server, the human license and public-release decision,
-and then a tag/publication. There is no license file, tagged release, or
-published package yet; the license decision must update both `LICENSE` and the
-package metadata in `pyproject.toml`.
+gates. The end-to-end canary against a real configured GitHub MCP server passed;
+its evidence is in `review/canary-v0.1.0.md`. Remaining release operations are
+the human license and public-release decision, then a tag/publication. There is
+no license file, tagged release, or published package yet; the license decision
+must update both `LICENSE` and the package metadata in `pyproject.toml`.
 
 Read `spec/001-scratch-db.md` before changing behavior; `intent/` records why
 the non-goals are non-goals; `plan/001-notes-m0.md` holds the measured
