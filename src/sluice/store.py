@@ -433,19 +433,17 @@ class Store:
             record.flat_reason,
         )
         size += sum(len(value.encode("utf-8")) for value in text_fields if value is not None)
-        size += sum(
-            len(str(value).encode("utf-8"))
-            for value in (
-                record.seq,
-                payload.conflict,
-                payload.byte_size,
-                payload.wire_bytes,
-                record.is_error,
-                record.started_at,
-                record.ended_at,
-                record.duration_ms,
-            )
+        scalar_fields = (
+            record.seq,
+            payload.conflict,
+            payload.byte_size,
+            payload.wire_bytes,
+            record.is_error,
+            record.started_at,
+            record.ended_at,
+            record.duration_ms,
         )
+        size += sum(len(str(value).encode("utf-8")) for value in scalar_fields if value is not None)
         for plan in plans:
             size += len(plan.name.encode("utf-8")) + len(plan.source_path.encode("utf-8"))
             size += sum(self._json_size(row) for row in plan.records)

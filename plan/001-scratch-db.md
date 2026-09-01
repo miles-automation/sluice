@@ -229,24 +229,27 @@ long-session follow-ups. The dual-channel and sequential measurements show that
 payload size alone cannot bound process memory: the SDK-decoded structured
 value, retained text channel, and accumulated session tables all contribute.
 The `1GB` DuckDB setting is an engine allocation limit, not a process RSS
-ceiling. The 32 MiB default therefore remains unchanged and **untrusted** until
-post-fix memory evidence is collected; see
-`benchmarks/results/memory-2026-08-30.md`. `structuredContent` is already
+ceiling. The former 32 MiB default was therefore **untrusted** pending post-fix
+evidence. After R11 landed, all four benchmark shapes at 1 MiB, dual-channel,
+concurrency 2 completed in 5.8–8.3 seconds with 57.8–66.9 MB high-water
+increments; see `benchmarks/results/memory-2026-08-30.md`. The v0 admission
+default is consequently 1 MiB. `structuredContent` is already
 decoded by the SDK before the check, so the ceiling bounds what Sluice does next,
-not what already happened. The admission semaphore currently wraps only
-`_build_plans`, not payload selection or commit, in the pre-fix benchmark.
+not what already happened. In the pre-fix benchmark, the admission semaphore
+wrapped only `_build_plans`, not payload selection or commit.
 
 **R11. Runtime memory accounting and retention.** Severity: high, blocker for
 trusting R6. The SDK may decode `structuredContent` before Sluice can apply its
 payload limit; dual-channel results retain both representations; and a long
-session retains every materialized table and envelope row. The current
-admission semaphore wraps `_build_plans` only, not payload selection or commit.
-The benchmark demonstrates these effects but does not calibrate defaults. The
-post-fix implementation moves admission around the whole pipeline, charges
+session retains every materialized table and envelope row. The pre-fix
+admission semaphore wrapped `_build_plans` only, not payload selection or commit.
+The pre-fix benchmark demonstrates these effects but cannot calibrate defaults.
+The post-fix implementation moves admission around the whole pipeline, charges
 every serialized retained envelope/table representation, bounds retained
 metadata/catalog cardinality, and degrades safely before collateral eviction.
-Post-fix process-memory measurement is still required before either memory
-default is treated as calibrated for a target deployment.
+Post-fix measurement supports the 1 MiB per-call admission default on the
+reference host. The separate 256 MiB logical-retention default remains
+provisional for a target deployment.
 The implementation now admits the whole selection-through-handle pipeline and
 uses `max_session_bytes` for deterministic oldest-first logical retention
 eviction. Eviction drops tables and payload columns but preserves envelope
@@ -254,7 +257,7 @@ metadata; a call larger than the budget degrades to an envelope-only handle.
 The separate `max_session_calls` cap bounds metadata rows and scope views,
 deleting old rows and dropping unused views. These are logical state bounds, not
 RSS calibration; the 256 MiB default remains explicitly provisional for a 1 GiB
-RSS target until a post-fix benchmark.
+RSS target until it is validated on that deployment host.
 
 **R7. MRTR relay is stateful.** Severity: medium, new in v0 scope. Relaying
 `request_state` means Sluice carries an in-flight call across round trips. The

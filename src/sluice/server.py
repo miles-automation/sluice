@@ -59,6 +59,23 @@ def build_server(
             return await _run_query(query, params)
 
         started_at = datetime.now(UTC).replace(tzinfo=None)
+
+        async def record_failure(failure: DownstreamError) -> types.CallToolResult:
+            result = error_result(failure)
+            if interceptor is None:
+                return result
+            entry = proxy.resolve(params.name)
+            return await interceptor.intercept(
+                server=entry.server if entry else "unknown",
+                tool=failure.tool,
+                mounted=params.name,
+                arguments=params.arguments,
+                result=result,
+                meta=params.meta,
+                started_at=started_at,
+                failure_class=str(failure.failure_class),
+            )
+
         try:
             result = await proxy.call(
                 params.name,
@@ -70,7 +87,7 @@ def build_server(
             )
         except DownstreamError as failure:
             logger.warning("downstream failure: %s", failure)
-            return error_result(failure)
+            return await record_failure(failure)
         else:
             if isinstance(result, types.InputRequiredResult) and (
                 context.protocol_version not in MODERN_VERSIONS
@@ -80,7 +97,7 @@ def build_server(
                 # it up anyway fails inside the serializer with a validation
                 # error that names neither the tool nor the version, so say what
                 # actually happened instead.
-                return error_result(
+                return await record_failure(
                     DownstreamError(
                         FailureClass.PROTOCOL,
                         params.name,

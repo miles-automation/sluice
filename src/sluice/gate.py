@@ -31,8 +31,26 @@ SCOPE_PATTERN = re.compile(r"\A[0-9a-f]{32}\Z")
 
 ALLOWED_TABLE_FUNCTIONS: frozenset[str] = frozenset()
 """No table functions. `range()` and friends are how you write a query that runs
-for a week, and nothing about querying materialized results needs them. Scalar
-functions such as `json_extract` are unaffected: they are not table functions."""
+for a week, and nothing about querying materialized results needs them. Common
+bounded scalar functions such as `json_extract` remain available; scalar calls
+with a table-function overload or attacker-chosen allocation size do not."""
+
+MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "array_resize",
+        "bitstring",
+        "format",
+        "list_resize",
+        "lpad",
+        "nextval",
+        "printf",
+        "rpad",
+        "setseed",
+        "sleep_ms",
+        "write_log",
+    }
+)
+"""Scalar calls that mutate, block, or allocate from an attacker-chosen size."""
 
 
 class QueryRejectedError(ValueError):
@@ -88,26 +106,71 @@ def _check_objects(
     evicted_objects: set[str] | frozenset[str],
 ) -> None:
     document = _serialize(sql, connection)
-    _validate(document, frozenset(), allowed_objects, evicted_objects)
+    # DuckDB resolves unquoted identifiers case-insensitively. Normalize both
+    # sides so a CTE cannot evade or accidentally gain the allowlist merely by
+    # changing its spelling.
+    allowed = frozenset(name.casefold() for name in allowed_objects)
+    evicted = frozenset(name.casefold() for name in evicted_objects)
+    # Some DuckDB table functions also have scalar syntax. In particular,
+    # `SELECT unnest(range(...))` does not produce a TABLE_FUNCTION AST node,
+    # so checking that node alone leaves a resource-amplification bypass. Build
+    # the deny set from the engine catalog rather than trying to keep a copy of
+    # DuckDB's growing function list here.
+    table_function_names = frozenset(
+        str(row[0]).casefold()
+        for row in connection.execute(
+            "SELECT DISTINCT function_name FROM duckdb_functions() WHERE function_type = 'table'"
+        ).fetchall()
+    )
+    restricted_functions = table_function_names | MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS
+    _validate(document, frozenset(), allowed, evicted, restricted_functions)
 
 
-def _cte_names(node: dict[str, Any]) -> frozenset[str]:
+def _cte_entries(node: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     cte_map = node.get("cte_map")
     if not isinstance(cte_map, dict):
-        return frozenset()
-    names = {
-        str(entry["key"])
-        for entry in cte_map.get("map") or []
-        if isinstance(entry, dict) and entry.get("key")
-    }
-    return frozenset(names)
+        return []
+    entries: list[tuple[str, dict[str, Any]]] = []
+    for entry in cte_map.get("map") or []:
+        if isinstance(entry, dict) and entry.get("key") and isinstance(entry.get("value"), dict):
+            entries.append((str(entry["key"]).casefold(), entry["value"]))
+    return entries
+
+
+def _validate_recursive_cte(
+    node: dict[str, Any],
+    visible: frozenset[str],
+    name: str,
+    allowed_objects: frozenset[str],
+    evicted_objects: frozenset[str],
+    restricted_functions: frozenset[str],
+) -> None:
+    """Validate a recursive CTE with its seed and recursive terms scoped apart."""
+    # The recursive binding is legal only in the recursive term. In particular,
+    # the seed must not be able to use the same name to reach a physical table.
+    left = node.get("left")
+    if left is not None:
+        _validate(left, visible, allowed_objects, evicted_objects, restricted_functions)
+    right = node.get("right")
+    if right is not None:
+        _validate(
+            right,
+            visible | {name},
+            allowed_objects,
+            evicted_objects,
+            restricted_functions,
+        )
+    for key, child in node.items():
+        if key not in {"left", "right"}:
+            _validate(child, visible, allowed_objects, evicted_objects, restricted_functions)
 
 
 def _validate(
     node: Any,
     visible: frozenset[str],
-    allowed_objects: set[str],
-    evicted_objects: set[str] | frozenset[str],
+    allowed_objects: frozenset[str],
+    evicted_objects: frozenset[str],
+    restricted_functions: frozenset[str],
 ) -> None:
     """Check every referenced object, honouring lexical scope.
 
@@ -125,7 +188,33 @@ def _validate(
     they resolve to the CTE rather than to anything real.
     """
     if isinstance(node, dict):
-        local = visible | _cte_names(node)
+        # CTEs are sequential bindings. A declaration is visible to the main
+        # query and later declarations, but not to its own definition or any
+        # earlier definition. Treating the whole map as visible up front lets
+        # `WITH hidden AS (SELECT * FROM hidden) ...` read a physical table.
+        entries = _cte_entries(node)
+        local = visible
+        for name, value in entries:
+            query = value.get("query")
+            query_node = query.get("node") if isinstance(query, dict) else None
+            if isinstance(query_node, dict) and query_node.get("type") == "RECURSIVE_CTE_NODE":
+                _validate_recursive_cte(
+                    query_node,
+                    local,
+                    name,
+                    allowed_objects,
+                    evicted_objects,
+                    restricted_functions,
+                )
+            elif query_node is not None:
+                _validate(
+                    query_node,
+                    local,
+                    allowed_objects,
+                    evicted_objects,
+                    restricted_functions,
+                )
+            local = local | {name}
         kind = node.get("type")
         if kind == "BASE_TABLE":
             schema = node.get("schema_name") or ""
@@ -134,12 +223,13 @@ def _validate(
                 raise QueryRejectedError(
                     f"schema-qualified tables are not available: {schema}.{name}"
                 )
-            if name not in local and name in evicted_objects:
+            normalized_name = name.casefold()
+            if normalized_name not in local and normalized_name in evicted_objects:
                 raise QueryRejectedError(
                     f"table {name!r} was evicted by the session retention budget; "
                     "rerun the source tool call to materialize it again"
                 )
-            if name not in local and name not in allowed_objects:
+            if normalized_name not in local and normalized_name not in allowed_objects:
                 raise QueryRejectedError(
                     f"unknown table {name!r}. You can only query tables named in the "
                     "handles you were given in this conversation."
@@ -149,13 +239,20 @@ def _validate(
             name = str(function.get("function_name")) if isinstance(function, dict) else "?"
             if name not in ALLOWED_TABLE_FUNCTIONS:
                 raise QueryRejectedError(f"table function not allowed: {name}")
+        elif kind == "FUNCTION":
+            name = str(node.get("function_name") or "?")
+            if name.casefold() in restricted_functions:
+                raise QueryRejectedError(f"function not allowed: {name}")
         elif kind == "SHOW_REF":
             raise QueryRejectedError(
                 "SHOW and DESCRIBE are not available; the tables you can query are named "
                 "in the handles you were given"
             )
-        for child in node.values():
-            _validate(child, local, allowed_objects, evicted_objects)
+        # The CTE definitions were validated above with their declaration-time
+        # visibility. Do not walk `cte_map` again with the final scope.
+        for key, child in node.items():
+            if key != "cte_map":
+                _validate(child, local, allowed_objects, evicted_objects, restricted_functions)
     elif isinstance(node, list):
         for child in node:
-            _validate(child, visible, allowed_objects, evicted_objects)
+            _validate(child, visible, allowed_objects, evicted_objects, restricted_functions)

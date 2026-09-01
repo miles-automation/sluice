@@ -126,7 +126,7 @@ CREATE TABLE sluice_calls (
     source_channel VARCHAR,             -- 'structured' | 'text' | 'none'
     channel_conflict BOOLEAN,           -- both channels parsed and disagreed (§5.1)
     byte_size    BIGINT,                -- selected payload, serialized (§5.1)
-    wire_bytes   BIGINT,                -- total result size on the wire
+    wire_bytes   BIGINT,                -- total wire size; NULL when measuring would copy passthrough data
     is_error     BOOLEAN,
     failure_class VARCHAR,              -- §8; NULL on success
     content_kinds VARCHAR[],
@@ -152,15 +152,17 @@ larger than the whole budget, it is recorded envelope-only with
 concatenate irreversibly, and §6.4's recovery path must be able to return what
 the server actually sent.
 
-On an oversize result (§5.1), the payload columns are `NULL` and only the size
-columns are populated. Revision 2 required both "no parse" and a populated
-`result`, which was self-contradictory.
+On an oversize result (§5.1), the payload columns are `NULL`, `byte_size` records
+the safely measured candidate size, and `wire_bytes` is `NULL` because exact
+wire sizing would serialize the complete unbounded result. Revision 2 required
+both "no parse" and a populated `result`, which was self-contradictory.
 
 Errors and results containing non-text blocks follow the same metadata-only
 storage rule: `result`, `result_text`, `result_blocks`, and
-`result_structured` are `NULL`; block kinds and byte sizes remain. The original
-error or non-text result is returned unchanged. Oversize results retain their
-existing size note in an additional text block, but likewise store no payload.
+`result_structured` are `NULL`; bounded block kinds remain, while unmeasured
+sizes are zero/`NULL`. The original error or non-text result is returned
+unchanged. Oversize results retain their existing size note in an additional
+text block, but likewise store no payload.
 
 ### 3.2 Naming
 
@@ -326,7 +328,9 @@ Appended verbatim to each proxied description:
    `structuredContent` payload the SDK has **already decoded it** before Sluice
    can measure it, so this check cannot prevent that decode. It bounds what
    Sluice does next, not what the SDK already did. Do not describe it as an OOM
-   guarantee for structured results.
+   guarantee for structured results. For error, non-text, and oversize
+   passthrough, `wire_bytes` is `NULL`: exactly measuring an unbounded result
+   would require serializing it into a second complete in-memory copy.
 3. Select the payload channel:
    a. `structuredContent` present: that is the payload. `source_channel='structured'`.
    b. Otherwise exactly one text block parses as JSON: that block.
@@ -638,7 +642,7 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 
 [limits]
-max_payload_bytes = 33554432   # 32 MiB; see 5.1 on what this does and does not bound
+max_payload_bytes = 1048576    # 1 MiB; see 5.1 on what this does and does not bound
 max_concurrent_materializations = 2
 preview_bytes = 2048
 preview_rows = 3
@@ -652,16 +656,14 @@ max_session_bytes = 268435456
 max_session_calls = 1000
 ```
 
-The payload default is a policy starting point, not a process RSS or
-container-memory bound. `duckdb_max_memory = "1GB"` is an engine allocation
-limit, not a process RSS or container-memory ceiling. The file-free benchmark
-in `benchmarks/results/memory-2026-08-30.md` found that payload size alone
-cannot establish a safe process-memory bound while structured-content decoding,
-dual-channel retention, and long-session table retention remain in the runtime.
-The runtime-memory blocker in plan R11 is addressed by whole-pipeline admission
-and bounded logical retention, but this limit remains provisional and must not
-be treated as RSS calibration. Deployments should validate post-fix behavior on
-the target host.
+The payload default is an operational policy starting point, not a process RSS
+or container-memory bound. `duckdb_max_memory = "1GB"` is an engine allocation
+limit, not a process RSS or container-memory ceiling. The post-R11 calibration
+in `benchmarks/results/memory-2026-08-30.md` exercises all four benchmark shapes
+at 1 MiB, dual channel, concurrency 2, plus 15 sequential retained calls. Those
+runs support the conservative 1 MiB v0 admission default on the reference host;
+they do not bound memory the MCP SDK already spent decoding structured content.
+Deployments should validate behavior on their target host.
 
 Every limit is validated where it is constructed, not only where it is parsed.
 `max_concurrent_materializations = 0` is the sharp one: a zero-sized admission

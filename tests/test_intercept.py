@@ -179,7 +179,64 @@ async def test_oversize_payloads_pass_through_unparsed(proxy: Proxy, store: Stor
     assert row[1:5] == (None, None, None, None)
     assert row[0] == '{"n": 400}'
     assert row[5] > 64
-    assert row[6] > 64
+    assert row[6] is None
+
+
+async def test_dual_channels_share_one_payload_ceiling(store: Store) -> None:
+    limits = Limits(max_payload_bytes=128, max_session_bytes=128)
+    interceptor = Interceptor(store, limits)
+    downstream = types.CallToolResult(
+        content=[types.TextContent(type="text", text="x" * 120)],
+        structured_content={"items": [{"id": 1}]},
+    )
+    result = await interceptor.intercept(
+        server="fake",
+        tool="dual",
+        mounted="fake__dual",
+        arguments=None,
+        result=downstream,
+        meta=None,
+        started_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    assert result.structured_content == downstream.structured_content
+    assert any(
+        isinstance(block, types.TextContent) and "materialization ceiling" in block.text
+        for block in result.content
+    )
+    row = store.connection.execute(
+        f"SELECT byte_size, result, result_text, result_blocks, result_structured "
+        f"FROM {ENVELOPE_TABLE}"
+    ).fetchone()
+    assert row is not None
+    assert row[0] > limits.max_payload_bytes
+    assert row[1:] == (None, None, None, None)
+
+
+async def test_non_text_metadata_path_does_not_serialize_the_result(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    interceptor = Interceptor(store, Limits())
+    downstream = types.CallToolResult(
+        content=[types.ImageContent(type="image", data="a" * 1_000_000, mime_type="image/png")]
+    )
+
+    def forbidden_serialization(*args: object, **kwargs: object) -> str:
+        raise AssertionError("metadata-only passthrough serialized the full result")
+
+    monkeypatch.setattr(types.CallToolResult, "model_dump_json", forbidden_serialization)
+    returned = await interceptor.intercept(
+        server="fake",
+        tool="image",
+        mounted="fake__image",
+        arguments=None,
+        result=downstream,
+        meta=None,
+        started_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    assert returned is downstream
+    assert store.connection.execute(f"SELECT wire_bytes FROM {ENVELOPE_TABLE}").fetchone() == (
+        None,
+    )
 
 
 async def test_no_query_hint_until_the_query_tool_exists(

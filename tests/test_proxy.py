@@ -2,6 +2,7 @@
 
 import json
 
+import anyio
 import pytest
 from mcp import Client, types
 
@@ -92,6 +93,28 @@ async def test_output_schema_violation_is_classified(proxy: Proxy) -> None:
     with pytest.raises(DownstreamError) as caught:
         await proxy.call(_mounted("bad_schema"), None)
     assert caught.value.failure_class is FailureClass.OUTPUT_SCHEMA
+
+
+async def test_transport_failure_marks_the_session_unhealthy(
+    proxy: Proxy, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    async def broken_call(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        raise anyio.EndOfStream
+
+    monkeypatch.setattr(proxy.session, "call_tool", broken_call)
+    with pytest.raises(DownstreamError) as first:
+        await proxy.call(_mounted("rows"), None)
+    assert first.value.failure_class is FailureClass.TRANSPORT
+    assert proxy.healthy is False
+
+    with pytest.raises(DownstreamError, match="session is unhealthy") as second:
+        await proxy.call(_mounted("rows"), None)
+    assert second.value.failure_class is FailureClass.TRANSPORT
+    assert calls == 1
 
 
 async def test_round_trips_are_relayed_not_answered(proxy: Proxy) -> None:

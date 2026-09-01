@@ -79,7 +79,7 @@ async def test_the_envelope_view_reaches_the_untouched_payload(
         "query",
         {"sql": f"SELECT result_structured FROM \"{view}\" WHERE call_id = '{call_id}'"},
     )
-    assert "\\|" not in _text(result) or True
+    assert result.is_error is not True
     assert "items" in _text(result)
 
 
@@ -117,6 +117,11 @@ async def test_another_scopes_tables_are_not_reachable_by_name(
         "PRAGMA show_tables",
         "DROP TABLE sluice_calls",
         "SELECT * FROM read_csv('/etc/hosts')",
+        "SELECT unnest(range(1000000000))",
+        "SELECT write_log('agent-controlled')",
+        "SELECT lpad('x', 1000000000, 'x')",
+        "SELECT list_resize([1], 1000000000)",
+        "SELECT bitstring('1', 1000000000)",
         "SELECT 1; DROP TABLE sluice_calls",
     ],
 )
@@ -198,6 +203,8 @@ async def test_a_nested_cte_cannot_shadow_its_way_to_the_envelope(
         "(WITH sqlite_master AS (SELECT 1) SELECT * FROM sqlite_master)",
         "SELECT * FROM duckdb_tables() WHERE EXISTS "
         "(WITH duckdb_tables AS (SELECT 1) SELECT * FROM duckdb_tables)",
+        "WITH sluice_calls AS (SELECT * FROM sluice_calls) SELECT * FROM sluice_calls",
+        "WITH x AS (SELECT * FROM sluice_calls), sluice_calls AS (SELECT 1) SELECT * FROM x",
         "WITH x AS (SELECT 1) SELECT * FROM (WITH y AS (SELECT 1) SELECT 1) t, sluice_calls",
     ],
 )
@@ -223,3 +230,21 @@ async def test_legitimate_ctes_still_work_through_the_product_path(
     )
     assert result.is_error is not True
     assert "| 3" in _text(result) or "| 2" in _text(result)
+
+
+async def test_recursive_cte_still_works_through_the_product_path(
+    sluice_client: Client,
+) -> None:
+    result = await sluice_client.call_tool(
+        "query",
+        {
+            "sql": (
+                "WITH RECURSIVE nums AS (SELECT 1 AS n UNION ALL "
+                "SELECT n + 1 FROM nums WHERE n < 3) SELECT * FROM nums"
+            )
+        },
+    )
+    assert result.is_error is not True
+    assert "| 1 |" in _text(result)
+    assert "| 2 |" in _text(result)
+    assert "| 3 |" in _text(result)

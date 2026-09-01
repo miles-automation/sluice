@@ -16,6 +16,7 @@ def test_minimal_config_parses() -> None:
     assert config.server.name == "gh"
     assert config.server.command == "echo"
     assert config.limits == Limits()
+    assert config.limits.max_payload_bytes == 1_048_576
 
 
 def test_env_expansion() -> None:
@@ -134,6 +135,17 @@ def test_session_retention_must_cover_payload_limit() -> None:
 def test_session_call_limit_is_positive() -> None:
     with pytest.raises(ConfigError, match="max_session_calls"):
         parse_config({**MINIMAL, "limits": {"max_session_calls": 0}})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("query_max_bytes", 383), ("max_cell_bytes", 3)],
+)
+def test_rendering_limits_leave_room_for_explicit_truncation_notices(
+    field: str, value: int
+) -> None:
+    with pytest.raises(ConfigError, match=field):
+        parse_config({**MINIMAL, "limits": {field: value}})
 
 
 def test_load_config_reads_a_file(tmp_path: Path) -> None:
