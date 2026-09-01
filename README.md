@@ -13,13 +13,13 @@ over-ceiling results deliberately pass through unchanged.
 
 ## Status
 
-v0.1.0 is the first public release. Proxying, envelope/handle recording,
-flattening and type inference, the read-only `query` gate,
-aggregate-correctness properties, bounded runtime retention, and final
-adversarial review are implemented and covered by the test suite. The
-reproducible live-model demo recorded one baseline miss (71.5) and one
-Sluice-backed exact answer (72.5); that sampled run is evidence, not a
-deterministic guarantee.
+The v0.1.0 release candidate is complete and is intended to become the first
+public release. Proxying, envelope/handle recording, flattening and type
+inference, the read-only `query` gate, aggregate-correctness properties,
+bounded runtime retention, and final adversarial review are implemented and
+covered by the test suite. The reproducible live-model demo recorded one
+baseline miss (71.5) and one Sluice-backed exact answer (72.5); that sampled
+run is evidence, not a deterministic guarantee.
 
 CI runs the full test, lint, formatting, strict type-check, and package-build
 gates. The end-to-end canary against a real configured GitHub MCP server passed;
@@ -39,7 +39,7 @@ these; the spec does not generalize past what was measured.
 Requires Python 3.14+ (`requires-python = ">=3.14"` — no compatibility shims
 for older interpreters) and a platform DuckDB 1.5.5 ships a wheel for.
 
-Install the published distribution:
+After v0.1.0 is published, install the distribution from PyPI:
 
 ```bash
 pip install mcp-sluice

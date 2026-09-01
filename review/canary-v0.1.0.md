@@ -47,6 +47,7 @@ canary_ok upstream_protocol=2026-07-28 mounted_tools=26 rows=1 handle=yes query=
   smoke: <https://github.com/miles-automation/sluice/actions/runs/33462441530>
 - Built version: `0.1.0`; wheel includes `py.typed` and a working `sluice` CLI.
 
-The remaining release gate is a human decision: choose the license and public
-visibility, update both `LICENSE` and `pyproject.toml`, then tag and publish
-`v0.1.0`.
+Apache-2.0 and the `mcp-sluice` distribution name were approved for v0.1.0 and
+are recorded in `LICENSE` and `pyproject.toml`. The remaining release operations
+are making the repository public, configuring the PyPI Trusted Publisher, and
+tagging and publishing `v0.1.0`.
