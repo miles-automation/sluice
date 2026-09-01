@@ -32,7 +32,9 @@ dependencies = [
 ]
 
 [project.urls]
+Package = "https://pypi.org/project/mcp-sluice/"
 Repository = "https://github.com/miles-automation/sluice"
+Issues = "https://github.com/miles-automation/sluice/issues"
 
 [project.scripts]
 sluice = "sluice.__main__:main"

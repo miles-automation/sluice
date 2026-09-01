@@ -60,3 +60,38 @@ jobs:
           name: mcp-sluice-dist
           path: dist/
           if-no-files-found: error
+
+  platform-smoke:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Download wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: mcp-sluice-dist
+          path: dist
+
+      - name: Install wheel
+        run: >-
+          python -c "import glob, subprocess, sys;
+          wheels = glob.glob('dist/*.whl');
+          assert len(wheels) == 1, wheels;
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install', wheels[0]])"
+
+      - name: Smoke-test installed package
+        run: |
+          python -c "import importlib.metadata, importlib.resources, sluice; assert importlib.metadata.version('mcp-sluice') == sluice.__version__; assert importlib.resources.files('sluice').joinpath('py.typed').is_file()"
+          python -m sluice --help

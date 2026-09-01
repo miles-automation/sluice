@@ -13,9 +13,9 @@ over-ceiling results deliberately pass through unchanged.
 
 ## Status
 
-The v0.1.0 release candidate is complete and is intended to become the first
-public release. Proxying, envelope/handle recording, flattening and type
-inference, the read-only `query` gate, aggregate-correctness properties,
+The first public release, [v0.1.0](https://pypi.org/project/mcp-sluice/0.1.0/),
+is available from PyPI. Proxying, envelope/handle recording, flattening and
+type inference, the read-only `query` gate, aggregate-correctness properties,
 bounded runtime retention, and final adversarial review are implemented and
 covered by the test suite. The reproducible live-model demo recorded one
 baseline miss (71.5) and one Sluice-backed exact answer (72.5); that sampled
@@ -39,7 +39,7 @@ these; the spec does not generalize past what was measured.
 Requires Python 3.14+ (`requires-python = ">=3.14"` — no compatibility shims
 for older interpreters) and a platform DuckDB 1.5.5 ships a wheel for.
 
-After v0.1.0 is published, install the distribution from PyPI:
+Install the distribution from PyPI:
 
 ```bash
 pip install mcp-sluice
