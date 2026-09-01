@@ -21,9 +21,9 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy src
 ```
 
-M5 (the Hypothesis correctness property test and the model-eval demo under
-`demo/`, per `plan/001-scratch-db.md`) has not been built yet. Do not reference
-`demo/` or a property test module until they exist.
+The M5 Hypothesis correctness property is `tests/test_property_aggregates.py`.
+The model-eval demo under `demo/` has not been built yet; do not reference a
+demo command until it exists.
 
 ## Python version rules
 
@@ -47,8 +47,7 @@ M5 (the Hypothesis correctness property test and the model-eval demo under
   hold the logic most likely to be wrong and are cheapest to test. Keep them pure.
 - DuckDB calls are blocking: dispatch through `anyio.to_thread.run_sync`,
   serialize writes behind an `anyio.Lock`, one connection per in-flight query.
-- pytest, function-style tests. The Hypothesis correctness property test (M5)
-  does not exist yet — do not claim it does.
+- pytest, function-style tests, and Hypothesis for the M5 correctness property.
 
 ## Architecture
 

@@ -31,10 +31,16 @@ milestones in `plan/001-scratch-db.md`, for anyone picking up the repo mid-build
   inference, store, handle, config, CLI, engine-contract, query safety,
   query limits, and concurrency.
 
-### Not yet done (M5, M6)
+### M5 — correctness property
 
-- The Hypothesis-based correctness property test and its fixed
-  outside-the-domain counterexamples do not exist yet.
+- The end-to-end Hypothesis suite covers normalized aggregate correctness,
+  1–500-row boundaries, bounded floating-point regression evidence, and the
+  mandatory counterexamples. Adversarial review found cancellation inside the
+  former floating-point guarantee, so every `DOUBLE` column is now marked
+  inexact and per-aggregate exactness is left for future design.
+
+### Not yet done
+
 - The model-eval demo (`demo/median`) comparing a wrong in-context median to
   an exact `query`-computed one does not exist yet, and is explicitly out of
   CI regardless (it calls a live model and is non-deterministic).

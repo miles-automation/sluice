@@ -13,11 +13,11 @@ it is never re-sent on later turns of the agent loop.
 ## Status
 
 v0, pre-release. Proxying, envelope/handle recording, flattening and type
-inference, and the read-only `query` gate are implemented and covered by the
-test suite (see `plan/001-scratch-db.md` milestones M1–M4). Not yet done:
+inference, the read-only `query` gate, and the M5 aggregate-correctness property
+suite are implemented and covered by the test suite. Not yet done:
 
-- The Hypothesis-based correctness property test and the model eval demo
-  (`plan/001-scratch-db.md` M5) do not exist in this repo yet.
+- The model eval demo comparing an in-context calculation with Sluice's exact
+  SQL result (`plan/001-scratch-db.md` M5) does not exist yet.
 - Peak memory under the file-free materialization pipeline has not been
   re-measured (`plan/001-scratch-db.md` R6).
 - CI runs the full test, lint, type-check, and package-build gates. There is no
@@ -180,16 +180,18 @@ forecloses `read_json`. Each column in a handle is marked `exact: true` or
 
 **Exact, inside the domain** (verified on DuckDB 1.5.5): `count(*)`,
 `count(col)`, `min`, `max`, `count(DISTINCT)`, `GROUP BY` counts, integer
-`sum`, and `median` on `BIGINT`/`DOUBLE` columns, at even and odd row counts.
+`sum`, and `median` on integer columns whose values remain within ±2^53.
 
-**Within tolerance**: `avg` and float `sum`, at a relative tolerance of
-`1e-9` and an absolute tolerance of `1e-12` — both bounds are required,
-because relative tolerance alone does not survive cancellation.
+**Bounded regression evidence, not a universal guarantee**: `avg` and float
+`sum` are tested on a deliberately safe dyadic domain at a relative tolerance
+of `1e-9` and an absolute tolerance of `1e-12`. Every `DOUBLE` column is marked
+`exact: false`: cancellation can defeat both tolerances even at moderate
+magnitudes, and a single column flag cannot encode per-aggregate error.
 
-**Never claimed**: any column marked `exact: false` — mixed scalar types
-(kept `VARCHAR`, never `JSON`, because `median()` on `JSON` returns a
-lexicographic answer), integers past `int128`, a numeric column mixing floats
-with integers beyond ±2^53, and any column containing a non-finite float.
+**Never claimed**: any column marked `exact: false` — every `DOUBLE` column,
+integer columns with values beyond ±2^53, mixed scalar types (kept `VARCHAR`,
+never `JSON`, because `median()` on `JSON` returns a lexicographic answer),
+integers past `int128`, and any column containing a non-finite float.
 ISO-8601-shaped strings are deliberately kept `VARCHAR` rather than inferred
 as `TIMESTAMP`, since DuckDB's inference drops the timezone silently.
 
