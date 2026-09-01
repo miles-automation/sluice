@@ -13,19 +13,18 @@ over-ceiling results deliberately pass through unchanged.
 
 ## Status
 
-v0, pre-release. Proxying, envelope/handle recording, flattening and type
-inference, the read-only `query` gate, aggregate-correctness properties, bounded
-runtime retention, and final adversarial review are implemented and covered by
-the test suite. The reproducible live-model demo recorded one baseline miss
-(71.5) and one Sluice-backed exact answer (72.5); that sampled run is evidence,
-not a deterministic guarantee.
+The v0.1.0 release candidate is complete and is intended to become the first
+public release. Proxying, envelope/handle recording, flattening and type
+inference, the read-only `query` gate, aggregate-correctness properties,
+bounded runtime retention, and final adversarial review are implemented and
+covered by the test suite. The reproducible live-model demo recorded one
+baseline miss (71.5) and one Sluice-backed exact answer (72.5); that sampled
+run is evidence, not a deterministic guarantee.
 
 CI runs the full test, lint, formatting, strict type-check, and package-build
 gates. The end-to-end canary against a real configured GitHub MCP server passed;
-its evidence is in `review/canary-v0.1.0.md`. Remaining release operations are
-the human license and public-release decision, then a tag/publication. There is
-no license file, tagged release, or published package yet; the license decision
-must update both `LICENSE` and the package metadata in `pyproject.toml`.
+its evidence is in `review/canary-v0.1.0.md`. The project is distributed as
+`mcp-sluice`; the Python import package and console command remain `sluice`.
 
 Read `spec/001-scratch-db.md` before changing behavior; `intent/` records why
 the non-goals are non-goals; `plan/001-notes-m0.md` holds the measured
@@ -40,26 +39,30 @@ these; the spec does not generalize past what was measured.
 Requires Python 3.14+ (`requires-python = ">=3.14"` — no compatibility shims
 for older interpreters) and a platform DuckDB 1.5.5 ships a wheel for.
 
-From this worktree, with [uv](https://docs.astral.sh/uv/):
+After v0.1.0 is published, install the distribution from PyPI:
+
+```bash
+pip install mcp-sluice
+sluice --config sluice.toml
+```
+
+Or, from a checkout with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync
 uv run sluice --config sluice.toml
 ```
 
-Or build and install a wheel into any environment:
+You can also build and install a wheel into any environment:
 
 ```bash
-uv build                              # writes dist/sluice-0.1.0-py3-none-any.whl
-pip install dist/sluice-0.1.0-py3-none-any.whl
+uv build                          # writes dist/mcp_sluice-0.1.0-py3-none-any.whl
+pip install dist/mcp_sluice-0.1.0-py3-none-any.whl
 sluice --config sluice.toml
 ```
 
-There is no published package; installation is always from a local checkout or
-a wheel you built yourself.
-
 Dependency metadata deliberately carries lower bounds, not exact pins, and no
-lock file is committed. Both install paths therefore resolve current releases of
+lock file is committed. All install paths therefore resolve current releases of
 `mcp` and DuckDB, which may be newer than the verified baseline. CI upgrades to
 current dependencies and runs the engine-contract tripwires, but those tests are
 not part of the wheel. For a deployment, build from a checkout at a green commit
@@ -130,8 +133,9 @@ fail loudly.
 These are operational and logical bounds, not a process-RSS guarantee.
 `duckdb_max_memory = "1GB"` limits DuckDB's engine allocations, not the whole
 process, and the MCP SDK may decode structured content before Sluice can measure
-it. The [memory benchmark](benchmarks/results/memory-2026-08-30.md) records the
-four-shape, dual-channel concurrency calibration and long-session evidence.
+it. The [memory benchmark](https://github.com/miles-automation/sluice/blob/main/benchmarks/results/memory-2026-08-30.md)
+records the four-shape, dual-channel concurrency calibration and long-session
+evidence.
 
 ## Architecture
 
@@ -323,3 +327,8 @@ incomplete backlog:
 - **A large tool result comes back unmodified with a size note instead of a
   handle** — it exceeded `max_payload_bytes` (1 MiB default) and was passed
   through without being parsed or stored, by design (spec §5.1 step 2, §8).
+
+## License
+
+Sluice is licensed under the
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).

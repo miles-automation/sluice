@@ -1,9 +1,9 @@
 # Changelog
 
-No version has been tagged or released. This tracks what has landed against the
-milestones in `plan/001-scratch-db.md`, for anyone picking up the repo mid-build.
+This tracks what has landed against the milestones in
+`plan/001-scratch-db.md`.
 
-## Unreleased — v0
+## 0.1.0 — 2026-09-01
 
 - **M1 — proxy.** Sluice starts, connects to one configured downstream MCP
   server over stdio, mounts its tools under injective names, and forwards
@@ -59,11 +59,11 @@ milestones in `plan/001-scratch-db.md`, for anyone picking up the repo mid-build
   isolation, resource bounds, limitations, troubleshooting, and release notes
   are documented. The wheel includes `py.typed` and is validated by CI.
 
-### Release operations remaining
+### Release verification
 
 - The end-to-end canary against a real configured GitHub MCP server passed; see
   `review/canary-v0.1.0.md` for the observed handle, query, envelope, and
   isolation checks.
-- Choose a license and whether the repository/package should be public.
-- Tag and publish v0 after those decisions. There is no license file, license
-  package metadata, or tagged release yet.
+- The distribution name is `mcp-sluice`; the import package and console command
+  remain `sluice`.
+- Source and distributions are licensed under Apache-2.0.
