@@ -1,13 +1,15 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sluice"
+name = "mcp-sluice"
 version = "0.1.0"
 description = "Passthrough MCP server that materializes tool results into a DuckDB scratch database"
 readme = "README.md"
 requires-python = ">=3.14"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 keywords = ["mcp", "model-context-protocol", "duckdb"]
 classifiers = [
     "Development Status :: 3 - Alpha",
