@@ -1,0 +1,102 @@
+name: Usage feedback or feature request
+description: Tell us what you tried, where Sluice helped, and where it got in the way.
+title: "[Feedback]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sluice v0 is feature-frozen while real usage determines what deserves
+        to come next. A concrete task and outcome are more useful than a feature
+        idea alone. Never include credentials or private tool payloads.
+
+  - type: textarea
+    id: task
+    attributes:
+      label: What were you trying to accomplish?
+      description: Describe the real task and why you used Sluice for it.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options:
+        - Completed successfully
+        - Completed with friction
+        - Partially completed
+        - Could not complete
+    validations:
+      required: true
+
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked well?
+    validations:
+      required: true
+
+  - type: textarea
+    id: friction
+    attributes:
+      label: What was confusing, slow, or missing?
+      description: Include the moment it affected your task, not only a proposed solution.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Main area
+      options:
+        - Installation and setup
+        - MCP client compatibility
+        - Downstream server compatibility
+        - Handle clarity
+        - Query ergonomics
+        - Payload shape support
+        - Performance or resource bounds
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and version
+    validations:
+      required: true
+
+  - type: input
+    id: downstream
+    attributes:
+      label: Downstream MCP server and version
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, architecture, Python version, and installation method
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: Optional. What is the smallest change that would have improved this task?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I checked the documented v0 limitations before requesting a new capability.
+          required: true
+        - label: I removed credentials and sensitive payload data from this public report.
+          required: true

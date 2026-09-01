@@ -34,6 +34,19 @@ third-party behavior the design rests on.
 2.1.1, DuckDB 1.5.5, CPython 3.14. Behavior differs across revisions of any of
 these; the spec does not generalize past what was measured.
 
+## Feedback
+
+Using Sluice in a real MCP workflow is the most useful way to shape what comes
+next. Please file a structured
+[bug or compatibility report](https://github.com/miles-automation/sluice/issues/new?template=bug.yml)
+when existing behavior breaks, or share
+[usage feedback or a feature request](https://github.com/miles-automation/sluice/issues/new?template=feedback.yml)
+with the task, outcome, client, and downstream server that motivated it.
+
+Sluice v0 is feature-frozen while repeated usage evidence determines future
+scope. Never include credentials, private tool payloads, or unsanitized
+configuration in a public issue.
+
 ## Installation
 
 Requires Python 3.14+ (`requires-python = ">=3.14"` — no compatibility shims

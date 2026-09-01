@@ -1,0 +1,98 @@
+name: Bug or compatibility report
+description: Report broken existing behavior or an MCP compatibility problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Sluice. Please remove credentials, private payloads,
+        and other sensitive data before submitting this public report.
+
+  - type: input
+    id: version
+    attributes:
+      label: Sluice version
+      description: Run `python -c "import sluice; print(sluice.__version__)"` if unsure.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: Include the client name and version.
+      placeholder: Claude Code 2.x, Codex, or another MCP client
+    validations:
+      required: true
+
+  - type: input
+    id: downstream
+    attributes:
+      label: Downstream MCP server
+      description: Include the package or repository and version when known.
+      placeholder: package-name 1.2.3
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the operating system, architecture, Python version, and installation method.
+      placeholder: macOS arm64; Python 3.14; installed from PyPI with pip
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: List the smallest sequence that reproduces the problem.
+      placeholder: |
+        1. Configure Sluice around ...
+        2. Start it from ...
+        3. Call ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Describe the result and include sanitized diagnostics when useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Sanitized configuration
+      description: Optional. Replace tokens, paths, hostnames, and private values before posting.
+      render: toml
+
+  - type: textarea
+    id: payload_shape
+    attributes:
+      label: Payload shape
+      description: Optional. Describe keys, nesting, row count, and approximate size without posting private data.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed credentials and sensitive payload data from this public report.
+          required: true
