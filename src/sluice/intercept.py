@@ -54,6 +54,7 @@ class Interceptor:
         result: types.CallToolResult,
         meta: object | None,
         started_at: datetime,
+        failure_class: str | None = None,
     ) -> types.CallToolResult:
         # The SDK has already decoded structuredContent before this method is
         # called.  Everything Sluice does next can multiply that memory (text
@@ -71,6 +72,7 @@ class Interceptor:
                     meta=meta,
                     started_at=started_at,
                     retention_seq=retention_seq,
+                    failure_class=failure_class,
                 )
             finally:
                 # Cancellation or an unexpected selector/planner exception must
@@ -89,6 +91,7 @@ class Interceptor:
         meta: object | None,
         started_at: datetime,
         retention_seq: int,
+        failure_class: str | None,
     ) -> types.CallToolResult:
         ended_at = _now()
         scope_id, _ = scope.derive(meta)
@@ -97,13 +100,15 @@ class Interceptor:
 
         selection_failure: str | None = None
         try:
-            reason = payload_select.passthrough_reason(result, self._limits.max_payload_bytes)
+            reason, candidate_bytes = payload_select.classify_passthrough(
+                result, self._limits.max_payload_bytes
+            )
 
             if reason is not None:
                 # Passthrough is intentionally a metadata-only retention path.
                 # The original result is returned below, while no payload is
                 # copied into an envelope column.
-                selected = payload_select.metadata_only(result)
+                selected = payload_select.metadata_only(byte_size=candidate_bytes or 0)
             else:
                 selected = payload_select.select(result)
         except Exception as exc:
@@ -133,7 +138,7 @@ class Interceptor:
             args=dict(arguments) if arguments else None,
             payload=selected,
             is_error=bool(result.is_error),
-            failure_class="tool_error" if result.is_error else None,
+            failure_class=failure_class or ("tool_error" if result.is_error else None),
             content_kinds=payload_select.content_kinds(result),
             started_at=started_at,
             ended_at=ended_at,

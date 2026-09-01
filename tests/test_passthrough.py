@@ -16,6 +16,7 @@ from sluice import naming
 from sluice.config import Config
 from sluice.proxy import Proxy
 from sluice.server import build_server
+from sluice.store import ENVELOPE_TABLE, Store
 
 pytestmark = pytest.mark.anyio
 
@@ -153,3 +154,22 @@ async def test_rich_text_metadata_survives_the_whole_product_path(sluice_client:
     result = await sluice_client.call_tool(naming.mounted_name("fake", "rich_result"))
     assert result.structured_content is not None
     assert result.structured_content["flat_reason"].startswith("not_json")
+
+
+async def test_nonforwardable_failures_are_recorded_with_their_class(
+    sluice_client: object, store: Store
+) -> None:
+    from mcp import Client
+
+    assert isinstance(sluice_client, Client)
+    schema_failure = await sluice_client.call_tool(naming.mounted_name("fake", "bad_schema"))
+    protocol_failure = await sluice_client.call_tool("fake__missing")
+    assert schema_failure.is_error is True
+    assert protocol_failure.is_error is True
+    rows = store.connection.execute(
+        f"SELECT tool, failure_class, is_error FROM {ENVELOPE_TABLE} ORDER BY seq"
+    ).fetchall()
+    assert rows == [
+        ("bad_schema", "output_schema", True),
+        ("fake__missing", "protocol", True),
+    ]

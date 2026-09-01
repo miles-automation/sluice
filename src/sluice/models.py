@@ -62,7 +62,7 @@ class SelectedPayload:
     blocks: list[dict[str, Any]] = field(default_factory=list)
     structured: dict[str, Any] | None = None
     byte_size: int = 0
-    wire_bytes: int = 0
+    wire_bytes: int | None = None
     conflict: bool = False
 
 

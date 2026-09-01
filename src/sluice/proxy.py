@@ -84,6 +84,7 @@ class Proxy:
         self._session: ClientSession | None = None
         self._protocol_version: str | None = None
         self._tools: dict[str, MountedTool] = {}
+        self._healthy = True
 
     @classmethod
     async def start(cls, config: Config, stack: AsyncExitStack) -> Self:
@@ -141,6 +142,10 @@ class Proxy:
     @property
     def supports_round_trips(self) -> bool:
         return self._protocol_version in MODERN_VERSIONS
+
+    @property
+    def healthy(self) -> bool:
+        return self._healthy
 
     async def refresh_tools(self) -> None:
         """Capture the static tool catalog (spec 10)."""
@@ -203,6 +208,12 @@ class Proxy:
         entry = self.resolve(mounted)
         if entry is None:
             raise DownstreamError(FailureClass.PROTOCOL, mounted, f"no such tool: {mounted}")
+        if not self._healthy:
+            raise DownstreamError(
+                FailureClass.TRANSPORT,
+                entry.original.name,
+                "downstream session is unhealthy after an earlier transport failure",
+            )
         try:
             result = await self.session.call_tool(
                 entry.original.name,
@@ -223,6 +234,7 @@ class Proxy:
                 ) from exc
             raise
         except (anyio.BrokenResourceError, anyio.ClosedResourceError, anyio.EndOfStream) as exc:
+            self._healthy = False
             raise DownstreamError(
                 FailureClass.TRANSPORT, entry.original.name, f"{type(exc).__name__}: {exc}"
             ) from exc

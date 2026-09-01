@@ -1,6 +1,7 @@
 """Timeout, caps, escaping, and truncation reporting (spec 6.2, 6.3)."""
 
 import contextlib
+import threading
 import time
 
 import anyio
@@ -59,7 +60,8 @@ def test_cell_truncation_cuts_on_a_character_boundary() -> None:
     """Slicing UTF-8 at a byte offset produces invalid text."""
     rendered, cut = escape_cell("é" * 100, 9)
     assert cut
-    assert rendered.rstrip("…") == "é" * 4  # 8 bytes, not 9
+    assert rendered.rstrip("…") == "é" * 3  # 6 bytes plus the 3-byte ellipsis
+    assert len(rendered.encode("utf-8")) <= 9
     rendered.encode("utf-8")  # must not raise
 
 
@@ -113,7 +115,7 @@ async def test_max_rows_below_one_is_rejected(store: Store) -> None:
         await QueryTool(store, Limits()).run("SELECT 1", max_rows=0)
 
 
-@pytest.mark.parametrize("cap", [100, 200, 1000])
+@pytest.mark.parametrize("cap", [384, 600, 1000])
 async def test_output_never_exceeds_the_byte_cap(store: Store, cap: int) -> None:
     """Asserted against the cap itself, in bytes, over the whole output.
 
@@ -148,9 +150,9 @@ async def test_byte_cap_counts_bytes_not_characters(store: Store) -> None:
     store.connection.execute('CREATE TABLE "uni" (a VARCHAR)')
     store.connection.executemany('INSERT INTO "uni" VALUES (?)', [("é" * 60,) for _ in range(10)])
     store._allowed_objects.add("uni")
-    tool = QueryTool(store, Limits(query_max_bytes=100, max_cell_bytes=512))
+    tool = QueryTool(store, Limits(query_max_bytes=384, max_cell_bytes=512))
     text = await tool.run('SELECT a FROM "uni"')
-    assert len(text.encode("utf-8")) <= 100
+    assert len(text.encode("utf-8")) <= 384
     text.encode("utf-8")
 
 
@@ -159,9 +161,21 @@ async def test_a_long_column_alias_cannot_blow_the_cap(store: Store) -> None:
     unbounded alias returned 5 KB against a 100-byte cap."""
     name = _seed(store, rows=2)
     alias = "z" * 5000
-    tool = QueryTool(store, Limits(query_max_bytes=100, max_cell_bytes=64))
+    tool = QueryTool(store, Limits(query_max_bytes=384, max_cell_bytes=64))
     text = await tool.run(f'SELECT a AS "{alias}" FROM "{name}"')
-    assert len(text.encode("utf-8")) <= 100
+    assert len(text.encode("utf-8")) <= 384
+    assert "table was omitted" in text
+    assert "row(s) omitted" in text
+
+
+async def test_a_wide_header_cannot_evict_the_truncation_notices(store: Store) -> None:
+    name = _seed(store, rows=2)
+    aliases = ", ".join(f'a AS "column_{index:03d}_{"x" * 80}"' for index in range(300))
+    tool = QueryTool(store, Limits(query_max_bytes=65_536, max_cell_bytes=64))
+    text = await tool.run(f'SELECT {aliases} FROM "{name}"')
+    assert len(text.encode("utf-8")) <= 65_536
+    assert "row(s) shown" in text
+    assert "column header(s) truncated" in text or "table was omitted" in text
 
 
 async def test_headers_are_escaped_like_cells(store: Store) -> None:
@@ -267,3 +281,54 @@ async def test_a_timeout_leaves_the_store_usable(store: Store) -> None:
     tool = QueryTool(store, Limits(query_timeout_seconds=0.3))
     text = await tool.run(f'SELECT a FROM "{name}"')
     assert "3 row(s) shown" in text
+
+
+async def test_timeout_expiring_in_worker_queue_prevents_late_execution(store: Store) -> None:
+    """A timer can fire before a saturated worker pool starts the query.
+
+    Interrupting an idle cursor is not sticky. The expired flag must therefore
+    stop the queued worker from beginning an otherwise unbounded query later.
+    """
+    store.connection.execute("CREATE TABLE queued_slow (a BIGINT)")
+    store.connection.executemany(
+        "INSERT INTO queued_slow VALUES (?)", [(index,) for index in range(600)]
+    )
+    store._allowed_objects.add("queued_slow")
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    original_tokens = limiter.total_tokens
+    limiter.total_tokens = 1
+    blocker_started = threading.Event()
+    release_blocker = threading.Event()
+    result: dict[str, object] = {}
+
+    def occupy_only_worker() -> None:
+        blocker_started.set()
+        release_blocker.wait()
+
+    async def occupy() -> None:
+        await anyio.to_thread.run_sync(occupy_only_worker)
+
+    async def run_query() -> None:
+        try:
+            await QueryTool(store, Limits(query_timeout_seconds=0.05)).run(
+                "SELECT count(*) FROM queued_slow x, queued_slow y, queued_slow z "
+                "WHERE x.a + y.a + z.a > 0"
+            )
+            result["query"] = "finished"
+        except QueryRejectedError as exc:
+            result["query"] = exc
+
+    try:
+        async with anyio.create_task_group() as group:
+            group.start_soon(occupy)
+            while not blocker_started.is_set():
+                await anyio.sleep(0)
+            group.start_soon(run_query)
+            await anyio.sleep(0.15)
+            release_blocker.set()
+    finally:
+        release_blocker.set()
+        limiter.total_tokens = original_tokens
+
+    assert isinstance(result["query"], QueryRejectedError)
+    assert "timeout" in str(result["query"])

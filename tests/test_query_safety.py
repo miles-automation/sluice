@@ -85,6 +85,11 @@ def test_a_semicolon_inside_a_string_is_not_two_statements(
         ("SELECT * FROM read_json('/etc/hosts')", "table function"),
         ("SELECT * FROM glob('/etc/*')", "table function"),
         ("SELECT * FROM range(10)", "table function"),
+        ("SELECT unnest(range(1000000000))", "function not allowed"),
+        ("SELECT write_log('agent-controlled')", "function not allowed"),
+        ("SELECT lpad('x', 1000000000, 'x')", "function not allowed"),
+        ("SELECT list_resize([1], 1000000000)", "function not allowed"),
+        ("SELECT bitstring('1', 1000000000)", "function not allowed"),
         ("SELECT * FROM information_schema.tables", "schema-qualified"),
         ("SELECT * FROM pg_catalog.pg_tables", "schema-qualified"),
         ("SELECT * FROM sqlite_master", "unknown table"),
@@ -167,6 +172,44 @@ def test_an_unknown_table_names_no_others(connection: duckdb.DuckDBPyConnection)
 )
 def test_legal_queries_pass(sql: str, connection: duckdb.DuckDBPyConnection) -> None:
     check(sql, connection, ALLOWED)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "WITH sluice_calls AS (SELECT * FROM sluice_calls) SELECT * FROM sluice_calls",
+        "WITH x AS (SELECT * FROM sluice_calls), sluice_calls AS (SELECT 1) SELECT * FROM x",
+        "WITH RECURSIVE sluice_calls AS (SELECT * FROM sluice_calls "
+        "UNION ALL SELECT * FROM sluice_calls) SELECT * FROM sluice_calls",
+    ],
+)
+def test_cte_binding_order_cannot_shadow_physical_tables(
+    sql: str, connection: duckdb.DuckDBPyConnection
+) -> None:
+    """A CTE is not visible in its seed or before its declaration.
+
+    DuckDB resolves those references to the physical table. The gate must use
+    the same binding order, rather than treating every CTE name in the query as
+    a global allowlist entry.
+    """
+    assert "unknown table" in _reject(sql, connection)
+
+
+def test_ordered_ctes_and_recursive_terms_remain_legal(
+    connection: duckdb.DuckDBPyConnection,
+) -> None:
+    check(
+        "WITH x AS (SELECT a FROM mine), y AS (SELECT * FROM x) SELECT * FROM y",
+        connection,
+        ALLOWED,
+    )
+    check("WITH X AS (SELECT 1 AS n) SELECT * FROM x", connection, ALLOWED)
+    check(
+        "WITH RECURSIVE nums AS (SELECT 1 AS n UNION ALL "
+        "SELECT n + 1 FROM nums WHERE n < 3) SELECT * FROM nums",
+        connection,
+        ALLOWED,
+    )
 
 
 def test_unparseable_sql_is_rejected_not_executed(

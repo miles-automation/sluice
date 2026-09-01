@@ -47,17 +47,29 @@ def describe_blocks(result: types.CallToolResult) -> list[dict[str, Any]]:
     return described
 
 
-def metadata_only(result: types.CallToolResult) -> SelectedPayload:
+def metadata_only(*, byte_size: int = 0) -> SelectedPayload:
     """Describe a passthrough result without retaining its textual payload.
 
     Error, binary, and oversize results are returned verbatim, but their
     envelope record must not become a second unbounded payload cache.
     """
-    return SelectedPayload(
-        channel=PayloadChannel.NONE,
-        byte_size=candidate_size(result),
-        wire_bytes=wire_bytes(result),
-    )
+    # Exact wire sizing requires serializing the complete SDK model. Doing that
+    # for an unbounded binary, error, or oversize result would create the very
+    # second payload copy this metadata-only path exists to avoid. NULL records
+    # that the wire size was deliberately not measured.
+    return SelectedPayload(channel=PayloadChannel.NONE, byte_size=byte_size, wire_bytes=None)
+
+
+def classify_passthrough(
+    result: types.CallToolResult, max_payload_bytes: int
+) -> tuple[Passthrough | None, int | None]:
+    """Return the passthrough reason and a safely measured candidate size."""
+    if result.is_error:
+        return Passthrough.ERROR, None
+    if any(getattr(block, "type", "unknown") != TEXT_KIND for block in result.content):
+        return Passthrough.NON_TEXT, None
+    size = candidate_size(result)
+    return (Passthrough.OVERSIZE, size) if size > max_payload_bytes else (None, size)
 
 
 def concatenated_text(result: types.CallToolResult) -> str:
@@ -73,26 +85,25 @@ def _serialized_size(value: object) -> int:
 
 
 def candidate_size(result: types.CallToolResult) -> int:
-    """Size of the payload that would be selected, measured before parsing.
+    """Bytes Sluice would process across every retained input channel.
 
-    For a `structuredContent` payload the SDK has already decoded it before
-    Sluice can measure anything, so this bounds what Sluice does next rather
-    than what already happened (spec 5.1 step 2).
+    `structuredContent` wins for table selection, but text is still retained in
+    the envelope and compared for channel conflicts. Measuring only the winner
+    let a tiny structured object smuggle an arbitrarily large text channel past
+    the materialization ceiling. The SDK has already decoded structured content
+    before this function runs, so the limit bounds Sluice's subsequent work,
+    not memory already spent by the SDK (spec 5.1 step 2).
     """
-    if result.structured_content is not None:
-        return _serialized_size(result.structured_content)
-    return len(concatenated_text(result).encode("utf-8"))
+    structured = (
+        _serialized_size(result.structured_content) if result.structured_content is not None else 0
+    )
+    text = sum(len(block.text.encode("utf-8")) for block in text_blocks(result))
+    return structured + text
 
 
 def passthrough_reason(result: types.CallToolResult, max_payload_bytes: int) -> Passthrough | None:
     """Why this result must be returned unmodified, or None."""
-    if result.is_error:
-        return Passthrough.ERROR
-    if any(getattr(block, "type", "unknown") != TEXT_KIND for block in result.content):
-        return Passthrough.NON_TEXT
-    if candidate_size(result) > max_payload_bytes:
-        return Passthrough.OVERSIZE
-    return None
+    return classify_passthrough(result, max_payload_bytes)[0]
 
 
 def _parse(text: str) -> tuple[bool, Any]:

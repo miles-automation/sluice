@@ -41,11 +41,17 @@ _NON_NEGATIVE = ("preview_bytes", "preview_rows")
 
 SESSION_RETENTION_DEFAULT = 256 * 1024 * 1024
 SESSION_CALLS_DEFAULT = 1000
+QUERY_OUTPUT_MIN_BYTES = 384
+CELL_OUTPUT_MIN_BYTES = 4
 
 
 @dataclass(frozen=True, slots=True)
 class Limits:
-    max_payload_bytes: int = 33_554_432
+    # Post-R11 calibration: a 1 MiB dual-channel call takes about 7.6 seconds
+    # and peaks 56 MiB above the decoded-input baseline on the reference host.
+    # The former 32 MiB default took minutes near its ceiling and was not an
+    # operationally defensible admission limit.
+    max_payload_bytes: int = 1_048_576
     max_concurrent_materializations: int = 2
     preview_bytes: int = 2048
     preview_rows: int = 3
@@ -57,7 +63,7 @@ class Limits:
     duckdb_max_memory: str = "1GB"
     # This is a logical retained-state budget, not a process RSS guarantee.
     # Keeping it finite by default prevents a long-lived session from growing
-    # without bound while leaving the payload admission defaults unchanged.
+    # without bound; it is calibrated independently from per-call admission.
     max_session_bytes: int = SESSION_RETENTION_DEFAULT
     max_session_calls: int = SESSION_CALLS_DEFAULT
 
@@ -90,6 +96,16 @@ class Limits:
             raise ConfigError(
                 "[limits].max_session_bytes must be at least max_payload_bytes "
                 f"({self.max_payload_bytes}), got {self.max_session_bytes}"
+            )
+        if self.query_max_bytes < QUERY_OUTPUT_MIN_BYTES:
+            raise ConfigError(
+                f"[limits].query_max_bytes must be at least {QUERY_OUTPUT_MIN_BYTES} "
+                "so truncation notices cannot be truncated themselves"
+            )
+        if self.max_cell_bytes < CELL_OUTPUT_MIN_BYTES:
+            raise ConfigError(
+                f"[limits].max_cell_bytes must be at least {CELL_OUTPUT_MIN_BYTES} "
+                "so a truncated cell can carry its ellipsis"
             )
 
         timeout = self.query_timeout_seconds
