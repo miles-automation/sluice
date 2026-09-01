@@ -13,6 +13,11 @@ Run it with:
 uv run python -m demo.median
 ```
 
+The harness defaults to `--model sonnet`. The committed sampled report requested
+Haiku, so use `uv run python -m demo.median --model haiku` when comparing a new
+run with that transcript. A model alias may resolve to a newer underlying model
+over time, which is another reason the result is evidence rather than a fixture.
+
 Or, to see the configs and the mechanically-computed expected answer without
 spending a model call:
 

@@ -218,8 +218,9 @@ values will never find them.
 
 **R5. Scope isolation is capability-based, not enforced.** Severity: medium and
 accepted. Without a client-supplied conversation id it rests on unguessable table
-names plus a catalog denylist, and denylists are weaker than the other two query
-layers. Spec §12 states the residual risk. The unconditional half, that a stale
+names plus the parsed-AST object allowlist; capability isolation is weaker than a
+hard per-scope database boundary. Spec §12 states the residual risk. The
+unconditional half, that a stale
 handle cannot resolve to live data holding different contents, does hold.
 
 **R6. Peak memory is a multiple of payload size.** Severity: high. The file-free

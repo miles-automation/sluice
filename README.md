@@ -2,34 +2,38 @@
 
 A passthrough MCP server. It sits between an MCP client and **exactly one**
 downstream MCP server, mounts the downstream tools, and proxies calls through.
-Every result is materialized into an in-memory DuckDB scratch database before
-being returned, so the agent gets a short preview plus a table handle instead
-of the payload, and runs SQL over it with Sluice's own `query` tool.
+Every eligible result is materialized into an in-memory DuckDB scratch database
+before being returned, so the agent gets a short preview plus a table handle
+instead of the payload, and runs SQL over it with Sluice's own `query` tool.
 
 Two things this buys: aggregation becomes exact rather than a model reading
-rows out of a payload, and a large payload never enters the context window, so
-it is never re-sent on later turns of the agent loop.
+rows out of a payload, and an eligible payload is replaced by a bounded handle,
+so it is not re-sent on later turns of the agent loop. Error, binary, and
+over-ceiling results deliberately pass through unchanged.
 
 ## Status
 
 v0, pre-release. Proxying, envelope/handle recording, flattening and type
-inference, the read-only `query` gate, and the M5 aggregate-correctness property
-suite are implemented and covered by the test suite. Not yet done:
+inference, the read-only `query` gate, aggregate-correctness properties, bounded
+runtime retention, and final adversarial review are implemented and covered by
+the test suite. The reproducible live-model demo recorded one baseline miss
+(71.5) and one Sluice-backed exact answer (72.5); that sampled run is evidence,
+not a deterministic guarantee.
 
-- The model eval demo comparing an in-context calculation with Sluice's exact
-  SQL result (`plan/001-scratch-db.md` M5) does not exist yet.
-- Peak memory under the file-free materialization pipeline has not been
-  re-measured (`plan/001-scratch-db.md` R6).
-- CI runs the full test, lint, type-check, and package-build gates. There is no
-  tagged release, license file, or published package yet.
+CI runs the full test, lint, formatting, strict type-check, and package-build
+gates. Remaining release operations are an end-to-end canary against a real
+configured downstream MCP server, the human license and public-release decision,
+and then a tag/publication. There is no license file, tagged release, or
+published package yet; the license decision must update both `LICENSE` and the
+package metadata in `pyproject.toml`.
 
 Read `spec/001-scratch-db.md` before changing behavior; `intent/` records why
 the non-goals are non-goals; `plan/001-notes-m0.md` holds the measured
 third-party behavior the design rests on.
 
-**Pinned and verified against:** MCP protocol `2026-07-28`, SDK `mcp` 2.1.1,
-DuckDB 1.5.5, CPython 3.14. Behavior differs across revisions of any of these;
-the spec does not generalize past what was measured.
+**Behavioral baseline verified against:** MCP protocol `2026-07-28`, SDK `mcp`
+2.1.1, DuckDB 1.5.5, CPython 3.14. Behavior differs across revisions of any of
+these; the spec does not generalize past what was measured.
 
 ## Installation
 
@@ -53,6 +57,13 @@ sluice --config sluice.toml
 
 There is no published package; installation is always from a local checkout or
 a wheel you built yourself.
+
+Dependency metadata deliberately carries lower bounds, not exact pins, and no
+lock file is committed. Both install paths therefore resolve current releases of
+`mcp` and DuckDB, which may be newer than the verified baseline. CI upgrades to
+current dependencies and runs the engine-contract tripwires, but those tests are
+not part of the wheel. For a deployment, build from a checkout at a green commit
+and run its test suite against the resolved environment before rollout.
 
 ## Configuring an MCP client
 
@@ -105,6 +116,23 @@ script directly:
 Config resolution order is `--config`, then `$SLUICE_CONFIG`, then
 `./sluice.toml` in the current working directory.
 
+### Resource bounds
+
+The default `max_payload_bytes` is 1 MiB and counts both structured and text
+channels together. An eligible result over that ceiling is passed through
+unchanged with a size note; Sluice does not parse or retain a second copy.
+`max_concurrent_materializations = 2` admits at most two complete interception
+pipelines at once. `max_session_bytes = 256 MiB` bounds logical retained payload
+and table representations, while `max_session_calls = 1000` separately bounds
+envelope rows and scope views. Oldest calls are evicted first and stale handles
+fail loudly.
+
+These are operational and logical bounds, not a process-RSS guarantee.
+`duckdb_max_memory = "1GB"` limits DuckDB's engine allocations, not the whole
+process, and the MCP SDK may decode structured content before Sluice can measure
+it. The [memory benchmark](benchmarks/results/memory-2026-08-30.md) records the
+four-shape, dual-channel concurrency calibration and long-session evidence.
+
 ## Architecture
 
 ```
@@ -152,7 +180,7 @@ query(sql="SELECT median(score) FROM \"gh__list_issues__3f9a1c__1f3a9c2e7b6d4a81
 ```
 
 `query` accepts exactly one read-only `SELECT` (or `WITH ... SELECT`), enforces
-a wall-clock timeout, a row cap (`max_rows`, default 100, capped at 1000), and
+a wall-clock timeout, a configured row ceiling (100 by default), and
 a byte cap on the rendered markdown table, and states explicitly whenever any
 of those truncated the result — never a silent truncation.
 
@@ -201,6 +229,17 @@ defined against, not raw JSON.
 
 See `spec/001-scratch-db.md` §5.5–5.6 for the full rules and measured
 counterexamples outside the domain.
+
+## Reproducible model demo
+
+Run `uv run python -m demo.median --model haiku --dry-run` to inspect the
+mechanically computed expected answer and generated configs without spending a
+model call. Run `uv run python -m demo.median --model haiku` to reproduce the
+committed run's requested model; the harness default is currently `sonnet`.
+The committed sampled report is under `demo/transcripts/20260831T040623Z/`;
+see `demo/README.md` for prerequisites, transcript handling, and the explicit
+non-determinism caveat. The demo is deliberately outside CI and is not included
+in the wheel, so run it from a source checkout.
 
 ## Security and isolation boundaries
 
@@ -282,5 +321,5 @@ incomplete backlog:
   diagnostics to stderr only, never stdout, because stdout is the MCP
   transport. Check your client's captured stderr for the process.
 - **A large tool result comes back unmodified with a size note instead of a
-  handle** — it exceeded `max_payload_bytes` (32 MiB default) and was passed
+  handle** — it exceeded `max_payload_bytes` (1 MiB default) and was passed
   through without being parsed or stored, by design (spec §5.1 step 2, §8).

@@ -18,12 +18,13 @@ uv run sluice --config sluice.toml   # run as an MCP stdio server
 uv run pytest                 # full suite
 uv run pytest -m "not slow"   # skip timing-sensitive tests (concurrency, timeouts)
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src
+uv run mypy src tests
 ```
 
 The M5 Hypothesis correctness property is `tests/test_property_aggregates.py`.
-The model-eval demo under `demo/` has not been built yet; do not reference a
-demo command until it exists.
+The non-deterministic model-eval harness is `uv run python -m demo.median`; use
+`--dry-run` to validate its setup without spending a model call. It is evidence,
+never a CI gate.
 
 ## Python version rules
 
@@ -71,8 +72,9 @@ scope minted per call it would name one table, and reaching a table whose name
 you lost is discovery, which isolation blocks. Tables and the envelope row are
 written in one transaction.
 
-Pinned: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 1.5.5. Every normative
-claim in the spec is against those; do not generalize across revisions.
+Verified baseline: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 1.5.5. Every
+normative claim in the spec is against those; dependencies have lower bounds
+rather than exact pins, so do not generalize across revisions.
 
 ## Rules that are load-bearing
 
@@ -109,6 +111,9 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
   `annotations.destructiveHint`.
 - **Every truncation is reported** (§6.3). Silent truncation is a correctness bug
   in a tool that sells determinism.
+- **Agent-sized allocation functions are blocked** (§6.1). Table functions and
+  scalar constructors such as `range`, `lpad`, `list_resize`, and `bitstring`
+  can allocate before output rendering applies its cap.
 - **Admission covers the whole interception pipeline** (§7). Selection, parse,
   projection, commit, and handle rendering all run under the same semaphore.
 - **Session retention is bounded** (§7). `max_session_bytes` evicts oldest calls

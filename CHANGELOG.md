@@ -3,7 +3,7 @@
 No version has been tagged or released. This tracks what has landed against the
 milestones in `plan/001-scratch-db.md`, for anyone picking up the repo mid-build.
 
-## Unreleased — v0, M1 through M4
+## Unreleased — v0
 
 - **M1 — proxy.** Sluice starts, connects to one configured downstream MCP
   server over stdio, mounts its tools under injective names, and forwards
@@ -38,12 +38,31 @@ milestones in `plan/001-scratch-db.md`, for anyone picking up the repo mid-build
   mandatory counterexamples. Adversarial review found cancellation inside the
   former floating-point guarantee, so every `DOUBLE` column is now marked
   inexact and per-aggregate exactness is left for future design.
+- The reproducible live-model median demo is implemented outside CI. Its
+  committed sampled run recorded a wrong baseline answer (71.5) and the exact
+  Sluice-backed answer (72.5), with transcripts and a non-determinism warning.
 
-### Not yet done
+### Runtime bounds and adversarial review
 
-- The model-eval demo (`demo/median`) comparing a wrong in-context median to
-  an exact `query`-computed one does not exist yet, and is explicitly out of
-  CI regardless (it calls a live model and is non-deterministic).
-- `max_payload_bytes` has not been re-measured against the file-free
-  materialization pipeline (plan R6).
-- CI is in place; there is no license file or tagged release yet.
+- Whole-pipeline admission, deterministic logical session retention, and
+  metadata/catalog cardinality limits bound Sluice's own continued work.
+- Post-fix calibration across flat, nested, wide, and mixed 1 MiB dual-channel
+  payloads at concurrency 2 supports the conservative 1 MiB v0 admission
+  default; a 15-call run records long-session behavior.
+- Final review closed CTE binding-order isolation, scalar memory amplification,
+  queued-worker timeout, truncation-reporting, dual-channel sizing, failure
+  envelope, and dead-transport reuse defects.
+
+### M6 — documentation and packaging
+
+- Installation, client configuration, architecture, usage, exactness,
+  isolation, resource bounds, limitations, troubleshooting, and release notes
+  are documented. The wheel includes `py.typed` and is validated by CI.
+
+### Release operations remaining
+
+- Run an end-to-end canary against a real configured downstream MCP server and
+  record evidence.
+- Choose a license and whether the repository/package should be public.
+- Tag and publish v0 after those decisions. There is no license file, license
+  package metadata, or tagged release yet.
