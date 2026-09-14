@@ -888,7 +888,8 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
 2. **Repeated calls to the same tool** get their own tables plus a `__latest`
    view. Whether a union view is wanted is unknown until observed.
 3. **Pagination of downstream results.** A tool that pages produces N tables the
-   agent must UNION by hand.
+   agent must UNION by hand. Addressed for the offset contract by spec 002
+   (bounded pagination); other contracts remain open.
 4. **Enforced scope isolation** (§12), which needs a conversation id or a database
    per scope.
 5. **Whether `_extra` and `JSON` columns are used** by a model in practice.

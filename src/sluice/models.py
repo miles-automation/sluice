@@ -93,6 +93,30 @@ class CallRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class PaginationSummary:
+    status: str
+    reason: str
+    detail: str | None
+    pages: int
+    rows: int
+    bytes: int
+    seconds: float
+    resume_offset: int | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reason": self.reason,
+            "detail": self.detail,
+            "pages": self.pages,
+            "rows": self.rows,
+            "bytes": self.bytes,
+            "seconds": round(self.seconds, 3),
+            "resume_offset": self.resume_offset,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class Handle:
     """What the agent gets in place of the payload (spec 4)."""
 
@@ -107,6 +131,7 @@ class Handle:
     total_rows: int | None = None
     tables: list[TableRef] = field(default_factory=list)
     flat_reason: str | None = None
+    pagination: PaginationSummary | None = None
     query_available: bool = False
     """Whether the `query` tool is mounted. False until plan M4, and the handle
     must not tell the agent to use a tool that does not exist yet."""

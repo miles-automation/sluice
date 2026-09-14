@@ -55,6 +55,7 @@ never a CI gate.
 ```
 client --stdio--> server.py  tools/list = downstream union + query
                   proxy.py   downstream session, paginated list, round-trip relay
+                  paginate.py bounded page loop for approved read-only tools (spec 002)
                   gate.py    the query tool's three-layer read-only gate
                   shape.py   extract rows -> depth-1 projection        (pure)
                   infer.py   column types + the `exact` flag           (pure)
@@ -120,6 +121,11 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
   deterministically, dropping their tables and payload columns while preserving
   envelope metadata; handles never advertise a table after its call is evicted.
   `max_session_calls` separately bounds metadata rows and scope views.
+
+- **Automatic pagination needs both an explicit config entry and a downstream
+  `readOnlyHint`** (spec 002 §3). A partial fetch is always labelled partial and
+  carries its resume offset; a fetch that got no page is an error, never an
+  empty table.
 
 ## Out of scope for v0
 

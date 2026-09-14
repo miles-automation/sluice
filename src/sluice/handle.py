@@ -5,7 +5,7 @@ from typing import Any
 
 from mcp import types
 
-from sluice.models import Handle, TableRef
+from sluice.models import Handle, PaginationSummary, TableRef
 from sluice.store import scope_view_name
 
 QUERY_HINT = "Run SQL over this with the `query` tool."
@@ -25,6 +25,8 @@ def render_text(handle: Handle) -> str:
     lines = [
         f"sluice: result recorded.  channel={handle.channel}  scope={handle.scope_id}",
     ]
+    if handle.pagination is not None:
+        lines.extend(_pagination_lines(handle.pagination))
     if handle.conflict:
         lines.append(
             "warning: structuredContent and the text content both parsed and disagree. "
@@ -60,6 +62,24 @@ def render_text(handle: Handle) -> str:
     return "\n".join(lines)
 
 
+def _pagination_lines(summary: PaginationSummary) -> list[str]:
+    counts = (
+        f"pages={summary.pages}  rows={summary.rows}  bytes={summary.bytes}  "
+        f"seconds={summary.seconds:.1f}"
+    )
+    if summary.status == "complete":
+        return [f"pagination: complete  {counts}"]
+    lines = [f"pagination: PARTIAL, stopped by {summary.reason}: {summary.detail}  {counts}"]
+    if summary.resume_offset is not None:
+        lines.append(
+            f"  rows from offset {summary.resume_offset} onward were NOT fetched; "
+            f"call again with offset={summary.resume_offset} to continue."
+        )
+    else:
+        lines.append("  the remainder cannot be resumed safely from this response.")
+    return lines
+
+
 def _indent(text: str) -> str:
     return "\n".join(f"  {line}" for line in text.splitlines() or [""])
 
@@ -90,6 +110,7 @@ def render_structured(handle: Handle) -> dict[str, Any]:
             for table in handle.tables
         ],
         "flat_reason": handle.flat_reason,
+        "pagination": handle.pagination.as_dict() if handle.pagination is not None else None,
         "byte_size": handle.byte_size,
         "preview_complete": handle.preview_complete,
         "preview": handle.preview,

@@ -132,6 +132,28 @@ script directly:
 Config resolution order is `--config`, then `$SLUICE_CONFIG`, then
 `./sluice.toml` in the current working directory.
 
+### Bounded pagination
+
+A tool that pages produces one table per page and a `UNION ALL` the agent has to write. For a tool
+that follows the offset contract (`limit`/`offset` in, `items`/`has_more`/`next_offset` out), you
+can approve automatic page fetching:
+
+```toml
+[pagination.list_jobs]
+page_size = 200
+max_pages = 100
+max_bytes = 8388608
+max_seconds = 120
+```
+
+Sluice then mounts a second tool, `<server>__list_jobs__all__<tag>`, next to the original. It takes
+the tool's filters, fetches successive pages until `has_more` is false or a limit stops it, and
+records every row in **one** table. The handle states `pagination: complete` or
+`pagination: PARTIAL, stopped by <reason>` with page, row, byte and time counts and, when resuming
+is safe, the `offset` to call again with. The downstream tool must be annotated
+`readOnlyHint: true`, or Sluice refuses to start. Key names and limits are documented in
+`spec/002-bounded-pagination.md`.
+
 ### Resource bounds
 
 The default `max_payload_bytes` is 1 MiB and counts both structured and text
@@ -155,6 +177,7 @@ evidence.
 ```
 client --stdio--> server.py  tools/list = downstream union + query
                   proxy.py   downstream session, paginated list, round-trip relay
+                  paginate.py bounded page loop for approved read-only tools
                   gate.py    the query tool's three-layer read-only gate
                   shape.py   extract rows -> depth-1 projection        (pure)
                   infer.py   column types + the `exact` flag           (pure)

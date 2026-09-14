@@ -128,10 +128,58 @@ class Limits:
             raise ConfigError("[limits].duckdb_max_memory must not be empty")
 
 
+PAGINATION_DEFAULT_MAX_BYTES = 8 * 1024 * 1024
+_PAGINATION_NAMES = ("items", "limit_arg", "offset_arg", "has_more", "next_offset")
+_PAGINATION_COUNTS = ("page_size", "max_pages", "max_bytes")
+
+
+@dataclass(frozen=True, slots=True)
+class PaginationConfig:
+    tool: str
+    items: str = "items"
+    limit_arg: str = "limit"
+    offset_arg: str = "offset"
+    has_more: str = "has_more"
+    next_offset: str = "next_offset"
+    page_size: int = 200
+    max_pages: int = 100
+    max_bytes: int = PAGINATION_DEFAULT_MAX_BYTES
+    max_seconds: float = 120.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.tool, str) or not self.tool.strip():
+            raise ConfigError("[pagination] entries must be keyed by a non-empty tool name")
+        where = f"[pagination.{self.tool}]"
+        for name in _PAGINATION_NAMES:
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigError(f"{where}.{name} must be a non-empty string")
+        if self.limit_arg == self.offset_arg:
+            raise ConfigError(f"{where}.limit_arg and offset_arg must differ")
+        for name in _PAGINATION_COUNTS:
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ConfigError(
+                    f"{where}.{name} must be an integer, got {type(value).__name__}: {value!r}"
+                )
+            if value < 1:
+                raise ConfigError(f"{where}.{name} must be at least 1, got {value}")
+        seconds = self.max_seconds
+        if isinstance(seconds, bool) or not isinstance(seconds, int | float):
+            raise ConfigError(
+                f"{where}.max_seconds must be a number, got {type(seconds).__name__}: {seconds!r}"
+            )
+        if not math.isfinite(seconds) or seconds <= 0:
+            raise ConfigError(
+                f"{where}.max_seconds must be a positive finite number, got {seconds}"
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class Config:
     server: ServerConfig
     limits: Limits
+    pagination: dict[str, PaginationConfig] = field(default_factory=dict)
 
 
 def find_config(explicit: Path | None = None) -> Path:
@@ -229,4 +277,28 @@ def parse_config(raw: Mapping[str, Any], environ: dict[str, str] | None = None) 
         raise ConfigError(f"[limits] has unknown keys: {', '.join(sorted(unknown))}")
     limits = Limits(**limits_raw)
 
-    return Config(server=server, limits=limits)
+    pagination = _parse_pagination(raw.get("pagination", {}), limits)
+
+    return Config(server=server, limits=limits, pagination=pagination)
+
+
+def _parse_pagination(raw: Any, limits: Limits) -> dict[str, PaginationConfig]:
+    if not isinstance(raw, dict):
+        raise ConfigError("[pagination] must be a table of [pagination.<tool>] tables")
+    known = set(PaginationConfig.__dataclass_fields__) - {"tool"}
+    parsed: dict[str, PaginationConfig] = {}
+    for tool, entry in raw.items():
+        if not isinstance(entry, dict):
+            raise ConfigError(f"[pagination.{tool}] must be a table")
+        unknown = set(entry) - known
+        if unknown:
+            raise ConfigError(f"[pagination.{tool}] has unknown keys: {', '.join(sorted(unknown))}")
+        config = PaginationConfig(tool=str(tool), **entry)
+        if config.max_bytes > limits.max_session_bytes:
+            raise ConfigError(
+                f"[pagination.{tool}].max_bytes ({config.max_bytes}) exceeds "
+                f"[limits].max_session_bytes ({limits.max_session_bytes}); "
+                "a collection that cannot be retained would never get a table"
+            )
+        parsed[str(tool)] = config
+    return parsed
