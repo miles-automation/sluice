@@ -81,9 +81,9 @@ def _parse_page(config: PaginationConfig, result: types.CallToolResult) -> _Page
     items = value.get(config.items)
     if not isinstance(items, list):
         return f"`{config.items}` is missing or not an array"
-    has_more = value.get(config.has_more, False)
+    has_more = value.get(config.has_more)
     if not isinstance(has_more, bool):
-        return f"`{config.has_more}` is not a boolean"
+        return f"`{config.has_more}` is missing or not a boolean"
     return _Page(items=items, has_more=has_more, next_offset=value.get(config.next_offset))
 
 
@@ -132,8 +132,17 @@ async def fetch_all(
             if isinstance(parsed, str):
                 reason, detail, resume = StopReason.MALFORMED_PAGE, parsed, offset
                 break
+            page_bytes = payload_select.candidate_size(result)
+            if total_bytes + page_bytes > config.max_bytes:
+                reason = StopReason.MAX_BYTES
+                detail = (
+                    f"page at offset {offset} is {page_bytes} bytes; {total_bytes} already "
+                    f"fetched, ceiling {config.max_bytes}; the page was not kept"
+                )
+                resume = offset
+                break
             pages += 1
-            total_bytes += payload_select.candidate_size(result)
+            total_bytes += page_bytes
             rows.extend(parsed.items)
             seen.add(offset)
             if not parsed.has_more:
@@ -150,11 +159,6 @@ async def fetch_all(
                 detail = f"offset {offset} -> {next_offset} with {len(parsed.items)} items"
                 break
             offset = next_offset
-            if total_bytes >= config.max_bytes:
-                reason = StopReason.MAX_BYTES
-                detail = f"{total_bytes} bytes fetched, ceiling {config.max_bytes}"
-                resume = offset
-                break
 
     if deadline.cancelled_caught:
         reason = StopReason.MAX_SECONDS

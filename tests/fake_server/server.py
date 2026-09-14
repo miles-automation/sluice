@@ -138,6 +138,7 @@ def fake_tools() -> list[types.Tool]:
         _paged_tool("paged_error_at", "pages at offset >= 200 return isError"),
         _paged_tool("paged_slow", "sleeps `delay` seconds per page"),
         _paged_tool("paged_bad_items", "`items` is not an array"),
+        _paged_tool("paged_no_has_more", "the page omits has_more"),
         _paged_tool("paged_interactive", "page 2 asks for input"),
         _tool("paged_mutable", "paged, but without a read-only annotation"),
     ]
@@ -289,6 +290,10 @@ async def _call(
         return _ok(_page(args))
     if name == "paged_bad_items":
         return _ok({**_page(args), "items": "not a list"})
+    if name == "paged_no_has_more":
+        page = _page(args)
+        del page["has_more"]
+        return _ok(page)
     if name == "paged_interactive":
         if _int_arg(args, "offset", 0) > 0 and params.request_state is None:
             return types.InputRequiredResult(

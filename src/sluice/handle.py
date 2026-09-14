@@ -62,6 +62,10 @@ def render_text(handle: Handle) -> str:
     return "\n".join(lines)
 
 
+def render_pagination(summary: PaginationSummary) -> str:
+    return "\n".join(_pagination_lines(summary))
+
+
 def _pagination_lines(summary: PaginationSummary) -> list[str]:
     counts = (
         f"pages={summary.pages}  rows={summary.rows}  bytes={summary.bytes}  "

@@ -1,6 +1,8 @@
 """Turning a downstream result into what the agent sees (spec 4, 5.1, 8)."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -58,12 +60,13 @@ class Interceptor:
         failure_class: str | None = None,
         payload_ceiling: int | None = None,
         pagination: PaginationSummary | None = None,
+        admitted: bool = False,
     ) -> types.CallToolResult:
         # The SDK has already decoded structuredContent before this method is
         # called.  Everything Sluice does next can multiply that memory (text
         # parsing, projection, plans, DuckDB insertion, and handle rendering),
         # so admission starts at the outermost interception boundary.
-        async with self._admission:
+        async with self.admission(skip=admitted):
             retention_seq = await self._store.next_retention_seq()
             try:
                 return await self._intercept(
@@ -84,6 +87,14 @@ class Interceptor:
                 # not leave a missing FIFO ticket that wedges every later call.
                 with anyio.CancelScope(shield=True):
                     await self._store.abandon_commit(retention_seq)
+
+    @asynccontextmanager
+    async def admission(self, *, skip: bool = False) -> AsyncIterator[None]:
+        if skip:
+            yield
+            return
+        async with self._admission:
+            yield
 
     async def _intercept(
         self,
@@ -199,7 +210,7 @@ class Interceptor:
                 return result
 
         if reason is not None:
-            return self._passthrough(result, reason, selected, ceiling)
+            return self._passthrough(result, reason, selected, ceiling, pagination)
 
         return handle_render.to_result(
             self._build_handle(record, selected, tables, preview_rows, pagination)
@@ -211,16 +222,22 @@ class Interceptor:
         reason: Passthrough,
         selected: SelectedPayload,
         ceiling: int,
+        pagination: PaginationSummary | None,
     ) -> types.CallToolResult:
         # FR-12 and FR-13 preserve the downstream object byte-for-byte. The
         # oversize path adds its established size note while retaining no
         # payload data in the envelope.
+        notes: list[types.ContentBlock] = []
         if reason is Passthrough.OVERSIZE:
             note = handle_render.size_note(selected.byte_size, ceiling)
-            return result.model_copy(
-                update={"content": [*result.content, types.TextContent(type="text", text=note)]}
+            notes.append(types.TextContent(type="text", text=note))
+        if pagination is not None:
+            notes.append(
+                types.TextContent(type="text", text=handle_render.render_pagination(pagination))
             )
-        return result
+        if not notes:
+            return result
+        return result.model_copy(update={"content": [*result.content, *notes]})
 
     async def _plan(
         self, mounted: str, scope_id: str, selected: SelectedPayload

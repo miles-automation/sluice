@@ -62,15 +62,19 @@ above `[limits].max_session_bytes` are configuration errors.
   `offset_arg` must be a non-negative integer and is the first offset fetched; otherwise the fetch
   starts at 0.
 - **PG-6** Pages are fetched sequentially. After each page: append `items`; if `has_more` is false the
-  fetch is **complete**. If `has_more` is true, `next_offset` must be an integer greater than the
+  fetch is **complete**. `has_more` must be present and boolean: a page without it is malformed,
+  never final, because a misconfigured key or a truncated response would otherwise end the fetch
+  silently short. If `has_more` is true, `next_offset` must be an integer greater than the
   current offset, not previously seen, and the page must have carried at least one item; otherwise the
   fetch stops as **partial** with reason `missing_next_offset` or `offset_not_advancing`. A page whose
   payload is not a JSON object, whose `items` is not an array, or whose `has_more` is not a boolean
   stops the fetch as partial with reason `malformed_page`.
-- **PG-7** Limits: `max_pages` (checked before each fetch), `max_bytes` (checked after each page;
-  the page that crossed the ceiling is kept), and `max_seconds` as a wall clock over the whole loop
-  (a page call in flight when the clock expires is cancelled). Each stops the fetch as partial with
-  reason `max_pages`, `max_bytes` or `max_seconds`.
+- **PG-7** Limits: `max_pages` (checked before each fetch), `max_bytes` (checked before a page is
+  kept: a page that would take the running total over the ceiling is discarded and its offset is the
+  resume point, so retained bytes never exceed `max_bytes`), and `max_seconds` as a wall clock over
+  the whole loop (a page call in flight when the clock expires is cancelled). Each stops the fetch as
+  partial with reason `max_pages`, `max_bytes` or `max_seconds`. A first page over `max_bytes` yields
+  no pages, which is an error (PG-12) naming the page size and the ceiling.
 - **PG-8** A page that returns `isError`, raises a downstream failure (spec 001 §8), or returns an
   `InputRequiredResult` stops the fetch as partial with reason `page_error`, `page_failed` or
   `interactive`. Sluice never answers an elicitation on the agent's behalf (spec 001 §11), so an
@@ -82,14 +86,20 @@ above `[limits].max_session_bytes` are configuration errors.
 
 ## 5. Recording and the handle
 
-- **PG-10** If at least one page was fetched, the collected rows are materialized as a single payload
+- **PG-10** The whole collection call, fetching included, runs under the interceptor's admission
+  semaphore (`max_concurrent_materializations`), because the page buffer is the memory the semaphore
+  exists to bound. If at least one page was fetched, the collected rows are materialized as a single payload
   `{"items": [...]}` through the ordinary pipeline (spec 001 §5), producing one envelope row and one
   table named `<server>__<tool>__all__<tag>__<scope>__<seq>`. The envelope's `tool` is the original
   tool name; its `args` are the agent's arguments plus a `sluice_pagination` object equal to the
   summary below. The collection is admitted up to twice `max_bytes` rather than
   `[limits].max_payload_bytes`, because `max_bytes` is the operator's explicit bound on this operation
   and re-serialization of the combined rows can exceed the sum of the page payloads.
-- **PG-11** The handle carries a pagination line and a `pagination` object in structured content:
+- **PG-11** The pagination status survives every fallback path: an envelope-only handle (load
+  failure or retention budget) still renders it, an oversize passthrough appends it as a text block,
+  and a collection whose combined payload could not be materialized is returned as an error carrying
+  the status and no rows, never as raw items. The handle carries a pagination line and a `pagination`
+  object in structured content:
   `status` (`complete` or `partial`), `reason`, `detail`, `pages`, `rows`, `bytes`, `seconds`,
   `resume_offset`. A partial handle says in prose that rows from `resume_offset` onward were not
   fetched and how to continue, or that the remainder cannot be resumed safely.

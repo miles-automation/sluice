@@ -163,6 +163,19 @@ async def _run_collection(
     params: types.CallToolRequestParams,
     started_at: datetime,
 ) -> types.CallToolResult:
+    if interceptor is None:
+        return await _collect(proxy, None, collection, params, started_at)
+    async with interceptor.admission():
+        return await _collect(proxy, interceptor, collection, params, started_at)
+
+
+async def _collect(
+    proxy: Proxy,
+    interceptor: Interceptor | None,
+    collection: MountedCollection,
+    params: types.CallToolRequestParams,
+    started_at: datetime,
+) -> types.CallToolResult:
     try:
         outcome = await proxy.fetch_collection(collection, params.arguments)
     except PaginationArgumentError as exc:
@@ -192,12 +205,13 @@ async def _run_collection(
             meta=params.meta,
             started_at=started_at,
             failure_class=str(outcome.reason),
+            admitted=True,
         )
 
     combined = types.CallToolResult(content=[], structured_content={"items": outcome.rows})
     if interceptor is None:
         return combined
-    return await interceptor.intercept(
+    recorded = await interceptor.intercept(
         server=collection.server,
         tool=collection.original.name,
         mounted=collection.mounted,
@@ -207,6 +221,23 @@ async def _run_collection(
         started_at=started_at,
         payload_ceiling=2 * collection.config.max_bytes,
         pagination=summary,
+        admitted=True,
+    )
+    return collection_result(recorded, summary)
+
+
+def collection_result(
+    recorded: types.CallToolResult, summary: PaginationSummary
+) -> types.CallToolResult:
+    structured = recorded.structured_content
+    if isinstance(structured, dict) and "pagination" in structured:
+        return recorded
+    notes = [block.text for block in recorded.content if isinstance(block, types.TextContent)]
+    text = "sluice: the collection was fetched but could not be materialized; no rows are returned."
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join([text, *notes]))],
+        structured_content={"pagination": summary.as_dict(), "tables": []},
+        is_error=True,
     )
 
 

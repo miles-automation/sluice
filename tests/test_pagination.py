@@ -5,8 +5,10 @@ import statistics
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
+import anyio
 import pytest
 from mcp import Client, types
 
@@ -14,10 +16,11 @@ from sluice import naming
 from sluice.config import Config, ConfigError, Limits, PaginationConfig, parse_config
 from sluice.errors import DownstreamError, FailureClass
 from sluice.intercept import Interceptor
-from sluice.paginate import PaginationArgumentError, StopReason, fetch_all
-from sluice.proxy import Proxy
+from sluice.models import PaginationSummary
+from sluice.paginate import FetchOutcome, PaginationArgumentError, StopReason, fetch_all
+from sluice.proxy import MountedCollection, Proxy
 from sluice.query import QueryTool
-from sluice.server import build_server
+from sluice.server import _run_collection, build_server, collection_result
 from sluice.store import Store
 from tests.fake_server import rows_payload
 
@@ -239,7 +242,7 @@ async def test_max_pages_yields_a_partial_result_with_a_resume_offset(
     assert "| 200 |" in _text(count)
 
 
-async def test_max_bytes_stops_after_the_page_that_crossed_it(
+async def test_max_bytes_never_keeps_the_page_that_would_cross_it(
     fake_config: Config, store: Store
 ) -> None:
     config = _config(
@@ -247,12 +250,47 @@ async def test_max_bytes_stops_after_the_page_that_crossed_it(
     )
     async with _client(config, store) as client:
         result = await client.call_tool(PAGED, {"n": 450})
+        table = _table(result)
+        count = await client.call_tool("query", {"sql": f'SELECT count(*) FROM "{table}"'})
     pagination = _pagination(result)
     assert pagination["status"] == "partial"
     assert pagination["reason"] == "max_bytes"
-    assert pagination["bytes"] >= 10_000
-    assert pagination["pages"] < 5
+    assert pagination["bytes"] <= 10_000
+    assert 1 <= pagination["pages"] < 5
     assert pagination["resume_offset"] == pagination["rows"]
+    assert "was not kept" in _text(result)
+    assert f"| {pagination['rows']} |" in _text(count)
+
+
+async def test_a_first_page_over_max_bytes_is_an_error_with_status(
+    fake_config: Config, store: Store
+) -> None:
+    config = _config(
+        fake_config, paged=PaginationConfig(tool="paged", page_size=100, max_bytes=100)
+    )
+    async with _client(config, store) as client:
+        result = await client.call_tool(PAGED, {"n": 450})
+    assert result.is_error is True
+    assert result.structured_content is None
+    text = _text(result)
+    assert "fetched no pages (max_bytes)" in text
+    assert "ceiling 100" in text
+
+
+async def test_a_page_without_has_more_is_malformed_not_final(
+    fake_config: Config, store: Store
+) -> None:
+    config = _config(
+        fake_config, paged_no_has_more=PaginationConfig(tool="paged_no_has_more", page_size=100)
+    )
+    async with _client(config, store) as client:
+        result = await client.call_tool(
+            naming.collection_name("fake", "paged_no_has_more"), {"n": 450}
+        )
+    assert result.is_error is True
+    assert result.structured_content is None
+    assert "fetched no pages (malformed_page)" in _text(result)
+    assert "`has_more` is missing" in _text(result)
 
 
 @pytest.mark.slow
@@ -382,6 +420,112 @@ async def test_original_tool_still_returns_one_page(fake_config: Config, store: 
     assert _structured(result)["tables"][0]["row_count"] == 30
 
 
+# --- fallback paths keep the status ------------------------------------------
+
+
+def _partial_summary() -> PaginationSummary:
+    return PaginationSummary(
+        status="partial",
+        reason="max_pages",
+        detail="2 pages fetched",
+        pages=2,
+        rows=200,
+        bytes=12_000,
+        seconds=0.1,
+        resume_offset=200,
+    )
+
+
+async def test_oversize_passthrough_still_carries_the_pagination_status(
+    interceptor: Interceptor,
+) -> None:
+    combined = types.CallToolResult(
+        content=[], structured_content={"items": [{"i": i} for i in range(50)]}
+    )
+    result = await interceptor.intercept(
+        server="fake",
+        tool="paged",
+        mounted=PAGED,
+        arguments={},
+        result=combined,
+        meta=None,
+        started_at=datetime.now(UTC).replace(tzinfo=None),
+        payload_ceiling=10,
+        pagination=_partial_summary(),
+    )
+    texts = [block.text for block in result.content if isinstance(block, types.TextContent)]
+    assert any("pagination: PARTIAL, stopped by max_pages" in t for t in texts)
+    assert any("call again with offset=200" in t for t in texts)
+
+
+def test_collection_result_turns_a_raw_passthrough_into_an_error_with_status() -> None:
+    raw = types.CallToolResult(
+        content=[types.TextContent(type="text", text="sluice: result passed through unmodified.")],
+        structured_content={"items": [{"i": 1}]},
+    )
+    result = collection_result(raw, _partial_summary())
+    assert result.is_error is True
+    assert result.structured_content == {"pagination": _partial_summary().as_dict(), "tables": []}
+    assert "no rows are returned" in _text(result)
+    assert "passed through unmodified" in _text(result)
+
+
+def test_collection_result_keeps_a_recorded_handle() -> None:
+    recorded = types.CallToolResult(
+        content=[types.TextContent(type="text", text="handle")],
+        structured_content={"pagination": {"status": "complete"}, "tables": [{"name": "t"}]},
+    )
+    assert collection_result(recorded, _partial_summary()) is recorded
+
+
+@pytest.mark.slow
+async def test_concurrent_collections_respect_admission(store: Store) -> None:
+    limits = Limits(max_concurrent_materializations=2)
+    interceptor = Interceptor(store, limits, query_available=True)
+    in_flight = 0
+    peak = 0
+
+    class _Proxy:
+        async def fetch_collection(
+            self, entry: MountedCollection, arguments: dict[str, Any] | None
+        ) -> FetchOutcome:
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            try:
+                await anyio.sleep(0.2)
+            finally:
+                in_flight -= 1
+            return FetchOutcome(
+                status="complete",
+                reason=StopReason.COMPLETE,
+                detail=None,
+                pages=1,
+                bytes=100,
+                seconds=0.2,
+                resume_offset=None,
+                rows=[{"i": 1}],
+                first_page_error=None,
+            )
+
+    tool = types.Tool(name="paged", input_schema={"type": "object", "properties": {}})
+    entry = MountedCollection(
+        mounted=PAGED,
+        server="fake",
+        original=tool,
+        exposed=tool,
+        config=PaginationConfig(tool="paged"),
+    )
+    params = types.CallToolRequestParams(name=PAGED, arguments={})
+    started = datetime.now(UTC).replace(tzinfo=None)
+    proxy = cast(Proxy, _Proxy())
+
+    async with anyio.create_task_group() as group:
+        for _ in range(5):
+            group.start_soon(_run_collection, proxy, interceptor, entry, params, started)
+    assert peak == 2
+
+
 # --- the loop on its own -----------------------------------------------------
 
 
@@ -438,6 +582,19 @@ async def test_loop_treats_an_empty_page_with_has_more_as_not_advancing() -> Non
     outcome = await fetch_all(call, PaginationConfig(tool="t", page_size=10), None)
     assert outcome.reason is StopReason.NOT_ADVANCING
     assert outcome.pages == 1
+
+
+async def test_loop_requires_an_explicit_has_more() -> None:
+    async def call(arguments: dict[str, Any]) -> types.CallToolResult:
+        payload = {"items": [{"i": 1}], "next_offset": None}
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=json.dumps(payload))]
+        )
+
+    outcome = await fetch_all(call, PaginationConfig(tool="t", page_size=10), None)
+    assert outcome.reason is StopReason.MALFORMED_PAGE
+    assert outcome.pages == 0
+    assert outcome.rows == []
 
 
 async def test_loop_rejects_bad_resume_offsets() -> None:
