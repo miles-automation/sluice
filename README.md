@@ -13,11 +13,12 @@ over-ceiling results deliberately pass through unchanged.
 
 ## Status
 
-The first public release, [v0.1.0](https://pypi.org/project/mcp-sluice/0.1.0/),
+The current release, [v0.2.0](https://pypi.org/project/mcp-sluice/0.2.0/),
 is available from PyPI. Proxying, envelope/handle recording, flattening and
 type inference, the read-only `query` gate, aggregate-correctness properties,
-bounded runtime retention, and final adversarial review are implemented and
-covered by the test suite. The reproducible live-model demo recorded one
+bounded runtime retention, final adversarial review, and bounded pagination
+for approved read-only tools (spec 002) are implemented and covered by the
+test suite. The reproducible live-model demo recorded one
 baseline miss (71.5) and one Sluice-backed exact answer (72.5); that sampled
 run is evidence, not a deterministic guarantee.
 
@@ -69,8 +70,8 @@ uv run sluice --config sluice.toml
 You can also build and install a wheel into any environment:
 
 ```bash
-uv build                          # writes dist/mcp_sluice-0.1.0-py3-none-any.whl
-pip install dist/mcp_sluice-0.1.0-py3-none-any.whl
+uv build                          # writes dist/mcp_sluice-0.2.0-py3-none-any.whl
+pip install dist/mcp_sluice-0.2.0-py3-none-any.whl
 sluice --config sluice.toml
 ```
 

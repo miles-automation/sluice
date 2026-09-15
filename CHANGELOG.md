@@ -3,7 +3,7 @@
 This tracks what has landed against the milestones in
 `plan/001-scratch-db.md`.
 
-## Unreleased
+## 0.2.0 — 2026-09-15
 
 - **Bounded pagination** (`spec/002-bounded-pagination.md`, task 622). A
   `[pagination.<tool>]` config entry mounts a `<server>__<tool>__all__<tag>`
@@ -11,8 +11,17 @@ This tracks what has landed against the milestones in
   downstream tool and records every row in one table. Page, byte and wall-clock
   limits; explicit `complete`/`partial` status with a resume offset; failed,
   malformed, interactive and non-advancing pages stop the fetch as partial
-  rather than producing a silent gap. Motivated by the 2026-09-13 comparison
-  where the page loop was 19 of an agent's 22 tool calls.
+  rather than producing a silent gap. Automatic fetching requires both the
+  config entry and a downstream `readOnlyHint`; the single-page tool stays
+  mounted and its description names the collection variant. Review fixes
+  before merge: a page without `has_more` is malformed rather than final,
+  `max_bytes` bounds what is kept (the crossing page is discarded and becomes
+  the resume offset) with the status preserved on every fallback path, and
+  the whole collection call runs under the materialization admission
+  semaphore. Motivated by the 2026-09-13 comparison where the page loop was
+  19 of an agent's 22 tool calls; with the operation, the same task took 4.
+- No other behavior changes. Dependency floors, protocol baseline, and the
+  `query` gate are as in 0.1.0.
 
 ## 0.1.0 — 2026-09-01
 
