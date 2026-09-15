@@ -3,6 +3,17 @@
 This tracks what has landed against the milestones in
 `plan/001-scratch-db.md`.
 
+## Unreleased
+
+- **Bounded pagination** (`spec/002-bounded-pagination.md`, task 622). A
+  `[pagination.<tool>]` config entry mounts a `<server>__<tool>__all__<tag>`
+  operation that fetches successive pages of an offset-paginated, read-only
+  downstream tool and records every row in one table. Page, byte and wall-clock
+  limits; explicit `complete`/`partial` status with a resume offset; failed,
+  malformed, interactive and non-advancing pages stop the fetch as partial
+  rather than producing a silent gap. Motivated by the 2026-09-13 comparison
+  where the page loop was 19 of an agent's 22 tool calls.
+
 ## 0.1.0 — 2026-09-01
 
 - **M1 — proxy.** Sluice starts, connects to one configured downstream MCP

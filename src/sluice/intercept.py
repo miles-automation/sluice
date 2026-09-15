@@ -1,6 +1,8 @@
 """Turning a downstream result into what the agent sees (spec 4, 5.1, 8)."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -17,6 +19,7 @@ from sluice.models import (
     CallRecord,
     ColumnRef,
     Handle,
+    PaginationSummary,
     Passthrough,
     PayloadChannel,
     SelectedPayload,
@@ -55,12 +58,15 @@ class Interceptor:
         meta: object | None,
         started_at: datetime,
         failure_class: str | None = None,
+        payload_ceiling: int | None = None,
+        pagination: PaginationSummary | None = None,
+        admitted: bool = False,
     ) -> types.CallToolResult:
         # The SDK has already decoded structuredContent before this method is
         # called.  Everything Sluice does next can multiply that memory (text
         # parsing, projection, plans, DuckDB insertion, and handle rendering),
         # so admission starts at the outermost interception boundary.
-        async with self._admission:
+        async with self.admission(skip=admitted):
             retention_seq = await self._store.next_retention_seq()
             try:
                 return await self._intercept(
@@ -73,12 +79,22 @@ class Interceptor:
                     started_at=started_at,
                     retention_seq=retention_seq,
                     failure_class=failure_class,
+                    payload_ceiling=payload_ceiling,
+                    pagination=pagination,
                 )
             finally:
                 # Cancellation or an unexpected selector/planner exception must
                 # not leave a missing FIFO ticket that wedges every later call.
                 with anyio.CancelScope(shield=True):
                     await self._store.abandon_commit(retention_seq)
+
+    @asynccontextmanager
+    async def admission(self, *, skip: bool = False) -> AsyncIterator[None]:
+        if skip:
+            yield
+            return
+        async with self._admission:
+            yield
 
     async def _intercept(
         self,
@@ -92,7 +108,10 @@ class Interceptor:
         started_at: datetime,
         retention_seq: int,
         failure_class: str | None,
+        payload_ceiling: int | None,
+        pagination: PaginationSummary | None,
     ) -> types.CallToolResult:
+        ceiling = self._limits.max_payload_bytes if payload_ceiling is None else payload_ceiling
         ended_at = _now()
         scope_id, _ = scope.derive(meta)
         seq = await self._store.next_call_seq(mounted)
@@ -100,9 +119,7 @@ class Interceptor:
 
         selection_failure: str | None = None
         try:
-            reason, candidate_bytes = payload_select.classify_passthrough(
-                result, self._limits.max_payload_bytes
-            )
+            reason, candidate_bytes = payload_select.classify_passthrough(result, ceiling)
 
             if reason is not None:
                 # Passthrough is intentionally a metadata-only retention path.
@@ -193,25 +210,34 @@ class Interceptor:
                 return result
 
         if reason is not None:
-            return self._passthrough(result, reason, selected)
+            return self._passthrough(result, reason, selected, ceiling, pagination)
 
-        return handle_render.to_result(self._build_handle(record, selected, tables, preview_rows))
+        return handle_render.to_result(
+            self._build_handle(record, selected, tables, preview_rows, pagination)
+        )
 
     def _passthrough(
         self,
         result: types.CallToolResult,
         reason: Passthrough,
         selected: SelectedPayload,
+        ceiling: int,
+        pagination: PaginationSummary | None,
     ) -> types.CallToolResult:
         # FR-12 and FR-13 preserve the downstream object byte-for-byte. The
         # oversize path adds its established size note while retaining no
         # payload data in the envelope.
+        notes: list[types.ContentBlock] = []
         if reason is Passthrough.OVERSIZE:
-            note = handle_render.size_note(selected.byte_size, self._limits.max_payload_bytes)
-            return result.model_copy(
-                update={"content": [*result.content, types.TextContent(type="text", text=note)]}
+            note = handle_render.size_note(selected.byte_size, ceiling)
+            notes.append(types.TextContent(type="text", text=note))
+        if pagination is not None:
+            notes.append(
+                types.TextContent(type="text", text=handle_render.render_pagination(pagination))
             )
-        return result
+        if not notes:
+            return result
+        return result.model_copy(update={"content": [*result.content, *notes]})
 
     async def _plan(
         self, mounted: str, scope_id: str, selected: SelectedPayload
@@ -301,6 +327,7 @@ class Interceptor:
         selected: SelectedPayload,
         tables: list[TableRef],
         preview_rows: list[object],
+        pagination: PaginationSummary | None = None,
     ) -> Handle:
         preview, complete = payload_select.render_preview(selected, self._limits.preview_bytes)
         shown: int | None = None
@@ -322,5 +349,6 @@ class Interceptor:
             total_rows=total,
             tables=tables,
             flat_reason=record.flat_reason,
+            pagination=pagination,
             query_available=self._query_available,
         )

@@ -10,7 +10,9 @@ from sluice import __version__
 from sluice.errors import DownstreamError, FailureClass, error_result
 from sluice.gate import QueryRejectedError
 from sluice.intercept import Interceptor
-from sluice.proxy import MODERN_VERSIONS, Proxy
+from sluice.models import PaginationSummary
+from sluice.paginate import FetchOutcome, PaginationArgumentError
+from sluice.proxy import MODERN_VERSIONS, MountedCollection, Proxy
 from sluice.query import QUERY_DESCRIPTION, QUERY_SCHEMA, QUERY_TOOL_NAME, QueryTool
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,10 @@ def build_server(
             return await _run_query(query, params)
 
         started_at = datetime.now(UTC).replace(tzinfo=None)
+
+        collection = proxy.resolve_collection(params.name)
+        if collection is not None:
+            return await _run_collection(proxy, interceptor, collection, params, started_at)
 
         async def record_failure(failure: DownstreamError) -> types.CallToolResult:
             result = error_result(failure)
@@ -134,6 +140,104 @@ def initialization_options(server: Server[object]) -> types.InitializeResult | o
     """Static catalog, so `listChanged` is false (spec 10)."""
     return server.create_initialization_options(
         NotificationOptions(tools_changed=False),
+    )
+
+
+def _summary(outcome: FetchOutcome) -> PaginationSummary:
+    return PaginationSummary(
+        status=outcome.status,
+        reason=str(outcome.reason),
+        detail=outcome.detail,
+        pages=outcome.pages,
+        rows=len(outcome.rows),
+        bytes=outcome.bytes,
+        seconds=outcome.seconds,
+        resume_offset=outcome.resume_offset,
+    )
+
+
+async def _run_collection(
+    proxy: Proxy,
+    interceptor: Interceptor | None,
+    collection: MountedCollection,
+    params: types.CallToolRequestParams,
+    started_at: datetime,
+) -> types.CallToolResult:
+    if interceptor is None:
+        return await _collect(proxy, None, collection, params, started_at)
+    async with interceptor.admission():
+        return await _collect(proxy, interceptor, collection, params, started_at)
+
+
+async def _collect(
+    proxy: Proxy,
+    interceptor: Interceptor | None,
+    collection: MountedCollection,
+    params: types.CallToolRequestParams,
+    started_at: datetime,
+) -> types.CallToolResult:
+    try:
+        outcome = await proxy.fetch_collection(collection, params.arguments)
+    except PaginationArgumentError as exc:
+        return _text_error(str(exc))
+    summary = _summary(outcome)
+    recorded_args = {**(params.arguments or {}), "sluice_pagination": summary.as_dict()}
+
+    if outcome.pages == 0:
+        note = types.TextContent(
+            type="text",
+            text=f"sluice: pagination fetched no pages ({summary.reason}): {summary.detail}",
+        )
+        if outcome.first_page_error is not None:
+            result = outcome.first_page_error.model_copy(
+                update={"content": [*outcome.first_page_error.content, note]}
+            )
+        else:
+            result = types.CallToolResult(content=[note], is_error=True)
+        if interceptor is None:
+            return result
+        return await interceptor.intercept(
+            server=collection.server,
+            tool=collection.original.name,
+            mounted=collection.mounted,
+            arguments=recorded_args,
+            result=result,
+            meta=params.meta,
+            started_at=started_at,
+            failure_class=str(outcome.reason),
+            admitted=True,
+        )
+
+    combined = types.CallToolResult(content=[], structured_content={"items": outcome.rows})
+    if interceptor is None:
+        return combined
+    recorded = await interceptor.intercept(
+        server=collection.server,
+        tool=collection.original.name,
+        mounted=collection.mounted,
+        arguments=recorded_args,
+        result=combined,
+        meta=params.meta,
+        started_at=started_at,
+        payload_ceiling=2 * collection.config.max_bytes,
+        pagination=summary,
+        admitted=True,
+    )
+    return collection_result(recorded, summary)
+
+
+def collection_result(
+    recorded: types.CallToolResult, summary: PaginationSummary
+) -> types.CallToolResult:
+    structured = recorded.structured_content
+    if isinstance(structured, dict) and "pagination" in structured:
+        return recorded
+    notes = [block.text for block in recorded.content if isinstance(block, types.TextContent)]
+    text = "sluice: the collection was fetched but could not be materialized; no rows are returned."
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join([text, *notes]))],
+        structured_content={"pagination": summary.as_dict(), "tables": []},
+        is_error=True,
     )
 
 

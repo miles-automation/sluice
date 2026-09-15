@@ -1,24 +1,37 @@
 """The downstream proxy: session, paginated listing, call forwarding, round-trip relay."""
 
 import contextlib
+import copy
 import logging
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Self
 
 import anyio
 from mcp import Client, ClientSession, MCPError, StdioServerParameters, types
 from mcp.types.version import MODERN_PROTOCOL_VERSIONS
 
-from sluice.config import Config
+from sluice.config import Config, ConfigError, PaginationConfig
 from sluice.errors import DownstreamError, FailureClass
-from sluice.naming import assert_injective, mounted_name
+from sluice.naming import NameCollisionError, assert_injective, collection_name, mounted_name
+from sluice.paginate import FetchOutcome, fetch_all
 
 logger = logging.getLogger(__name__)
 
 HANDLE_NOTE = (
     "Results from this tool are stored in a session database. You receive a preview "
     "plus a table name; use the `query` tool to run SQL over the full result."
+)
+
+COLLECTION_NOTE = (
+    "Fetches every page of `{tool}` (up to configured limits) and records ALL rows in ONE "
+    "table. Pass the tool's filters only: Sluice supplies `{limit}` and `{offset}`. An "
+    "`{offset}` may be given to resume a partial fetch. The handle states whether the fetch "
+    "was complete or partial and why it stopped."
+)
+
+COLLECTION_CROSS_REFERENCE = (
+    "To fetch every page of this tool at once into one table, call `{collection}` instead."
 )
 
 MAX_LIST_PAGES = 1000
@@ -75,6 +88,47 @@ def expose(server: str, tool: types.Tool) -> MountedTool:
     return MountedTool(mounted=mounted, server=server, original=tool, exposed=exposed)
 
 
+@dataclass(frozen=True, slots=True)
+class MountedCollection:
+    mounted: str
+    server: str
+    original: types.Tool
+    exposed: types.Tool
+    config: PaginationConfig
+
+
+def expose_collection(server: str, tool: types.Tool, config: PaginationConfig) -> MountedCollection:
+    mounted = collection_name(server, tool.name)
+    schema: dict[str, Any] = (
+        copy.deepcopy(tool.input_schema)
+        if isinstance(tool.input_schema, dict)
+        else {"type": "object", "properties": {}}
+    )
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        properties.pop(config.limit_arg, None)
+    required = schema.get("required")
+    if isinstance(required, list):
+        schema["required"] = [name for name in required if name != config.limit_arg]
+    note = COLLECTION_NOTE.format(tool=tool.name, limit=config.limit_arg, offset=config.offset_arg)
+    description = tool.description or ""
+    exposed = tool.model_copy(
+        update={
+            "name": mounted,
+            "description": f"{description}\n\n{note}\n\n{HANDLE_NOTE}".strip(),
+            "input_schema": schema,
+            "output_schema": None,
+        }
+    )
+    return MountedCollection(
+        mounted=mounted, server=server, original=tool, exposed=exposed, config=config
+    )
+
+
+def _read_only(tool: types.Tool) -> bool:
+    return tool.annotations is not None and tool.annotations.read_only_hint is True
+
+
 class Proxy:
     """Holds the downstream session for the process lifetime."""
 
@@ -84,6 +138,7 @@ class Proxy:
         self._session: ClientSession | None = None
         self._protocol_version: str | None = None
         self._tools: dict[str, MountedTool] = {}
+        self._collections: dict[str, MountedCollection] = {}
         self._healthy = True
 
     @classmethod
@@ -160,7 +215,47 @@ class Proxy:
             entry = expose(server, tool)
             mounted[entry.mounted] = entry
         self._tools = mounted
-        logger.info("mounted %d downstream tools", len(mounted))
+        self._collections = self._mount_collections(server, tools, mounted)
+        logger.info(
+            "mounted %d downstream tools and %d collections", len(mounted), len(self._collections)
+        )
+
+    def _mount_collections(
+        self, server: str, tools: list[types.Tool], mounted: dict[str, MountedTool]
+    ) -> dict[str, MountedCollection]:
+        by_name = {tool.name: tool for tool in tools}
+        collections: dict[str, MountedCollection] = {}
+        for tool_name, pagination in self._config.pagination.items():
+            original = by_name.get(tool_name)
+            if original is None:
+                raise ConfigError(
+                    f"[pagination.{tool_name}] names a tool the downstream did not list"
+                )
+            if not _read_only(original):
+                raise ConfigError(
+                    f"[pagination.{tool_name}] refused: the downstream tool is not annotated "
+                    "readOnlyHint=true, and Sluice only fetches read-only tools automatically"
+                )
+            entry = expose_collection(server, original, pagination)
+            if entry.mounted in mounted or entry.mounted in collections:
+                raise NameCollisionError(
+                    f"collection for {server}/{tool_name!r} collides with an existing mounted name "
+                    f"{entry.mounted!r}"
+                )
+            collections[entry.mounted] = entry
+            single = mounted[mounted_name(server, tool_name)]
+            mounted[single.mounted] = replace(
+                single,
+                exposed=single.exposed.model_copy(
+                    update={
+                        "description": (
+                            f"{single.exposed.description}\n\n"
+                            f"{COLLECTION_CROSS_REFERENCE.format(collection=entry.mounted)}"
+                        )
+                    }
+                ),
+            )
+        return collections
 
     async def _list_all_tools(self) -> list[types.Tool]:
         """Follow `next_cursor` to completion.
@@ -191,10 +286,26 @@ class Proxy:
         return collected
 
     def mounted_tools(self) -> list[types.Tool]:
-        return [entry.exposed for entry in self._tools.values()]
+        return [
+            *(entry.exposed for entry in self._tools.values()),
+            *(entry.exposed for entry in self._collections.values()),
+        ]
 
     def resolve(self, mounted: str) -> MountedTool | None:
         return self._tools.get(mounted)
+
+    def resolve_collection(self, mounted: str) -> MountedCollection | None:
+        return self._collections.get(mounted)
+
+    async def fetch_collection(
+        self, entry: MountedCollection, arguments: dict[str, Any] | None
+    ) -> FetchOutcome:
+        async def page(
+            page_arguments: dict[str, Any],
+        ) -> types.CallToolResult | types.InputRequiredResult:
+            return await self._call_original(entry.original.name, page_arguments)
+
+        return await fetch_all(page, entry.config, arguments)
 
     async def call(
         self,
@@ -208,15 +319,30 @@ class Proxy:
         entry = self.resolve(mounted)
         if entry is None:
             raise DownstreamError(FailureClass.PROTOCOL, mounted, f"no such tool: {mounted}")
+        return await self._call_original(
+            entry.original.name,
+            arguments,
+            input_responses=input_responses,
+            request_state=request_state,
+        )
+
+    async def _call_original(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None,
+        *,
+        input_responses: types.InputResponses | None = None,
+        request_state: str | None = None,
+    ) -> types.CallToolResult | types.InputRequiredResult:
         if not self._healthy:
             raise DownstreamError(
                 FailureClass.TRANSPORT,
-                entry.original.name,
+                name,
                 "downstream session is unhealthy after an earlier transport failure",
             )
         try:
             result = await self.session.call_tool(
-                entry.original.name,
+                name,
                 arguments,
                 input_responses=input_responses,
                 request_state=request_state,
@@ -225,25 +351,21 @@ class Proxy:
                 allow_input_required=True,
             )
         except MCPError as exc:
-            raise DownstreamError(FailureClass.PROTOCOL, entry.original.name, str(exc)) from exc
+            raise DownstreamError(FailureClass.PROTOCOL, name, str(exc)) from exc
         except RuntimeError as exc:
             message = str(exc)
             if any(marker in message.lower() for marker in _OUTPUT_SCHEMA_MARKERS):
-                raise DownstreamError(
-                    FailureClass.OUTPUT_SCHEMA, entry.original.name, message
-                ) from exc
+                raise DownstreamError(FailureClass.OUTPUT_SCHEMA, name, message) from exc
             raise
         except (anyio.BrokenResourceError, anyio.ClosedResourceError, anyio.EndOfStream) as exc:
             self._healthy = False
             raise DownstreamError(
-                FailureClass.TRANSPORT, entry.original.name, f"{type(exc).__name__}: {exc}"
+                FailureClass.TRANSPORT, name, f"{type(exc).__name__}: {exc}"
             ) from exc
         if isinstance(result, types.CallToolResult | types.InputRequiredResult):
             return result
         raise DownstreamError(
-            FailureClass.PROTOCOL,
-            entry.original.name,
-            f"unexpected result type {type(result).__name__}",
+            FailureClass.PROTOCOL, name, f"unexpected result type {type(result).__name__}"
         )
 
 

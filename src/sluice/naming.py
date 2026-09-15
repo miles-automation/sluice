@@ -64,6 +64,22 @@ def mounted_name(server: str, tool: str) -> str:
     return name
 
 
+COLLECTION_SUFFIX = "all"
+
+
+def collection_name(server: str, tool: str) -> str:
+    name = (
+        f"{slug(server)}__{slug(tool)}__{COLLECTION_SUFFIX}__"
+        f"{tag(identity(server, tool) + chr(0) + COLLECTION_SUFFIX)}"
+    )
+    if len(name) > MAX_MOUNTED_NAME:
+        raise NameTooLongError(
+            f"collection name for {server}/{tool} is {len(name)} chars, "
+            f"over the {MAX_MOUNTED_NAME} limit"
+        )
+    return name
+
+
 def table_name(mounted: str, scope_tag: str, seq: int) -> str:
     """Flat-table name (spec 3.2).
 

@@ -4,6 +4,7 @@ import json
 import math
 from typing import Any
 
+import anyio
 from mcp import types
 from mcp.server import Server, ServerRequestContext
 
@@ -49,6 +50,45 @@ def _tool(name: str, description: str, **extra: Any) -> types.Tool:
     return types.Tool(name=name, description=description, input_schema=schema, **extra)
 
 
+_READ_ONLY = types.ToolAnnotations(read_only_hint=True)
+_PAGED_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "n": {"type": "integer"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+        "offset": {"type": "integer", "minimum": 0},
+    },
+    "required": ["limit"],
+    "additionalProperties": True,
+}
+
+
+def _paged_tool(name: str, description: str, **extra: Any) -> types.Tool:
+    return types.Tool(
+        name=name,
+        description=description,
+        input_schema=_PAGED_SCHEMA,
+        annotations=_READ_ONLY,
+        **extra,
+    )
+
+
+def _page(args: dict[str, Any] | None, *, n: int = 450) -> dict[str, Any]:
+    total = _int_arg(args, "n", n)
+    limit = _int_arg(args, "limit", 50)
+    offset = _int_arg(args, "offset", 0)
+    items = rows_payload(total)[offset : offset + limit]
+    has_more = offset + len(items) < total
+    return {
+        "items": items,
+        "returned": len(items),
+        "has_more": has_more,
+        "next_offset": offset + len(items) if has_more else None,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 def fake_tools() -> list[types.Tool]:
     return [
         _tool("rows", "n homogeneous objects under an 'items' key"),
@@ -90,6 +130,17 @@ def fake_tools() -> list[types.Tool]:
         # naive sanitizing. They must not share a mounted name or a table.
         _tool("hyphen-tool", "collides with hyphen_tool under naive slugging"),
         _tool("hyphen_tool", "collides with hyphen-tool under naive slugging"),
+        _paged_tool(
+            "paged", "offset-paginated rows: limit/offset in, items/has_more/next_offset out"
+        ),
+        _paged_tool("paged_stuck", "has_more is true but next_offset never advances"),
+        _paged_tool("paged_no_next", "has_more is true but next_offset is null"),
+        _paged_tool("paged_error_at", "pages at offset >= 200 return isError"),
+        _paged_tool("paged_slow", "sleeps `delay` seconds per page"),
+        _paged_tool("paged_bad_items", "`items` is not an array"),
+        _paged_tool("paged_no_has_more", "the page omits has_more"),
+        _paged_tool("paged_interactive", "page 2 asks for input"),
+        _tool("paged_mutable", "paged, but without a read-only annotation"),
     ]
 
 
@@ -222,6 +273,41 @@ async def _call(
         return _ok({"items": [{"which": name}]})
     if name == PAGE_TWO_TOOL:
         return _ok({"items": [{"page": 2}]})
+    if name in {"paged", "paged_mutable"}:
+        return _ok(_page(args))
+    if name == "paged_stuck":
+        return _ok({**_page(args), "has_more": True, "next_offset": 0})
+    if name == "paged_no_next":
+        return _ok({**_page(args), "has_more": True, "next_offset": None})
+    if name == "paged_error_at":
+        if _int_arg(args, "offset", 0) >= 200:
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text="page unavailable")], is_error=True
+            )
+        return _ok(_page(args))
+    if name == "paged_slow":
+        await anyio.sleep(float(_int_arg(args, "delay_ms", 300)) / 1000)
+        return _ok(_page(args))
+    if name == "paged_bad_items":
+        return _ok({**_page(args), "items": "not a list"})
+    if name == "paged_no_has_more":
+        page = _page(args)
+        del page["has_more"]
+        return _ok(page)
+    if name == "paged_interactive":
+        if _int_arg(args, "offset", 0) > 0 and params.request_state is None:
+            return types.InputRequiredResult(
+                input_requests={
+                    "pick": types.ElicitRequest(
+                        params=types.ElicitRequestFormParams(
+                            message="Continue?",
+                            requested_schema={"type": "object", "properties": {}},
+                        )
+                    )
+                },
+                request_state="awaiting",
+            )
+        return _ok(_page(args))
     if name == "needs_input":
         if params.request_state is None:
             return types.InputRequiredResult(
