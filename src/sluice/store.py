@@ -12,7 +12,7 @@ import anyio
 import duckdb
 
 from sluice.config import SESSION_CALLS_DEFAULT, SESSION_RETENTION_DEFAULT, Limits
-from sluice.gate import SCOPE_PATTERN
+from sluice.gate import SCOPE_PATTERN, GateContractError, verify_parser_contract
 from sluice.infer import ColumnSpec, coerce
 from sluice.models import CallRecord, SelectedPayload, TablePlan
 from sluice.naming import quote_ident
@@ -161,6 +161,11 @@ class Store:
         connection = duckdb.connect(":memory:")
         for statement in LOCKDOWN_TEMPLATE:
             connection.execute(statement.format(max_memory=limits.duckdb_max_memory))
+        try:
+            verify_parser_contract(connection)
+        except GateContractError:
+            connection.close()
+            raise
         # CREATE TABLE still works after the lockdown; only external access and
         # further configuration changes are closed off.
         connection.execute(ENVELOPE_DDL)

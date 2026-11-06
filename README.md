@@ -13,8 +13,9 @@ over-ceiling results deliberately pass through unchanged.
 
 ## Status
 
-The current release, [v0.2.0](https://pypi.org/project/mcp-sluice/0.2.0/),
-is available from PyPI. Proxying, envelope/handle recording, flattening and
+The current release, [v0.2.1](https://pypi.org/project/mcp-sluice/0.2.1/),
+is available from PyPI. Do not use 0.2.0 with DuckDB 2.0: its query gate can be
+bypassed through a CTE (see `CHANGELOG.md`). Proxying, envelope/handle recording, flattening and
 type inference, the read-only `query` gate, aggregate-correctness properties,
 bounded runtime retention, final adversarial review, and bounded pagination
 for approved read-only tools (spec 002) are implemented and covered by the
@@ -32,7 +33,7 @@ the non-goals are non-goals; `plan/001-notes-m0.md` holds the measured
 third-party behavior the design rests on.
 
 **Behavioral baseline verified against:** MCP protocol `2026-07-28`, SDK `mcp`
-2.1.1, DuckDB 1.5.5, CPython 3.14. Behavior differs across revisions of any of
+2.1.1, DuckDB 2.0.0 and 1.5.5, CPython 3.14. Behavior differs across revisions of any of
 these; the spec does not generalize past what was measured.
 
 ## Feedback
@@ -51,7 +52,7 @@ configuration in a public issue.
 ## Installation
 
 Requires Python 3.14+ (`requires-python = ">=3.14"` — no compatibility shims
-for older interpreters) and a platform DuckDB 1.5.5 ships a wheel for.
+for older interpreters) and a platform DuckDB ships a wheel for.
 
 Install the distribution from PyPI:
 

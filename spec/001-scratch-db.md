@@ -11,8 +11,9 @@ the removal of the `__latest` view (§3.2). Sections changed materially across
 both: §1, §2, §3, §4, §5.2, §5.3, §5.5, §5.6, §6, §7, §9, §10, §11, §12.
 
 **Pinned protocol revision: MCP `2026-07-28`. Pinned SDK: `mcp` 2.1.1. Pinned
-engine: DuckDB 1.5.5.** Every normative claim below is against those versions.
-Behavior differs across revisions; do not generalize.
+engine: DuckDB 1.5.5.** Every normative claim below is against those versions,
+except where a claim names another. Behavior differs across revisions; do not
+generalize. As of 0.2.1 the gate is also verified on DuckDB 2.0.0.
 
 ## 1. Terminology
 
@@ -551,6 +552,14 @@ And it would not have been enough, because layer 1 does not catch what revision
 `SHOW ALL TABLES`, `DESCRIBE x`, `SUMMARIZE x`, and `PRAGMA show_tables` all as
 `SELECT`**. The claim that the statement gate stops `PRAGMA` was false. Only the
 object check stops any of them.
+
+The object check reads DuckDB's serialized AST, which is not a stable format:
+DuckDB 2.0 moved CTE bodies from `value.query.node` to `value.query_node`, and a
+walker that skipped what it did not find admitted everything inside a CTE. So the
+walker **fails closed**: a CTE, query node, table reference, table name or function
+name it cannot read is refused, never skipped. Every session open also runs a
+canary that proves a table is found in each query position, and refuses to run if
+not, naming the DuckDB version.
 
 CTE names bound by the statement appear in the AST as base tables and are
 allowed, so `WITH x AS (...) SELECT * FROM x` still works. **They must be honoured
