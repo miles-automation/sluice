@@ -1,0 +1,99 @@
+{
+  "node": "v24.22.2",
+  "platform": "linux-arm64",
+  "package": "@duckdb/node-api 2.0.0-r.1",
+  "engine": "v2.0.0",
+  "libraryVersion": "v2.0.0",
+  "checks": [
+    {
+      "name": "statement typing: extractStatements counts and types",
+      "ok": true,
+      "detail": "count without binding; type needs prepare (which binds)",
+      "ms": 3
+    },
+    {
+      "name": "statement typing: type comes only from prepare, which binds",
+      "ok": true,
+      "detail": "run the AST allowlist before prepare, or the error is an existence oracle",
+      "ms": 4
+    },
+    {
+      "name": "statement typing: SHOW, DESCRIBE, PRAGMA pass the type check as in 1.5.5",
+      "ok": true,
+      "detail": "{\"SHOW TABLES\":\"SELECT\",\"DESCRIBE t\":\"SELECT\",\"SUMMARIZE t\":\"SELECT\",\"PRAGMA show_tables\":\"SELECT\"}",
+      "ms": 3
+    },
+    {
+      "name": "json_serialize_sql: table refs, CTE map, table functions, errors",
+      "ok": true,
+      "detail": "field names the allowlist reads are all present",
+      "ms": 3
+    },
+    {
+      "name": "enable_external_access=false: file readers refused",
+      "ok": true,
+      "detail": "Permission Error: Cannot access file \"/tmp/sluice-",
+      "ms": 1
+    },
+    {
+      "name": "lock_configuration=true: settings cannot be changed back",
+      "ok": true,
+      "detail": "locked on this and new connections",
+      "ms": 1
+    },
+    {
+      "name": "max_memory: an oversized allocation fails loudly, store stays usable",
+      "ok": true,
+      "detail": "limit 61.0 MiB; Out of Memory Error: failed to allocate data of size 32.0 MiB (48.1 Mi",
+      "ms": 118
+    },
+    {
+      "name": "interrupt: ends a running query, connection stays usable, event loop stays free",
+      "ok": true,
+      "detail": "204 ms, 15 loop ticks, INTERRUPT Error: Interrupted!",
+      "ms": 205
+    },
+    {
+      "name": "interrupt: applies only to its own connection",
+      "ok": true,
+      "detail": "bystander unaffected",
+      "ms": 107
+    },
+    {
+      "name": "one connection per in-flight query: a query finishes while another runs",
+      "ok": true,
+      "detail": "queries overlap on separate connections; transactional visibility holds",
+      "ms": 102
+    },
+    {
+      "name": "libuv pool: saturation delays new queries, interrupt still gets through",
+      "ok": true,
+      "detail": "pool 4: new query QUEUED, connect QUEUED behind slow queries; deadlines still interrupt",
+      "ms": 603
+    },
+    {
+      "name": "value fidelity: exact text is available past JS number precision",
+      "ok": true,
+      "detail": "render from getRows(), not getRowsJS(): getRowsJS DECIMAL LOSES precision (12345678901234568)",
+      "ms": 1
+    },
+    {
+      "name": "median and friends over typed columns",
+      "ok": true,
+      "detail": "median text 100, median json 100 (lexicographic, as in 1.5.5)",
+      "ms": 4
+    },
+    {
+      "name": "adversarial probes the gate relies on the engine for",
+      "ok": true,
+      "detail": "105 table functions; unbounded recursive CTE stopped in 202 ms",
+      "ms": 214
+    },
+    {
+      "name": "file-free materialization: appender and typed inserts work under lockdown",
+      "ok": true,
+      "detail": "lockdown does not block in-process writes",
+      "ms": 2
+    }
+  ]
+}
