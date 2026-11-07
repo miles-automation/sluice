@@ -374,3 +374,66 @@ def test_a_store_that_fails_the_canary_does_not_open(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("sluice.store.verify_parser_contract", fail)
     with pytest.raises(GateContractError, match="cannot read this DuckDB"):
         Store.open(Limits())
+
+
+@pytest.mark.parametrize(
+    ("sql", "fragment"),
+    [
+        (
+            "WITH RECURSIVE r(n) AS (SELECT 0 UNION ALL SELECT n + 1 FROM r WHERE n < 2000) "
+            "SELECT n, pg_get_viewdef(n) FROM r WHERE pg_get_viewdef(n) LIKE '%sluice_calls__%'",
+            "pg_get_viewdef",
+        ),
+        ("SELECT pg_catalog.pg_get_viewdef(1)", "pg_get_viewdef"),
+        ("SELECT PG_GET_VIEWDEF(1)", "PG_GET_VIEWDEF"),
+        ("SELECT * FROM (SELECT pg_get_viewdef(1) AS v) s", "pg_get_viewdef"),
+        ("WITH x AS (SELECT pg_get_viewdef(1)) SELECT * FROM x", "pg_get_viewdef"),
+        ("SELECT pg_get_constraintdef(1)", "pg_get_constraintdef"),
+        ("SELECT format_type(1, 1)", "format_type"),
+        ("SELECT get_block_size('memory')", "get_block_size"),
+        ("SELECT pg_sleep(2)", "pg_sleep"),
+        ("SELECT generate_subscripts([1, 2, 3], 1)", "generate_subscripts"),
+        ("SELECT regexp_split_to_table('a,b', ',')", "regexp_split_to_table"),
+    ],
+)
+def test_builtin_macros_cannot_reach_what_the_gate_denies(
+    sql: str, fragment: str, connection: duckdb.DuckDBPyConnection
+) -> None:
+    connection.execute("CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls")
+    message = _reject(sql, connection)
+    assert "function not allowed" in message
+    assert fragment.casefold() in message.casefold()
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT list_avg([1, 2, 3])",
+        "SELECT json_group_array(a) FROM mine",
+        "SELECT histogram(a) FROM mine",
+        "SELECT if(a > 1, 'big', 'small') FROM mine",
+        "SELECT array_to_string(['a', 'b'], ',')",
+        "SELECT date_add(DATE '2026-01-01', INTERVAL 1 DAY)",
+    ],
+)
+def test_ordinary_macros_and_aggregates_are_still_admitted(
+    sql: str, connection: duckdb.DuckDBPyConnection
+) -> None:
+    check(sql, connection, ALLOWED)
+    connection.execute(sql).fetchall()
+
+
+def test_the_canary_refuses_when_macros_are_not_denied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gate, "_restricted_macros", lambda _con, restricted: restricted)
+    with pytest.raises(GateContractError, match="pg_get_viewdef"):
+        verify_parser_contract(duckdb.connect(":memory:"))
+
+
+def test_the_canary_refuses_when_scalar_denials_go_unseen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gate, "MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS", frozenset())
+    with pytest.raises(GateContractError, match="sleep_ms"):
+        verify_parser_contract(duckdb.connect(":memory:"))

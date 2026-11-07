@@ -3,7 +3,7 @@
 This tracks what has landed against the milestones in
 `plan/001-scratch-db.md`.
 
-## 0.2.1 — 2026-11-06
+## 0.2.1 — 2026-11-07
 
 - **Security: the query gate could be bypassed through a CTE on DuckDB 2.0.**
   Sluice declares `duckdb>=1.5.5`, so a fresh install of 0.2.0 gets DuckDB 2.0.0,
@@ -16,12 +16,21 @@ This tracks what has landed against the milestones in
   tables, and start very large queries. The engine lockdown still blocked file
   access, and DuckDB 1.5.x was not affected. Upgrade, and do not use 0.2.0 with
   DuckDB 2.0.
+- **Security: built-in SQL macros got past the function deny list.** The gate
+  checked function names as written, and DuckDB expands its built-in macros only
+  afterwards. `pg_get_viewdef(oid)` reads `duckdb_views()`, so an agent could list
+  every conversation's envelope view and then read it by name, on every released
+  version and with either DuckDB. `pg_sleep`, `generate_subscripts`,
+  `regexp_split_to_table`, `format_type`, `pg_get_constraintdef` and
+  `get_block_size` reached denied functions the same way. Any scalar macro whose
+  definition runs a query or calls a denied function is now refused, followed
+  transitively through DuckDB's catalog.
 - **The gate now fails closed.** It reads both CTE shapes and refuses any CTE,
   query node, table reference, table name or function name it cannot read, rather
   than skipping it. It also walks the expressions stored beside a CTE body, and
   refuses a catalog-qualified table even with no schema.
 - **Startup canary.** Opening a session now proves that a table is still found in
-  each query position. If a future DuckDB changes the format, Sluice refuses to
+  each query position, and that `sleep_ms` and `pg_get_viewdef` are refused. If a future DuckDB changes the format, Sluice refuses to
   run and names the DuckDB version, instead of admitting queries it cannot read.
 - Verified against DuckDB 2.0.0 and 1.5.5; CI runs the suite on both.
 

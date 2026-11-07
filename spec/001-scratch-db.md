@@ -561,6 +561,13 @@ name it cannot read is refused, never skipped. Every session open also runs a
 canary that proves a table is found in each query position, and refuses to run if
 not, naming the DuckDB version.
 
+Function names are checked as written, before DuckDB expands built-in SQL
+macros, so a scalar macro is denied when its definition runs a query or calls a
+denied function, followed transitively through the engine catalog. Without that,
+`pg_get_viewdef(oid)` reads `duckdb_views()` and lists every scope's envelope
+view, which breaks the unguessable-name premise of §12, and `pg_sleep` reaches
+`sleep_ms`. The canary also proves `sleep_ms` and `pg_get_viewdef` are refused.
+
 CTE names bound by the statement appear in the AST as base tables and are
 allowed, so `WITH x AS (...) SELECT * FROM x` still works. **They must be honoured
 by lexical scope.** Collecting them for the whole statement is a complete bypass:

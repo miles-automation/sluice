@@ -90,6 +90,13 @@ _CANARY_REFUSALS: tuple[str, ...] = (
     f"SELECT 1 FROM (SELECT 1) a JOIN {_CANARY_TABLE} b ON true",
 )
 _CANARY_ADMITTED = "WITH c AS (SELECT * FROM {table}) SELECT * FROM c"
+_CANARY_FUNCTION_REFUSALS: tuple[str, ...] = (
+    "SELECT sleep_ms(1)",
+    "SELECT pg_get_viewdef(0)",
+    "SELECT pg_sleep(0)",
+)
+_MACRO_QUERY_RE = re.compile(r"\b(?:select|from)\b", re.IGNORECASE)
+_MACRO_CALL_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 
 
 class QueryRejectedError(ValueError):
@@ -123,6 +130,14 @@ def verify_parser_contract(connection: duckdb.DuckDBPyConnection) -> None:
             check(sql, connection, set())
         except QueryRejectedError as exc:
             if _CANARY_TABLE in str(exc):
+                continue
+            raise GateContractError(_contract_failure(sql, str(exc))) from exc
+        raise GateContractError(_contract_failure(sql, "the query was admitted"))
+    for sql in _CANARY_FUNCTION_REFUSALS:
+        try:
+            check(sql, connection, set())
+        except QueryRejectedError as exc:
+            if "function not allowed" in str(exc):
                 continue
             raise GateContractError(_contract_failure(sql, str(exc))) from exc
         raise GateContractError(_contract_failure(sql, "the query was admitted"))
@@ -195,7 +210,9 @@ def _check_objects(
             "SELECT DISTINCT function_name FROM duckdb_functions() WHERE function_type = 'table'"
         ).fetchall()
     )
-    restricted_functions = table_function_names | MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS
+    restricted_functions = _restricted_macros(
+        connection, table_function_names | MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS
+    )
     statements = document.get("statements")
     if not isinstance(statements, list) or not statements:
         raise QueryRejectedError("the SQL could not be analyzed: no statements in the parse")
@@ -203,6 +220,30 @@ def _check_objects(
         node = statement.get("node") if isinstance(statement, dict) else None
         _require_query_node(node)
     _validate(document, frozenset(), allowed, evicted, restricted_functions)
+
+
+def _restricted_macros(
+    connection: duckdb.DuckDBPyConnection, restricted: frozenset[str]
+) -> frozenset[str]:
+    macros: dict[str, str] = {}
+    for name, definition in connection.execute(
+        "SELECT function_name, macro_definition FROM duckdb_functions() "
+        "WHERE function_type = 'macro'"
+    ).fetchall():
+        key = str(name).casefold()
+        macros[key] = macros.get(key, "") + " " + str(definition or "")
+    denied = set(restricted)
+    changed = True
+    while changed:
+        changed = False
+        for name, definition in macros.items():
+            if name in denied:
+                continue
+            calls = {m.casefold() for m in _MACRO_CALL_RE.findall(definition)}
+            if _MACRO_QUERY_RE.search(definition) or calls & denied:
+                denied.add(name)
+                changed = True
+    return frozenset(denied)
 
 
 def _unreadable(what: str) -> QueryRejectedError:
