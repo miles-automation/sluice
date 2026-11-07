@@ -46,6 +46,7 @@ MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: frozenset[str] = frozenset(
         "array_resize",
         "bitstring",
         "format",
+        "json_serialize_plan",
         "list_resize",
         "lpad",
         "nextval",
@@ -56,7 +57,7 @@ MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: frozenset[str] = frozenset(
         "write_log",
     }
 )
-"""Scalar calls that mutate, block, or allocate from an attacker-chosen size."""
+"""Scalar calls that mutate, block, allocate from an attacker-chosen size, or bind SQL text."""
 
 
 QUERY_NODE_TYPES: frozenset[str] = frozenset(
@@ -94,9 +95,10 @@ _CANARY_FUNCTION_REFUSALS: tuple[str, ...] = (
     "SELECT sleep_ms(1)",
     "SELECT pg_get_viewdef(0)",
     "SELECT pg_sleep(0)",
+    "SELECT json_serialize_plan('SELECT 1')",
 )
 _MACRO_QUERY_RE = re.compile(r"\b(?:select|from)\b", re.IGNORECASE)
-_MACRO_CALL_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+_MACRO_CALL_RE = re.compile(r'"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(')
 
 
 class QueryRejectedError(ValueError):

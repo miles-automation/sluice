@@ -25,6 +25,10 @@ This tracks what has landed against the milestones in
   `get_block_size` reached denied functions the same way. Any scalar macro whose
   definition runs a query or calls a denied function is now refused, followed
   transitively through DuckDB's catalog.
+- **Security: `json_serialize_plan` leaked other conversations' table names.** It
+  binds any SQL text against the live catalog, and DuckDB's "Did you mean"
+  suggestion in its error names the nearest real table, which was then readable.
+  It is now refused, and the startup canary proves it.
 - **The gate now fails closed.** It reads both CTE shapes and refuses any CTE,
   query node, table reference, table name or function name it cannot read, rather
   than skipping it. It also walks the expressions stored beside a CTE body, and

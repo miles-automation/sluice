@@ -566,7 +566,10 @@ macros, so a scalar macro is denied when its definition runs a query or calls a
 denied function, followed transitively through the engine catalog. Without that,
 `pg_get_viewdef(oid)` reads `duckdb_views()` and lists every scope's envelope
 view, which breaks the unguessable-name premise of §12, and `pg_sleep` reaches
-`sleep_ms`. The canary also proves `sleep_ms` and `pg_get_viewdef` are refused.
+`sleep_ms`. `json_serialize_plan` is denied by name: it binds SQL text against
+the live catalog, and its "Did you mean" error names real tables in other scopes.
+The canary also proves `sleep_ms`, `pg_get_viewdef` and `json_serialize_plan` are
+refused.
 
 CTE names bound by the statement appear in the AST as base tables and are
 allowed, so `WITH x AS (...) SELECT * FROM x` still works. **They must be honoured

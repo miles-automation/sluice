@@ -394,6 +394,11 @@ def test_a_store_that_fails_the_canary_does_not_open(monkeypatch: pytest.MonkeyP
         ("SELECT pg_sleep(2)", "pg_sleep"),
         ("SELECT generate_subscripts([1, 2, 3], 1)", "generate_subscripts"),
         ("SELECT regexp_split_to_table('a,b', ',')", "regexp_split_to_table"),
+        (
+            "SELECT json_serialize_plan('SELECT * FROM sluice_calls__0124')",
+            "json_serialize_plan",
+        ),
+        ("SELECT \"JSON_SERIALIZE_PLAN\"('SELECT 1')", "json_serialize_plan"),
     ],
 )
 def test_builtin_macros_cannot_reach_what_the_gate_denies(
@@ -436,4 +441,24 @@ def test_the_canary_refuses_when_scalar_denials_go_unseen(
 ) -> None:
     monkeypatch.setattr(gate, "MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS", frozenset())
     with pytest.raises(GateContractError, match="sleep_ms"):
+        verify_parser_contract(duckdb.connect(":memory:"))
+
+
+def test_a_quoted_call_in_a_macro_definition_is_followed() -> None:
+    con = duckdb.connect(":memory:")
+    con.execute('CREATE MACRO nap(x) AS "sleep_ms"(x)')
+    con.execute("CREATE MACRO nap_twice(x) AS nap(x) + nap(x)")
+    denied = gate._restricted_macros(con, frozenset({"sleep_ms"}))
+    assert {"nap", "nap_twice"} <= denied
+
+
+def test_the_canary_refuses_when_plan_serialization_is_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        gate,
+        "MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS",
+        gate.MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS - {"json_serialize_plan"},
+    )
+    with pytest.raises(GateContractError, match="json_serialize_plan"):
         verify_parser_contract(duckdb.connect(":memory:"))
