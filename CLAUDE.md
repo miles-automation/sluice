@@ -73,7 +73,7 @@ scope minted per call it would name one table, and reaching a table whose name
 you lost is discovery, which isolation blocks. Tables and the envelope row are
 written in one transaction.
 
-Verified baseline: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 1.5.5. Every
+Verified baseline: MCP protocol `2026-07-28`, `mcp` 2.1.1, DuckDB 2.0.0 and 1.5.5. Every
 normative claim in the spec is against those; dependencies have lower bounds
 rather than exact pins, so do not generalize across revisions.
 

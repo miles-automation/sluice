@@ -35,6 +35,11 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+      # The declared lower bound. The gate reads DuckDB's serialized AST, which
+      # changes between releases, so both ends of the range have to pass.
+      - name: Run tests on the DuckDB lower bound
+        run: uv run --with duckdb==1.5.5 pytest
+
       - name: Run lint
         run: uv run ruff check .
 

@@ -121,19 +121,23 @@ def test_show_and_describe_are_rejected(sql: str, connection: duckdb.DuckDBPyCon
     ["PRAGMA show_tables", "PRAGMA database_list", "PRAGMA table_info('mine')"],
 )
 def test_pragmas_are_rejected(sql: str, connection: duckdb.DuckDBPyConnection) -> None:
-    """Also typed SELECT by the statement gate. They fail closed because they
-    cannot be serialized to an AST, which removes the whole family without
-    naming any of them."""
-    assert "could not be analyzed" in _reject(sql, connection)
+    """DuckDB 1.5 types these SELECT, and they fail closed because they cannot be
+    serialized to an AST. DuckDB 2.0 types them PRAGMA, so the statement gate
+    refuses them first. Either way the whole family goes without naming any."""
+    message = _reject(sql, connection)
+    assert "could not be analyzed" in message or "only SELECT is allowed, got PRAGMA" in message
 
 
 def test_the_statement_gate_alone_would_pass_these(
     connection: duckdb.DuckDBPyConnection,
 ) -> None:
     """Pins the reason layer 3 exists. If DuckDB ever reclassifies these away
-    from SELECT, this fails and the comment above can be revised."""
-    for sql in ["SHOW TABLES", "DESCRIBE mine", "PRAGMA show_tables"]:
+    from SELECT, this fails and the comment above can be revised. DuckDB 2.0
+    already moved PRAGMA, so it may be either."""
+    for sql in ["SHOW TABLES", "DESCRIBE mine"]:
         assert [s.type.name for s in connection.extract_statements(sql)] == ["SELECT"]
+    kinds = [s.type.name for s in connection.extract_statements("PRAGMA show_tables")]
+    assert kinds in (["SELECT"], ["PRAGMA"])
 
 
 def test_an_unknown_table_names_no_others(connection: duckdb.DuckDBPyConnection) -> None:

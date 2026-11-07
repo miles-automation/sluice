@@ -18,7 +18,13 @@ did not create is refused whether or not anyone thought of it.
 
 It also closes three vectors layer 1 does not. Measured on DuckDB 1.5.5,
 `extract_statements` types `SHOW TABLES`, `DESCRIBE x`, and `PRAGMA show_tables`
-all as SELECT, so the statement gate passes them.
+all as SELECT, so the statement gate passes them. DuckDB 2.0 types PRAGMA as
+PRAGMA and still types the other two as SELECT.
+
+The walker fails closed. The serialized AST changes between DuckDB releases, so a
+shape it does not recognize in a position that can hold a query or a table is
+refused, and `verify_parser_contract` refuses to open a session at all if a known
+table can no longer be found.
 """
 
 import json
@@ -40,6 +46,7 @@ MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: frozenset[str] = frozenset(
         "array_resize",
         "bitstring",
         "format",
+        "json_serialize_plan",
         "list_resize",
         "lpad",
         "nextval",
@@ -50,11 +57,56 @@ MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: frozenset[str] = frozenset(
         "write_log",
     }
 )
-"""Scalar calls that mutate, block, or allocate from an attacker-chosen size."""
+"""Scalar calls that mutate, block, allocate from an attacker-chosen size, or bind SQL text."""
+
+
+QUERY_NODE_TYPES: frozenset[str] = frozenset(
+    {"SELECT_NODE", "SET_OPERATION_NODE", "RECURSIVE_CTE_NODE"}
+)
+"""Every query node shape the walker understands. Anything else is refused."""
+
+TABLE_REF_TYPES: frozenset[str] = frozenset(
+    {
+        "BASE_TABLE",
+        "EMPTY",
+        "EXPRESSION_LIST",
+        "JOIN",
+        "PIVOT",
+        "SHOW_REF",
+        "SUBQUERY",
+        "TABLE_FUNCTION",
+    }
+)
+"""Every table reference shape the walker understands. Anything else is refused."""
+
+_CANARY_TABLE = "sluice_gate_canary"
+_CANARY_REFUSALS: tuple[str, ...] = (
+    f"SELECT * FROM {_CANARY_TABLE}",
+    f"WITH c AS (SELECT * FROM {_CANARY_TABLE}) SELECT * FROM c",
+    f"WITH RECURSIVE c AS (SELECT * FROM {_CANARY_TABLE} UNION ALL SELECT * FROM c) "
+    "SELECT * FROM c",
+    f"SELECT 1 UNION ALL SELECT * FROM {_CANARY_TABLE}",
+    f"SELECT * FROM (SELECT * FROM {_CANARY_TABLE}) s",
+    f"SELECT 1 WHERE EXISTS (SELECT * FROM {_CANARY_TABLE})",
+    f"SELECT 1 FROM (SELECT 1) a JOIN {_CANARY_TABLE} b ON true",
+)
+_CANARY_ADMITTED = "WITH c AS (SELECT * FROM {table}) SELECT * FROM c"
+_CANARY_FUNCTION_REFUSALS: tuple[str, ...] = (
+    "SELECT sleep_ms(1)",
+    "SELECT pg_get_viewdef(0)",
+    "SELECT pg_sleep(0)",
+    "SELECT json_serialize_plan('SELECT 1')",
+)
+_MACRO_QUERY_RE = re.compile(r"\b(?:select|from)\b", re.IGNORECASE)
+_MACRO_CALL_RE = re.compile(r'"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(')
 
 
 class QueryRejectedError(ValueError):
     """The SQL did not pass the gate. Never executed."""
+
+
+class GateContractError(RuntimeError):
+    """This DuckDB's parser output is not one the gate can enforce. Refuse to run."""
 
 
 def check(
@@ -66,6 +118,44 @@ def check(
     """Raise `QueryRejectedError` unless `sql` is a single read over allowed objects."""
     _check_single_select(sql, connection)
     _check_objects(sql, connection, allowed_objects, evicted_objects)
+
+
+def verify_parser_contract(connection: duckdb.DuckDBPyConnection) -> None:
+    """Refuse to run on a DuckDB whose parser output the walker cannot read.
+
+    The AST is not a stable format. DuckDB 2.0 moved CTE bodies, and a walker
+    that skipped what it did not recognize admitted everything inside them. Prove
+    on every session open that a table in each query position is still found.
+    """
+    for sql in _CANARY_REFUSALS:
+        try:
+            check(sql, connection, set())
+        except QueryRejectedError as exc:
+            if _CANARY_TABLE in str(exc):
+                continue
+            raise GateContractError(_contract_failure(sql, str(exc))) from exc
+        raise GateContractError(_contract_failure(sql, "the query was admitted"))
+    for sql in _CANARY_FUNCTION_REFUSALS:
+        try:
+            check(sql, connection, set())
+        except QueryRejectedError as exc:
+            if "function not allowed" in str(exc):
+                continue
+            raise GateContractError(_contract_failure(sql, str(exc))) from exc
+        raise GateContractError(_contract_failure(sql, "the query was admitted"))
+    sql = _CANARY_ADMITTED.format(table=_CANARY_TABLE)
+    try:
+        check(sql, connection, {_CANARY_TABLE})
+    except QueryRejectedError as exc:
+        raise GateContractError(_contract_failure(sql, str(exc))) from exc
+
+
+def _contract_failure(sql: str, outcome: str) -> str:
+    return (
+        f"Sluice's query gate cannot read the parser output of DuckDB {duckdb.__version__}, "
+        f"so it refuses to run. Probe {sql!r}: {outcome}. "
+        "Upgrade Sluice or install a DuckDB version it supports."
+    )
 
 
 def _check_single_select(sql: str, connection: duckdb.DuckDBPyConnection) -> None:
@@ -122,18 +212,112 @@ def _check_objects(
             "SELECT DISTINCT function_name FROM duckdb_functions() WHERE function_type = 'table'"
         ).fetchall()
     )
-    restricted_functions = table_function_names | MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS
+    restricted_functions = _restricted_macros(
+        connection, table_function_names | MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS
+    )
+    statements = document.get("statements")
+    if not isinstance(statements, list) or not statements:
+        raise QueryRejectedError("the SQL could not be analyzed: no statements in the parse")
+    for statement in statements:
+        node = statement.get("node") if isinstance(statement, dict) else None
+        _require_query_node(node)
     _validate(document, frozenset(), allowed, evicted, restricted_functions)
 
 
+def _restricted_macros(
+    connection: duckdb.DuckDBPyConnection, restricted: frozenset[str]
+) -> frozenset[str]:
+    macros: dict[str, str] = {}
+    for name, definition in connection.execute(
+        "SELECT function_name, macro_definition FROM duckdb_functions() "
+        "WHERE function_type = 'macro'"
+    ).fetchall():
+        key = str(name).casefold()
+        macros[key] = macros.get(key, "") + " " + str(definition or "")
+    denied = set(restricted)
+    changed = True
+    while changed:
+        changed = False
+        for name, definition in macros.items():
+            if name in denied:
+                continue
+            calls = {m.casefold() for m in _MACRO_CALL_RE.findall(definition)}
+            if _MACRO_QUERY_RE.search(definition) or calls & denied:
+                denied.add(name)
+                changed = True
+    return frozenset(denied)
+
+
+def _unreadable(what: str) -> QueryRejectedError:
+    """Refuse what the walker cannot read. Skipping it would admit whatever is inside."""
+    return QueryRejectedError(f"the SQL could not be analyzed: {what}")
+
+
+def _require_query_node(node: Any) -> dict[str, Any]:
+    if not isinstance(node, dict) or node.get("type") not in QUERY_NODE_TYPES:
+        kind = node.get("type") if isinstance(node, dict) else type(node).__name__
+        raise _unreadable(f"unrecognized query node {kind!r}")
+    return node
+
+
+def _require_table_ref(node: Any) -> None:
+    if not isinstance(node, dict) or node.get("type") not in TABLE_REF_TYPES:
+        kind = node.get("type") if isinstance(node, dict) else type(node).__name__
+        raise _unreadable(f"unrecognized table reference {kind!r}")
+
+
+def _cte_body(value: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Return a CTE's query node and the key it was found under.
+
+    DuckDB 1.5 serializes the body at `query.node`, DuckDB 2.0 at `query_node`.
+    """
+    if "query_node" in value:
+        return _require_query_node(value["query_node"]), "query_node"
+    query = value.get("query")
+    if isinstance(query, dict):
+        return _require_query_node(query.get("node")), "query"
+    raise _unreadable("a CTE has no body the gate can read")
+
+
+def _check_query_positions(node: dict[str, Any], kind: Any) -> None:
+    """Refuse an unknown shape in any position that can hold a query or a table."""
+    if "from_table" in node:
+        _require_table_ref(node["from_table"])
+    if kind == "JOIN":
+        _require_table_ref(node.get("left"))
+        _require_table_ref(node.get("right"))
+    elif kind == "PIVOT":
+        _require_table_ref(node.get("source"))
+    elif kind == "SET_OPERATION_NODE":
+        children = node.get("children")
+        members = [node.get("left"), node.get("right"), *(children or [])]
+        present = [member for member in members if member is not None]
+        if len(present) < 2:
+            raise _unreadable("a set operation has no readable members")
+        for member in present:
+            _require_query_node(member)
+    elif kind == "RECURSIVE_CTE_NODE":
+        _require_query_node(node.get("left"))
+        _require_query_node(node.get("right"))
+    if "subquery" in node:
+        subquery = node["subquery"]
+        _require_query_node(subquery.get("node") if isinstance(subquery, dict) else None)
+
+
 def _cte_entries(node: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    cte_map = node.get("cte_map")
-    if not isinstance(cte_map, dict):
+    if "cte_map" not in node:
         return []
+    cte_map = node["cte_map"]
+    declared = cte_map.get("map") if isinstance(cte_map, dict) else None
+    if not isinstance(declared, list):
+        raise _unreadable("a CTE list has an unrecognized shape")
     entries: list[tuple[str, dict[str, Any]]] = []
-    for entry in cte_map.get("map") or []:
-        if isinstance(entry, dict) and entry.get("key") and isinstance(entry.get("value"), dict):
-            entries.append((str(entry["key"]).casefold(), entry["value"]))
+    for entry in declared:
+        if not (
+            isinstance(entry, dict) and entry.get("key") and isinstance(entry.get("value"), dict)
+        ):
+            raise _unreadable("a CTE entry has an unrecognized shape")
+        entries.append((str(entry["key"]).casefold(), entry["value"]))
     return entries
 
 
@@ -148,18 +332,10 @@ def _validate_recursive_cte(
     """Validate a recursive CTE with its seed and recursive terms scoped apart."""
     # The recursive binding is legal only in the recursive term. In particular,
     # the seed must not be able to use the same name to reach a physical table.
-    left = node.get("left")
-    if left is not None:
-        _validate(left, visible, allowed_objects, evicted_objects, restricted_functions)
-    right = node.get("right")
-    if right is not None:
-        _validate(
-            right,
-            visible | {name},
-            allowed_objects,
-            evicted_objects,
-            restricted_functions,
-        )
+    left = _require_query_node(node.get("left"))
+    _validate(left, visible, allowed_objects, evicted_objects, restricted_functions)
+    right = _require_query_node(node.get("right"))
+    _validate(right, visible | {name}, allowed_objects, evicted_objects, restricted_functions)
     for key, child in node.items():
         if key not in {"left", "right"}:
             _validate(child, visible, allowed_objects, evicted_objects, restricted_functions)
@@ -195,9 +371,8 @@ def _validate(
         entries = _cte_entries(node)
         local = visible
         for name, value in entries:
-            query = value.get("query")
-            query_node = query.get("node") if isinstance(query, dict) else None
-            if isinstance(query_node, dict) and query_node.get("type") == "RECURSIVE_CTE_NODE":
+            query_node, body_key = _cte_body(value)
+            if query_node.get("type") == "RECURSIVE_CTE_NODE":
                 _validate_recursive_cte(
                     query_node,
                     local,
@@ -206,7 +381,7 @@ def _validate(
                     evicted_objects,
                     restricted_functions,
                 )
-            elif query_node is not None:
+            else:
                 _validate(
                     query_node,
                     local,
@@ -214,14 +389,32 @@ def _validate(
                     evicted_objects,
                     restricted_functions,
                 )
+            # Key targets and payload aggregates are expressions, so they can hold
+            # subqueries and function calls too.
+            for key, child in value.items():
+                if key == body_key:
+                    continue
+                _validate(child, local, allowed_objects, evicted_objects, restricted_functions)
             local = local | {name}
         kind = node.get("type")
+        _check_query_positions(node, kind)
         if kind == "BASE_TABLE":
+            raw_name = node.get("table_name")
+            if not isinstance(raw_name, str) or not raw_name:
+                raise _unreadable("a table reference has no name")
+            name = raw_name
             schema = node.get("schema_name") or ""
-            name = str(node.get("table_name"))
-            if schema:
+            catalog = node.get("catalog_name") or ""
+            if schema or catalog:
+                qualifier = ".".join(part for part in (catalog, schema) if part)
                 raise QueryRejectedError(
-                    f"schema-qualified tables are not available: {schema}.{name}"
+                    f"schema-qualified tables are not available: {qualifier}.{name}"
+                )
+            qualified = node.get("qualified_name")
+            path = qualified.get("path") if isinstance(qualified, dict) else None
+            if path is not None and path != [name]:
+                raise QueryRejectedError(
+                    f"schema-qualified tables are not available: {'.'.join(map(str, path))}"
                 )
             normalized_name = name.casefold()
             if normalized_name not in local and normalized_name in evicted_objects:
@@ -240,7 +433,10 @@ def _validate(
             if name not in ALLOWED_TABLE_FUNCTIONS:
                 raise QueryRejectedError(f"table function not allowed: {name}")
         elif kind == "FUNCTION":
-            name = str(node.get("function_name") or "?")
+            raw_name = node.get("function_name")
+            if not isinstance(raw_name, str) or not raw_name:
+                raise _unreadable("a function call has no name")
+            name = raw_name
             if name.casefold() in restricted_functions:
                 raise QueryRejectedError(f"function not allowed: {name}")
         elif kind == "SHOW_REF":
