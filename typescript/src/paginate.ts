@@ -1,3 +1,4 @@
+import { longTimeout } from "./timer.ts";
 import type { PaginationConfig } from "./config.ts";
 import { DownstreamError } from "./errors.ts";
 import { isJsonArray, isJsonObject, pythonFloatRepr, type JsonObject, type JsonValue } from "./json.ts";
@@ -49,7 +50,7 @@ export interface FetchOutcome {
   readonly pages: number;
   readonly bytes: number;
   readonly seconds: number;
-  readonly resumeOffset: number | null;
+  readonly resumeOffset: bigint | null;
   readonly rows: readonly JsonValue[];
   readonly firstPageError: FinalResult | null;
 }
@@ -84,7 +85,7 @@ function describe(value: JsonValue | undefined): string {
   return String(value);
 }
 
-export function splitArguments(config: PaginationConfig, args: JsonObject | null): readonly [JsonObject, number] {
+export function splitArguments(config: PaginationConfig, args: JsonObject | null): readonly [JsonObject, bigint] {
   const filters = new Map(args ?? []);
   if (filters.has(config.limit_arg)) {
     throw new PaginationArgumentError(
@@ -98,7 +99,7 @@ export function splitArguments(config: PaginationConfig, args: JsonObject | null
       `\`${config.offset_arg}\` must be a non-negative integer to resume from, got ${describe(offset)}`,
     );
   }
-  return [filters, Number(offset)];
+  return [filters, offset];
 }
 
 function parsePage(config: PaginationConfig, reply: FinalResult): Page | string {
@@ -135,12 +136,12 @@ export async function fetchAll(
   const [filters, start] = splitArguments(config, args);
   let offset = start;
   const rows: JsonValue[] = [];
-  const seen = new Set<number>();
+  const seen = new Set<bigint>();
   let pages = 0;
   let totalBytes = 0;
   let reason: StopReason = StopReason.COMPLETE;
   let detail: string | null = null;
-  let resume: number | null = null;
+  let resume: bigint | null = null;
   let firstPageError: FinalResult | null = null;
   const started = performance.now();
   const controller = new AbortController();
@@ -152,7 +153,7 @@ export async function fetchAll(
     };
   });
   deadline.catch(() => undefined);
-  const timer = setTimeout(expire, config.max_seconds * 1000);
+  const cancelTimer = longTimeout(expire, config.max_seconds * 1000);
   const onCancel = (): void => controller.abort(cancel?.reason);
   cancel?.addEventListener("abort", onCancel, { once: true });
   try {
@@ -167,7 +168,7 @@ export async function fetchAll(
       }
       const pageArgs = new Map(filters);
       pageArgs.set(config.limit_arg, BigInt(config.page_size));
-      pageArgs.set(config.offset_arg, BigInt(offset));
+      pageArgs.set(config.offset_arg, offset);
       let reply: DownstreamReply;
       try {
         const pending = call(pageArgs, controller.signal);
@@ -226,7 +227,7 @@ export async function fetchAll(
         detail = `\`${config.has_more}\` is true but \`${config.next_offset}\` is ${describe(next)}`;
         break;
       }
-      const nextOffset = Number(next);
+      const nextOffset = next;
       if (nextOffset <= offset || seen.has(nextOffset) || parsed.items.length === 0) {
         reason = StopReason.NOT_ADVANCING;
         detail = `offset ${offset} -> ${nextOffset} with ${parsed.items.length} items`;
@@ -242,7 +243,7 @@ export async function fetchAll(
     detail = `${config.max_seconds} s elapsed`;
     resume = offset;
   } finally {
-    clearTimeout(timer);
+    cancelTimer();
     cancel?.removeEventListener("abort", onCancel);
   }
   return {

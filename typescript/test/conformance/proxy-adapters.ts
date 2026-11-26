@@ -161,7 +161,7 @@ export async function runPaginate(testCase: Case): Promise<void> {
     const observed: Record<string, Json> = {
       pages: outcome.pages,
       bytes: outcome.bytes,
-      resume_offset: outcome.resumeOffset,
+      resume_offset: outcome.resumeOffset === null ? null : Number(outcome.resumeOffset),
       rows: outcome.rows.map(plain),
     };
     for (const key of ["pages", "bytes", "resume_offset", "rows"]) {

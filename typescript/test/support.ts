@@ -13,6 +13,7 @@ import { UpstreamTransport } from "../src/transport.ts";
 
 export const PACKAGE_ROOT = fileURLToPath(new URL("../", import.meta.url));
 export const FAKE_SERVER = fileURLToPath(new URL("fixtures/fake-server.ts", import.meta.url));
+export const RAW_SERVER = fileURLToPath(new URL("fixtures/raw-server.ts", import.meta.url));
 export const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
 export function fakeConfig(
@@ -28,6 +29,14 @@ export function fakeConfig(
     },
     limits: options.limits ?? DEFAULT_LIMITS,
     pagination: new Map((options.pagination ?? []).map((entry) => [entry.tool, entry])),
+  };
+}
+
+export function rawConfig(): Config {
+  return {
+    server: { name: "raw", command: process.execPath, args: [RAW_SERVER], env: {}, cwd: PACKAGE_ROOT },
+    limits: DEFAULT_LIMITS,
+    pagination: new Map(),
   };
 }
 
@@ -84,6 +93,7 @@ export interface Session {
   readonly proxy: Proxy;
   readonly store: Store;
   readonly wire: readonly string[];
+  readonly upstream: UpstreamTransport;
 }
 
 export interface SessionOptions {
@@ -116,7 +126,7 @@ export async function withSluice<T>(config: Config, work: (session: Session) => 
   );
   try {
     await client.connect(transport);
-    return await work({ client, proxy, store, wire: transport.lines });
+    return await work({ client, proxy, store, wire: transport.lines, upstream });
   } finally {
     await client.close();
     await handle.close();

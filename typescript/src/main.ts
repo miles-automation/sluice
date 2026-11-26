@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ConfigError, findConfig, loadConfig, type Config } from "./config.ts";
-import { DownstreamError } from "./errors.ts";
+import { DownstreamError, Interrupted } from "./errors.ts";
 import { Interceptor } from "./intercept.ts";
 import { isLevelName, logger, setLevel } from "./log.ts";
 import { NameCollisionError } from "./naming.ts";
@@ -9,7 +9,7 @@ import { Proxy } from "./proxy.ts";
 import { QueryTool } from "./query.ts";
 import { buildServer } from "./server.ts";
 import { Store } from "./store.ts";
-import { UpstreamTransport } from "./transport.ts";
+import { UpstreamTransport, safeDescription } from "./transport.ts";
 
 const log = logger("sluice");
 
@@ -49,8 +49,8 @@ export function parseArguments(argv: readonly string[]): Arguments {
   return { config: values.config ?? null, logLevel: values["log-level"], help: values.help };
 }
 
-export async function serve(config: Config): Promise<void> {
-  const proxy = await Proxy.start(config);
+export async function serve(config: Config, signal: AbortSignal): Promise<void> {
+  const proxy = await Proxy.start(config, { signal });
   let store: Store | undefined;
   try {
     store = await Store.open(config.limits);
@@ -59,9 +59,14 @@ export async function serve(config: Config): Promise<void> {
     const transport = new UpstreamTransport();
     const handle = serveStdio(
       () => buildServer({ proxy, interceptor, query, requests: (id) => transport.takeRequest(id) }),
-      { transport, onerror: (error) => log.debug(`upstream: ${error.message}`) },
+      { transport, onerror: (error) => log.debug(`upstream: ${safeDescription(error)}`) },
     );
-    const interrupted = new Promise<void>((resolve) => process.once("SIGINT", () => resolve()));
+    const interrupted = new Promise<void>((resolve) => {
+      if (signal.aborted) {
+        resolve();
+      }
+      signal.addEventListener("abort", () => resolve(), { once: true });
+    });
     await Promise.race([transport.closed, interrupted]);
     await handle.close();
   } finally {
@@ -98,18 +103,20 @@ export async function main(argv: readonly string[]): Promise<number> {
     }
     throw error;
   }
-  let interrupted = false;
-  process.once("SIGINT", () => {
-    interrupted = true;
-  });
+  const controller = new AbortController();
+  const interrupt = (): void => controller.abort();
+  process.on("SIGINT", interrupt);
   try {
-    await serve(config);
+    await serve(config, controller.signal);
   } catch (error) {
+    if (error instanceof Interrupted || controller.signal.aborted) {
+      return 130;
+    }
     if (!isStartupError(error)) {
       throw error;
     }
     process.stderr.write(`sluice: ${error.message}\n`);
     return 1;
   }
-  return interrupted ? 130 : 0;
+  return controller.signal.aborted ? 130 : 0;
 }

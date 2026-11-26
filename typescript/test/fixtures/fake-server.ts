@@ -99,6 +99,7 @@ export function fakeTools(): Tool[] {
     tool("client_capabilities", "reports the capabilities the connected client advertised"),
     tool("needs_input", "returns InputRequiredResult, completes on round two"),
     tool("slow", "sleeps delay_ms before answering"),
+    tool("slow_echo", "sleeps delay_ms, then echoes its arguments"),
     tool("die", "exits the process"),
     tool("destructive", "carries annotations a client uses for confirmation", {
       annotations: { destructiveHint: true, title: "Destructive" },
@@ -111,6 +112,12 @@ export function fakeTools(): Tool[] {
         properties: { required_field: { type: "string" } },
         required: ["required_field"],
       },
+    }),
+    tool("draft4_schema", "declares a draft-04 output schema the SDK validator cannot compile", {
+      outputSchema: { $schema: "http://json-schema.org/draft-04/schema#", type: "object", properties: { n: { type: "integer" } } },
+    }),
+    tool("unversioned_schema", "declares the unversioned json-schema.org dialect", {
+      outputSchema: { $schema: "http://json-schema.org/schema#", type: "object" },
     }),
     tool("hyphen-tool", "collides with hyphen_tool under naive slugging"),
     tool("hyphen_tool", "collides with hyphen-tool under naive slugging"),
@@ -259,11 +266,17 @@ async function call(name: string, args: Args, state: string | undefined, respons
     case "slow":
       await sleep(intArg(args, "delay_ms", 300));
       return ok(obj([["items", [obj([["done", true]])]]]));
+    case "slow_echo":
+      await sleep(intArg(args, "delay_ms", 300));
+      return { content: [{ type: "text", text: "echo" }], structuredContent: { args: args ?? {} } };
     case "die":
       process.exit(3);
       break;
     case "destructive":
       return ok(obj([["items", [obj([["id", 1n]])]]]));
+    case "draft4_schema":
+    case "unversioned_schema":
+      return { content: [{ type: "text", text: "schema" }], structuredContent: { items: [{ n: 1 }, { n: 2 }] } };
     case "bad_schema":
       return { content: [{ type: "text", text: "{}" }], structuredContent: { wrong_field: "nope" } };
     case "hyphen-tool":

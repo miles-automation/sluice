@@ -1,13 +1,14 @@
 import { Client, ProtocolError, SdkError, SdkErrorCode, type Tool } from "@modelcontextprotocol/client";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/client/validators/ajv";
 import type { Config, PaginationConfig, ServerConfig } from "./config.ts";
 import { ConfigError } from "./config.ts";
-import { DownstreamError, FailureClass } from "./errors.ts";
+import { DownstreamError, FailureClass, Interrupted } from "./errors.ts";
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.ts";
 import { logger } from "./log.ts";
 import type { ToolResult } from "./models.ts";
 import { NameCollisionError, assertInjective, collectionName, mountedName } from "./naming.ts";
 import { fetchAll, type DownstreamReply, type FetchOutcome } from "./paginate.ts";
-import { DownstreamTransport, capturing } from "./transport.ts";
+import { DownstreamTransport, capturing, safeDescription } from "./transport.ts";
 import { VERSION } from "./version.ts";
 import { toPlainObject, toWire } from "./wire.ts";
 
@@ -125,55 +126,99 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
 export function isModern(version: string | undefined): boolean {
   return version !== undefined && MODERN_VERSIONS.has(version);
 }
 
 class SdkSession implements Session {
   readonly #client: Client;
+  readonly #validator: AjvJsonSchemaValidator;
+  readonly #definitions = new WeakMap<Tool, Tool>();
 
-  private constructor(client: Client) {
+  private constructor(client: Client, validator: AjvJsonSchemaValidator) {
     this.#client = client;
+    this.#validator = validator;
   }
 
-  static async open(server: ServerConfig, onclose: () => void): Promise<SdkSession> {
+  #definition(tool: Tool): Tool {
+    const known = this.#definitions.get(tool);
+    if (known !== undefined) {
+      return known;
+    }
+    let definition = tool;
+    if (tool.outputSchema !== undefined) {
+      try {
+        this.#validator.getValidator(tool.outputSchema as Parameters<AjvJsonSchemaValidator["getValidator"]>[0]);
+      } catch (error) {
+        log.debug(
+          `the output schema of ${tool.name} cannot be compiled (${error instanceof Error ? safeDescription(error) : "unknown"}); calling it without output validation`,
+        );
+        const stripped: Record<string, unknown> = { ...tool };
+        delete stripped["outputSchema"];
+        definition = stripped as unknown as Tool;
+      }
+    }
+    this.#definitions.set(tool, definition);
+    return definition;
+  }
+
+  static async open(server: ServerConfig, onclose: () => void, signal?: AbortSignal): Promise<SdkSession> {
     const attempt = async (mode: "auto" | "legacy"): Promise<SdkSession> => {
+      signal?.throwIfAborted();
       const transport = new DownstreamTransport({
         command: server.command,
         args: server.args,
         env: server.env,
         cwd: server.cwd,
       });
+      const validator = new AjvJsonSchemaValidator();
       const client = new Client(
         { name: "sluice", version: VERSION },
         {
           capabilities: {},
+          jsonSchemaValidator: validator,
           versionNegotiation: { mode, probe: { timeoutMs: PROBE_TIMEOUT_MS } },
           inputRequired: { autoFulfill: false },
         },
       );
-      client.onerror = (error) => log.debug(`downstream: ${error.message}`);
+      client.onerror = (error) => log.debug(`downstream: ${safeDescription(error)}`);
+      const abort = (): void => void transport.terminate();
+      signal?.addEventListener("abort", abort, { once: true });
       try {
-        await client.connect(transport);
+        await client.connect(transport, signal === undefined ? {} : { signal });
       } catch (error) {
         await client.close().catch(() => undefined);
-        await transport.close().catch(() => undefined);
+        await transport.terminate().catch(() => undefined);
         throw error;
+      } finally {
+        signal?.removeEventListener("abort", abort);
       }
       client.onclose = onclose;
-      return new SdkSession(client);
+      return new SdkSession(client, validator);
     };
     try {
       return await attempt("auto");
     } catch (error) {
+      if (isAborted(signal)) {
+        throw new Interrupted("interrupted during startup");
+      }
       if (typeof (error as { code?: unknown }).code === "string" && (error as { syscall?: unknown }).syscall !== undefined) {
         throw new DownstreamError(FailureClass.TRANSPORT, server.name, `could not start downstream: ${message(error)}`);
       }
-      log.debug(`version negotiation failed (${message(error)}); retrying with the initialize handshake`);
+      log.debug(
+        `version negotiation failed (${error instanceof Error ? safeDescription(error) : "unknown"}); retrying with the initialize handshake`,
+      );
     }
     try {
       return await attempt("legacy");
     } catch (error) {
+      if (isAborted(signal)) {
+        throw new Interrupted("interrupted during startup");
+      }
       throw new DownstreamError(FailureClass.TRANSPORT, server.name, `could not start downstream: ${message(error)}`);
     }
   }
@@ -207,7 +252,7 @@ class SdkSession implements Session {
     return capturing(async (capture) => {
       const result: unknown = await this.#client.callTool(wire as Parameters<Client["callTool"]>[0], {
         allowInputRequired: true,
-        toolDefinition: options.toolDefinition,
+        toolDefinition: this.#definition(options.toolDefinition),
         timeout: CALL_TIMEOUT_MS,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
@@ -231,6 +276,7 @@ class SdkSession implements Session {
 
 export interface ProxyOptions {
   readonly mount?: (server: string, tool: string) => string;
+  readonly signal?: AbortSignal;
 }
 
 export class Proxy {
@@ -249,13 +295,18 @@ export class Proxy {
 
   static async start(config: Config, options: ProxyOptions = {}): Promise<Proxy> {
     let proxy: Proxy | undefined;
-    const session = await SdkSession.open(config.server, () => proxy?.markUnhealthy());
+    const session = await SdkSession.open(config.server, () => proxy?.markUnhealthy(), options.signal);
     proxy = new Proxy(config, session, options);
+    const abort = (): void => void session.close();
+    options.signal?.addEventListener("abort", abort, { once: true });
     try {
       await proxy.refreshTools();
+      options.signal?.throwIfAborted();
     } catch (error) {
       await session.close().catch(() => undefined);
-      throw error;
+      throw isAborted(options.signal) ? new Interrupted("interrupted during startup") : error;
+    } finally {
+      options.signal?.removeEventListener("abort", abort);
     }
     if (!isModern(session.protocolVersion)) {
       log.warning(

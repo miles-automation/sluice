@@ -124,6 +124,15 @@ describe("proxy: calls and failures", () => {
       });
     }));
 
+  test("an output schema the SDK cannot compile never fails the call", () =>
+    withSluice(config, async ({ client }) => {
+      for (const tool of ["draft4_schema", "unversioned_schema"]) {
+        const result = await client.callTool({ name: mounted(tool) });
+        assert.notEqual(result.isError, true, text(result));
+        assert.ok(text(result).includes("sluice: result recorded."), text(result));
+      }
+    }));
+
   test("the SDK's output-schema error carries a classifiable message", () =>
     direct(async (client) => {
       const page = await client.request({ method: "tools/list", params: {} });

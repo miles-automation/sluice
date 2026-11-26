@@ -91,7 +91,8 @@ above `[limits].max_session_bytes` are configuration errors.
 - **PG-9** Every partial result records the `resume_offset`: the first offset that was **not**
   fetched, when resuming is safe (`max_pages`, `max_bytes`, `max_seconds`, `page_error`,
   `page_failed`, `interactive`, `malformed_page`); `null` when it is not (`missing_next_offset`,
-  `offset_not_advancing`), because the server's own cursor cannot be trusted there.
+  `offset_not_advancing`), because the server's own cursor cannot be trusted there. Offsets are
+  exact integers end to end, including beyond 2^53.
 
 ## 5. Recording and the handle
 

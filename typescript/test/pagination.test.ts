@@ -6,7 +6,8 @@ import { Interceptor } from "../src/intercept.ts";
 import { makeLimits } from "../src/limits.ts";
 import type { PaginationSummary, ToolResult } from "../src/models.ts";
 import { collectionName, mountedName, quoteIdent } from "../src/naming.ts";
-import { StopReason, type FetchOutcome } from "../src/paginate.ts";
+import { StopReason, fetchAll, type FetchOutcome, type PageCall } from "../src/paginate.ts";
+import { parseJson, type JsonObject } from "../src/json.ts";
 import { Proxy, exposeCollection } from "../src/proxy.ts";
 import { collectionResult, runCollection } from "../src/server.ts";
 import { Store } from "../src/store.ts";
@@ -290,7 +291,7 @@ function partialSummary(): PaginationSummary {
     rows: 200,
     bytes: 12_000,
     seconds: 0.1,
-    resumeOffset: 200,
+    resumeOffset: 200n,
   };
 }
 
@@ -390,5 +391,80 @@ describe("pagination: fallback paths keep the status", () => {
     } finally {
       store.close();
     }
+  });
+});
+
+const HUGE = 9007199254740993n;
+
+function hugePages(seen: bigint[]): PageCall {
+  return (args) => {
+    const offset = args.get("offset");
+    assert.equal(typeof offset, "bigint");
+    seen.push(offset as bigint);
+    const body =
+      offset === 0n
+        ? `{"items": [{"i": 0}], "has_more": true, "next_offset": ${HUGE}}`
+        : offset === HUGE
+          ? '{"items": [{"i": 1}], "has_more": false, "next_offset": null}'
+          : null;
+    return Promise.resolve({
+      kind: "result",
+      result: body === null ? { content: [{ type: "text", text: `wrong offset ${String(offset)}` }], isError: true } : { content: [{ type: "text", text: body }] },
+    });
+  };
+}
+
+describe("pagination: exact offsets and long clocks", () => {
+  test("offsets above 2^53 are followed exactly", async () => {
+    const seen: bigint[] = [];
+    const outcome = await fetchAll(hugePages(seen), paginationConfig("t"), null);
+    assert.equal(outcome.reason, "complete");
+    assert.equal(outcome.pages, 2);
+    assert.deepEqual(seen, [0n, HUGE]);
+  });
+
+  test("an agent resume offset above 2^53 is sent exactly", async () => {
+    const seen: bigint[] = [];
+    const args = parseJson(`{"offset": ${HUGE}}`) as JsonObject;
+    const outcome = await fetchAll(hugePages(seen), paginationConfig("t"), args);
+    assert.equal(outcome.reason, "complete");
+    assert.deepEqual(seen, [HUGE]);
+  });
+
+  test("a resume offset above 2^53 reaches the handle exactly", async () => {
+    const config = paginationConfig("t", { max_pages: 1 });
+    const seen: bigint[] = [];
+    const outcome = await fetchAll(hugePages(seen), config, null);
+    assert.equal(outcome.resumeOffset, HUGE);
+    const limits = makeLimits();
+    const store = await Store.open(limits);
+    try {
+      const interceptor = new Interceptor(store, limits, { queryAvailable: true, logger: () => undefined });
+      const tool: Tool = { name: "t", inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true } };
+      const result = await runCollection(
+        { fetchCollection: (entry, args) => fetchAll(hugePages([]), entry.config, args) },
+        interceptor,
+        exposeCollection("conformance", tool, config),
+        { arguments: null, meta: null, startedAt: new Date() },
+      );
+      assert.ok(text(result).includes(`call again with offset=${HUGE}`), text(result));
+      assert.ok(JSON.stringify(result.structuredContent).includes(`"resume_offset":${HUGE}`), JSON.stringify(result.structuredContent));
+    } finally {
+      store.close();
+    }
+  });
+
+  test("a max_seconds beyond the timer range does not fire early", async () => {
+    let pages = 0;
+    const call: PageCall = async (args) => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      pages += 1;
+      const offset = Number(args.get("offset"));
+      const more = offset < 2;
+      return { kind: "result", result: { content: [{ type: "text", text: `{"items": [{"i": ${offset}}], "has_more": ${more}, "next_offset": ${more ? offset + 1 : "null"}}` }] } };
+    };
+    const outcome = await fetchAll(call, paginationConfig("t", { max_seconds: 3_000_000 }), null);
+    assert.equal(outcome.reason, "complete");
+    assert.equal(pages, 3);
   });
 });

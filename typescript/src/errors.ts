@@ -23,6 +23,10 @@ export class DownstreamError extends Error {
   }
 }
 
+export class Interrupted extends Error {
+  override readonly name = "Interrupted";
+}
+
 export function errorResult(failure: DownstreamError): ToolResult {
   return {
     content: [

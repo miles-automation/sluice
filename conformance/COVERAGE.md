@@ -12,8 +12,8 @@ compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
 Summary: 307 test functions. 200 are expressed as fixtures, 93 stay
-Python-only, 14 are the conformance runner itself. 506 fixture cases in
-total; 42 of them cover behavior no existing Python test asserted (listed
+Python-only, 14 are the conformance runner itself. 515 fixture cases in
+total; 47 of them cover behavior no existing Python test asserted (listed
 at the end).
 
 Reasons a test stays Python-only:
@@ -464,6 +464,11 @@ Reasons a test stays Python-only:
 
 ## Fixtures with no prior Python test
 
+- `config.byte-order-mark-is-refused`
+- `config.env-values-are-stringified-like-python`
+- `config.limit-cross-check-above-2-53-is-exact`
+- `config.limits-above-2-53-are-accepted`
+- `config.pagination-max-bytes-above-2-53-is-compared-exactly`
 - `config.preview-bytes-may-be-zero`
 - `config.preview-rows-may-be-zero`
 - `config.query-output-floor-is-allowed`

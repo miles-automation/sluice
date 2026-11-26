@@ -5,6 +5,18 @@ import { parseJSONRPCMessage, type JSONRPCMessage, type Transport } from "@model
 import { getDefaultEnvironment } from "@modelcontextprotocol/client/stdio";
 import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 
+export class TransportNotice extends Error {
+  override readonly name = "TransportNotice";
+}
+
+export function safeDescription(error: Error): string {
+  if (error instanceof TransportNotice) {
+    return error.message;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" || typeof code === "number" ? `${error.name} (${String(code)})` : error.name;
+}
+
 export interface Capture {
   raw: JsonObject | undefined;
 }
@@ -64,18 +76,22 @@ class LineSplitter {
   }
 }
 
+function describeId(id: unknown): string {
+  return typeof id === "number" || typeof id === "string" ? JSON.stringify(id) : "none";
+}
+
 function decode(line: string, onerror: ((error: Error) => void) | undefined): JSONRPCMessage | undefined {
   let plain: unknown;
   try {
     plain = JSON.parse(line);
-  } catch (error) {
-    onerror?.(error instanceof Error ? error : new Error(String(error)));
+  } catch {
+    onerror?.(new TransportNotice("received a line that is not JSON"));
     return undefined;
   }
   try {
     return parseJSONRPCMessage(plain);
-  } catch (error) {
-    onerror?.(error instanceof Error ? error : new Error(String(error)));
+  } catch {
+    onerror?.(new TransportNotice(`received JSON that is not a JSON-RPC message (id ${describeId(field(plain, "id"))})`));
     return undefined;
   }
 }
@@ -88,11 +104,42 @@ export interface ChildParameters {
 }
 
 const CAPTURED_METHODS: ReadonlySet<string> = new Set(["tools/call"]);
+const CANCELLED = "notifications/cancelled";
+const MALFORMED_RESPONSE = -32700;
+const DUPLICATE_REQUEST = -32600;
+const ID_IN_TEXT = /"id"\s*:\s*(-?[0-9]+)/u;
+
+function responseKey(id: unknown): string | undefined {
+  if (typeof id === "number") {
+    return Number.isFinite(id) ? `n:${id}` : undefined;
+  }
+  if (typeof id !== "string") {
+    return undefined;
+  }
+  const numeric = id.trim() === "" ? Number.NaN : Number(id);
+  return Number.isFinite(numeric) ? `n:${numeric}` : `s:${id}`;
+}
+
+function cancelledId(message: unknown): unknown {
+  if (field(message, "method") !== CANCELLED) {
+    return undefined;
+  }
+  return field(field(message, "params"), "requestId");
+}
+
+function malformedId(line: string): unknown {
+  try {
+    return field(JSON.parse(line), "id");
+  } catch {
+    const found = ID_IN_TEXT.exec(line);
+    return found === null ? undefined : Number(found[1]);
+  }
+}
 
 export class DownstreamTransport implements Transport {
   readonly #parameters: ChildParameters;
   readonly #lines = new LineSplitter();
-  readonly #pending = new Map<string, Capture>();
+  readonly #inFlight = new Map<string, Capture | null>();
   #process: ChildProcess | undefined;
   onclose?: (() => void) | undefined;
   onerror?: ((error: Error) => void) | undefined;
@@ -104,6 +151,10 @@ export class DownstreamTransport implements Transport {
 
   get pid(): number | undefined {
     return this.#process?.pid;
+  }
+
+  get inFlight(): number {
+    return this.#inFlight.size;
   }
 
   start(): Promise<void> {
@@ -125,7 +176,7 @@ export class DownstreamTransport implements Transport {
       child.once("spawn", () => resolve());
       child.once("close", () => {
         this.#process = undefined;
-        this.#pending.clear();
+        this.#inFlight.clear();
         this.onclose?.();
       });
       child.stdin?.on("error", (error) => this.onerror?.(error));
@@ -137,19 +188,37 @@ export class DownstreamTransport implements Transport {
   #receive(line: string): void {
     const message = decode(line, this.onerror);
     if (message === undefined) {
+      this.#failMalformed(line);
       return;
     }
-    const id = messageId(message);
-    if (id !== undefined && field(message, "method") === undefined) {
-      const capture = this.#pending.get(idKey(id));
-      if (capture !== undefined) {
-        this.#pending.delete(idKey(id));
-        const parsed = lossless(line);
-        const result = parsed?.get("result");
+    if (field(message, "method") === undefined && field(message, "id") !== undefined) {
+      const key = responseKey(field(message, "id"));
+      if (key === undefined || !this.#inFlight.has(key)) {
+        this.onerror?.(new TransportNotice(`dropped a response for id ${describeId(field(message, "id"))}, which is not in flight`));
+        return;
+      }
+      const capture = this.#inFlight.get(key) ?? null;
+      this.#inFlight.delete(key);
+      if (capture !== null) {
+        const result = lossless(line)?.get("result");
         capture.raw = isJsonObject(result) ? result : undefined;
       }
     }
     this.onmessage?.(message);
+  }
+
+  #failMalformed(line: string): void {
+    const key = responseKey(malformedId(line));
+    if (key === undefined || !this.#inFlight.has(key)) {
+      return;
+    }
+    this.#inFlight.delete(key);
+    const original = malformedId(line);
+    this.onmessage?.({
+      jsonrpc: "2.0",
+      id: typeof original === "string" || typeof original === "number" ? original : null,
+      error: { code: MALFORMED_RESPONSE, message: "the downstream sent a malformed response to this request" },
+    } as JSONRPCMessage);
   }
 
   send(message: JSONRPCMessage): Promise<void> {
@@ -157,11 +226,16 @@ export class DownstreamTransport implements Transport {
     if (stdin === undefined || stdin === null) {
       return Promise.reject(new Error("the downstream transport is not connected"));
     }
-    const capture = captures.getStore();
     const id = messageId(message);
     const method = field(message, "method");
-    if (capture !== undefined && id !== undefined && typeof method === "string" && CAPTURED_METHODS.has(method)) {
-      this.#pending.set(idKey(id), capture);
+    const key = responseKey(id);
+    if (key !== undefined && typeof method === "string") {
+      const capture = captures.getStore();
+      this.#inFlight.set(key, capture !== undefined && CAPTURED_METHODS.has(method) ? capture : null);
+    }
+    const cancelled = responseKey(cancelledId(message));
+    if (cancelled !== undefined) {
+      this.#inFlight.delete(cancelled);
     }
     return new Promise((resolve, reject) => {
       const ok = stdin.write(`${JSON.stringify(message)}\n`, (error) => (error ? reject(error) : undefined));
@@ -173,7 +247,15 @@ export class DownstreamTransport implements Transport {
     });
   }
 
-  async close(): Promise<void> {
+  terminate(): Promise<void> {
+    return this.#stop(0);
+  }
+
+  close(): Promise<void> {
+    return this.#stop(2000);
+  }
+
+  async #stop(grace: number): Promise<void> {
     const child = this.#process;
     this.#lines.clear();
     if (child === undefined) {
@@ -184,7 +266,9 @@ export class DownstreamTransport implements Transport {
     const settle = (ms: number): Promise<void> =>
       Promise.race([closed, new Promise<void>((resolve) => setTimeout(resolve, ms).unref())]);
     child.stdin?.end();
-    await settle(2000);
+    if (grace > 0) {
+      await settle(grace);
+    }
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
       await settle(2000);
@@ -199,7 +283,7 @@ export class UpstreamTransport implements Transport {
   readonly #stdin: Readable;
   readonly #stdout: Writable;
   readonly #lines = new LineSplitter();
-  readonly #requests = new Map<string, JsonObject>();
+  readonly #requests = new Map<string, JsonObject | null>();
   #started = false;
   #closed = false;
   #resolveClosed!: () => void;
@@ -241,10 +325,7 @@ export class UpstreamTransport implements Transport {
   }
 
   takeRequest(id: Id): JsonObject | undefined {
-    const key = idKey(id);
-    const params = this.#requests.get(key);
-    this.#requests.delete(key);
-    return params;
+    return this.#requests.get(idKey(id)) ?? undefined;
   }
 
   #receive(line: string): void {
@@ -253,13 +334,29 @@ export class UpstreamTransport implements Transport {
       return;
     }
     const id = messageId(message);
-    if (id !== undefined && field(message, "method") === "tools/call") {
-      const params: JsonValue | undefined = lossless(line)?.get("params");
-      if (isJsonObject(params)) {
-        this.#requests.set(idKey(id), params);
+    const method = field(message, "method");
+    if (id !== undefined && typeof method === "string") {
+      const key = idKey(id);
+      if (this.#requests.has(key)) {
+        void this.#write({
+          jsonrpc: "2.0",
+          id,
+          error: { code: DUPLICATE_REQUEST, message: `request id ${JSON.stringify(id)} is already in flight` },
+        } as JSONRPCMessage);
+        return;
       }
+      const params: JsonValue | undefined = method === "tools/call" ? lossless(line)?.get("params") : undefined;
+      this.#requests.set(key, isJsonObject(params) ? params : null);
+    }
+    const cancelled = cancelledId(message);
+    if (typeof cancelled === "string" || typeof cancelled === "number") {
+      this.#requests.delete(idKey(cancelled));
     }
     this.onmessage?.(message);
+  }
+
+  get inFlight(): number {
+    return this.#requests.size;
   }
 
   send(message: JSONRPCMessage): Promise<void> {
@@ -267,6 +364,10 @@ export class UpstreamTransport implements Transport {
     if (id !== undefined && field(message, "method") === undefined) {
       this.#requests.delete(idKey(id));
     }
+    return this.#write(message);
+  }
+
+  #write(message: JSONRPCMessage): Promise<void> {
     return new Promise((resolve) => {
       if (this.#stdout.write(`${JSON.stringify(message)}\n`)) {
         resolve();

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parse as parseToml } from "smol-toml";
-import { pythonFloatRepr } from "./json.ts";
+import { pyRepr, pyStr } from "./pystr.ts";
 import { DEFAULT_LIMITS, LimitsError, makeLimits, type Limits } from "./limits.ts";
 
 export const CONFIG_ENV_VAR = "SLUICE_CONFIG";
@@ -93,31 +93,13 @@ function typeName(value: unknown): string {
   return isTable(value) ? "dict" : "datetime";
 }
 
-function repr(value: unknown): string {
-  if (typeof value === "string") {
-    return `'${value}'`;
-  }
-  if (typeof value === "boolean") {
-    return value ? "True" : "False";
-  }
-  if (typeof value === "number") {
-    return Number.isNaN(value) ? "nan" : Number.isFinite(value) ? pythonFloatRepr(value) : value > 0 ? "inf" : "-inf";
-  }
-  return String(value);
-}
+const repr = pyRepr;
 
-function scalarText(value: unknown, where: string): string {
-  switch (typeof value) {
-    case "string":
-      return value;
-    case "bigint":
-      return value.toString();
-    case "boolean":
-    case "number":
-      return repr(value);
-    default:
-      throw new ConfigError(`${where} must be a scalar, got ${typeName(value)}`);
-  }
+const SAFE_MAX = BigInt(Number.MAX_SAFE_INTEGER);
+const SAFE_MIN = BigInt(Number.MIN_SAFE_INTEGER);
+
+function clamp(value: bigint): number {
+  return Number(value > SAFE_MAX ? SAFE_MAX : value < SAFE_MIN ? SAFE_MIN : value);
 }
 
 export function findConfig(explicit: string | null = null, environ: Environment = process.env): string {
@@ -147,7 +129,11 @@ export function loadConfig(path: string, environ: Environment = process.env): Co
   }
   let raw: Table;
   try {
-    raw = parseToml(readFileSync(path, "utf8"), { integersAsBigInt: true });
+    const text = readFileSync(path, "utf8");
+    if (text.startsWith("\ufeff")) {
+      throw new Error("Invalid statement (at line 1, column 1)");
+    }
+    raw = parseToml(text, { integersAsBigInt: true });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new ConfigError(`${path} is not valid TOML: ${detail}`);
@@ -196,7 +182,7 @@ function parseServer(raw: Table, environ: Environment): ServerConfig {
   }
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(envRaw)) {
-    env[key] = expandVars(scalarText(value, `[servers.${name}].env.${key}`), environ);
+    env[key] = expandVars(pyStr(value), environ);
   }
   const cwd = entry["cwd"];
   if (cwd !== undefined && typeof cwd !== "string") {
@@ -216,7 +202,7 @@ function limitValue(name: string, value: unknown): unknown {
     if (typeof value !== "bigint") {
       throw new ConfigError(`[limits].${name} must be an integer, got ${typeName(value)}: ${repr(value)}`);
     }
-    return Number(value);
+    return clamp(value);
   }
   if (name === "query_timeout_seconds") {
     if (typeof value !== "bigint" && typeof value !== "number") {
@@ -230,7 +216,17 @@ function limitValue(name: string, value: unknown): unknown {
   return value;
 }
 
-function parseLimits(raw: unknown): Limits {
+interface ParsedLimits {
+  readonly limits: Limits;
+  readonly sessionBytes: bigint;
+}
+
+function rawInteger(table: Table, name: keyof Limits): bigint {
+  const value = table[name];
+  return typeof value === "bigint" ? value : BigInt(DEFAULT_LIMITS[name] as number);
+}
+
+function parseLimits(raw: unknown): ParsedLimits {
   const table = raw ?? {};
   if (!isTable(table)) {
     throw new ConfigError("[limits] must be a table");
@@ -244,17 +240,26 @@ function parseLimits(raw: unknown): Limits {
   for (const key of ordered) {
     overrides[key] = limitValue(key, table[key]);
   }
+  const sessionBytes = rawInteger(table, "max_session_bytes");
+  const payloadBytes = rawInteger(table, "max_payload_bytes");
+  let limits: Limits;
   try {
-    return makeLimits(overrides);
+    limits = makeLimits(overrides);
   } catch (error) {
     if (error instanceof LimitsError) {
       throw new ConfigError(error.message);
     }
     throw error;
   }
+  if (sessionBytes < payloadBytes) {
+    throw new ConfigError(
+      `[limits].max_session_bytes must be at least max_payload_bytes (${payloadBytes}), got ${sessionBytes}`,
+    );
+  }
+  return { limits, sessionBytes };
 }
 
-function paginationEntry(tool: string, entry: Table, limits: Limits): PaginationConfig {
+function paginationEntry(tool: string, entry: Table, limits: Limits, sessionBytes: bigint = BigInt(limits.max_session_bytes)): PaginationConfig {
   if (tool.trim() === "") {
     throw new ConfigError("[pagination] entries must be keyed by a non-empty tool name");
   }
@@ -280,8 +285,9 @@ function paginationEntry(tool: string, entry: Table, limits: Limits): Pagination
     if (value < 1) {
       throw new ConfigError(`${where}.${name} must be at least 1, got ${String(value)}`);
     }
-    merged[name] = Number(value);
+    merged[name] = typeof value === "bigint" ? clamp(value) : value;
   }
+  const rawMaxBytes = typeof entry["max_bytes"] === "bigint" ? entry["max_bytes"] : BigInt(PAGINATION_DEFAULTS.max_bytes);
   const seconds = merged["max_seconds"];
   if (typeof seconds !== "bigint" && typeof seconds !== "number") {
     throw new ConfigError(`${where}.max_seconds must be a number, got ${typeName(seconds)}: ${repr(seconds)}`);
@@ -292,16 +298,16 @@ function paginationEntry(tool: string, entry: Table, limits: Limits): Pagination
   }
   merged["max_seconds"] = secondsValue;
   const config = { ...merged, tool } as unknown as PaginationConfig;
-  if (config.max_bytes > limits.max_session_bytes) {
+  if (rawMaxBytes > sessionBytes) {
     throw new ConfigError(
-      `${where}.max_bytes (${config.max_bytes}) exceeds [limits].max_session_bytes (${limits.max_session_bytes}); ` +
+      `${where}.max_bytes (${rawMaxBytes}) exceeds [limits].max_session_bytes (${sessionBytes}); ` +
         "a collection that cannot be retained would never get a table",
     );
   }
   return Object.freeze(config);
 }
 
-function parsePagination(raw: unknown, limits: Limits): Map<string, PaginationConfig> {
+function parsePagination(raw: unknown, { limits, sessionBytes }: ParsedLimits): Map<string, PaginationConfig> {
   const table = raw ?? {};
   if (!isTable(table)) {
     throw new ConfigError("[pagination] must be a table of [pagination.<tool>] tables");
@@ -316,16 +322,16 @@ function parsePagination(raw: unknown, limits: Limits): Map<string, PaginationCo
     if (unknown.length > 0) {
       throw new ConfigError(`[pagination.${tool}] has unknown keys: ${unknown.sort().join(", ")}`);
     }
-    parsed.set(tool, paginationEntry(tool, entry, limits));
+    parsed.set(tool, paginationEntry(tool, entry, limits, sessionBytes));
   }
   return parsed;
 }
 
 export function parseConfig(raw: Table, environ: Environment = process.env): Config {
   const server = parseServer(raw, environ);
-  const limits = parseLimits(raw["limits"]);
-  const pagination = parsePagination(raw["pagination"], limits);
-  return { server, limits, pagination };
+  const parsed = parseLimits(raw["limits"]);
+  const pagination = parsePagination(raw["pagination"], parsed);
+  return { server, limits: parsed.limits, pagination };
 }
 
 export function paginationConfig(tool: string, overrides: Readonly<Record<string, unknown>> = {}, limits: Limits = DEFAULT_LIMITS): PaginationConfig {

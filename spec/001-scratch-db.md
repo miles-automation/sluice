@@ -841,7 +841,14 @@ when a tool with a cached output schema returns missing or non-conforming
 structured content. TypeScript SDK 2.4.0: `Client.callTool` with the downstream tool as
 `toolDefinition` raises a `ProtocolError` (`-32602`) whose message names the
 output schema; Sluice classifies it by the same substrings
-(`typescript/test/proxy.test.ts` pins the message).
+(`typescript/test/proxy.test.ts` pins the message). A schema the SDK's validator cannot
+compile (for example `$schema` draft-04) is treated as no schema there, so the
+call is made without output validation rather than failing; Python validates it.
+A downstream line that is not a JSON-RPC message but names an in-flight request
+id fails that call as `protocol` in TypeScript; Python 2.3.0 logs it and the
+call waits indefinitely, since it has no read timeout. Only the first response
+for an in-flight id is accepted; later ones and ones for ids not in flight are
+dropped.
 
 | Situation | Behavior |
 |---|---|

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -131,6 +131,38 @@ describe("cli", () => {
     assert.equal(exit.code, 2);
     assert.ok(exit.stderr.includes("usage: sluice"));
     assert.equal(exit.stdout, "");
+  });
+
+  test("SIGINT during startup exits 130 promptly and stops the downstream", { timeout: 20_000 }, async () => {
+    const pidFile = join(directory, "silent.pid");
+    const silent = "require('node:fs').writeFileSync(process.argv[1], String(process.pid)); process.stdin.resume(); setInterval(() => {}, 1000);";
+    const config = writeConfig(
+      "silent.toml",
+      `[servers.silent]\ncommand = ${JSON.stringify(process.execPath)}\nargs = ["-e", ${JSON.stringify(silent)}, ${JSON.stringify(pidFile)}]\n`,
+    );
+    const child = spawn(process.execPath, [CLI, "--config", config], { cwd: PACKAGE_ROOT, stdio: ["pipe", "pipe", "pipe"] });
+    const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+    const started = Date.now();
+    while (!existsSync(pidFile)) {
+      assert.ok(Date.now() - started < 10_000, "the downstream never started");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const interrupted = Date.now();
+    child.kill("SIGINT");
+    assert.equal(await exited, 130);
+    assert.ok(Date.now() - interrupted < 5000, `took ${Date.now() - interrupted} ms`);
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.throws(() => process.kill(pid, 0), "the downstream is still running");
+  });
+
+  test("Python's log level names are accepted", async () => {
+    for (const level of ["WARN", "fatal", "NOTSET", "warning"]) {
+      const exit = await sluice(["--config", join(directory, "absent.toml"), "--log-level", level]);
+      assert.equal(exit.code, 2);
+      assert.ok(exit.stderr.includes("no config file"), `${level}: ${exit.stderr}`);
+    }
   });
 
   test("config discovery: --config, then SLUICE_CONFIG, then ./sluice.toml", async () => {

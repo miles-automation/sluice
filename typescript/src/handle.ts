@@ -1,5 +1,7 @@
+import type { JsonValue } from "./json.ts";
 import type { ContentBlock, Handle, PaginationSummary, TableRef } from "./models.ts";
 import { scopeViewName } from "./store.ts";
+import { rawJson } from "./wire.ts";
 
 export const QUERY_HINT = "Run SQL over this with the `query` tool.";
 
@@ -31,7 +33,7 @@ export interface StructuredPagination {
   readonly rows: number;
   readonly bytes: number;
   readonly seconds: number;
-  readonly resume_offset: number | null;
+  readonly resume_offset: number | object | null;
 }
 
 export interface StructuredHandle {
@@ -135,6 +137,28 @@ export function renderText(handle: Handle): string {
   return lines.join("\n");
 }
 
+function wireInteger(value: bigint | null): number | object | null {
+  if (value === null) {
+    return null;
+  }
+  return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(value)
+    : (rawJson(value.toString()) as object);
+}
+
+export function paginationValue(summary: PaginationSummary): JsonValue {
+  return new Map<string, JsonValue>([
+    ["status", summary.status],
+    ["reason", summary.reason],
+    ["detail", summary.detail],
+    ["pages", BigInt(summary.pages)],
+    ["rows", BigInt(summary.rows)],
+    ["bytes", BigInt(summary.bytes)],
+    ["seconds", Math.round(summary.seconds * 1000) / 1000],
+    ["resume_offset", summary.resumeOffset],
+  ]);
+}
+
 export function paginationObject(summary: PaginationSummary): StructuredPagination {
   return {
     status: summary.status,
@@ -144,7 +168,7 @@ export function paginationObject(summary: PaginationSummary): StructuredPaginati
     rows: summary.rows,
     bytes: summary.bytes,
     seconds: Math.round(summary.seconds * 1000) / 1000,
-    resume_offset: summary.resumeOffset,
+    resume_offset: wireInteger(summary.resumeOffset),
   };
 }
 

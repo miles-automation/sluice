@@ -1,6 +1,6 @@
 import { Server, type CallToolResult, type InputRequiredResult, type Tool } from "@modelcontextprotocol/server";
 import { DownstreamError, FailureClass, errorResult } from "./errors.ts";
-import { paginationObject } from "./handle.ts";
+import { paginationObject, paginationValue } from "./handle.ts";
 import type { Interceptor } from "./intercept.ts";
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.ts";
 import { logger } from "./log.ts";
@@ -124,7 +124,7 @@ async function collect(
   }
   const summary = summarize(outcome);
   const recordedArgs = new Map(context.arguments ?? []);
-  recordedArgs.set("sluice_pagination", fromPlain(paginationObject(summary)));
+  recordedArgs.set("sluice_pagination", paginationValue(summary));
 
   if (outcome.pages === 0) {
     const note: ContentBlock = {
