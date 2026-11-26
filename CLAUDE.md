@@ -14,13 +14,19 @@ the rules below.
 
 The Python package lives in `python/` (PyPI `mcp-sluice`, import and CLI
 `sluice`). The TypeScript version lives in `typescript/` (npm `mcp-sluice`,
-private until task 1095, CLI `sluice` from `dist/cli.js`). It is a complete
+CLI `sluice` from `dist/cli.js`). It is a complete
 port: the pure modules, a lossless JSON parser, the store, gate, query tool and
 interceptor on `@duckdb/node-api`, and the MCP proxy, pagination, server and
 CLI on the v2 TypeScript SDK (`@modelcontextprotocol/client` and `/server`),
 all pinned exactly. Both versions read the same `sluice.toml`.
 `spec/`, `intent/`, `plan/`, `review/`, `conformance/` and `sluice.example.toml`
 stay at the repo root, shared by every version.
+
+Releases are independent: tag `vX.Y.Z` runs `release.yml` (PyPI, trusted
+publishing); tag `typescript-vX.Y.Z` runs `release-typescript.yml` (npm, trusted
+publishing, after an install smoke test on Linux x64, Linux arm64 and macOS).
+Bump `python/pyproject.toml` plus `sluice/__init__.py`, or `typescript/package.json`,
+in the release PR.
 
 `conformance/` is the language-neutral suite both versions run (see its README).
 A behavior change lands in both versions with a fixture, or the fixture's `note`
