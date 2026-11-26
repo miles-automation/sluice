@@ -13,6 +13,15 @@ This tracks what has landed against the milestones in
   which lists every conversation's tables. The same shape reached `sqlite_master`
   and another conversation's envelope view. Affects every released version on
   DuckDB 1.5.5 and 2.x. The gate now folds ASCII only. Upgrade.
+- **Security: an engine error could name another conversation's table.** DuckDB's
+  `Did you mean ...` suggestion names the closest table in the whole catalog. A
+  table evicted after the gate admitted a query made the error name a table from
+  another conversation, which was then readable. Engine errors no longer carry
+  suggestions, and a missing table is reported only as no longer available.
+- **Security: agent queries could spill to disk.** The lockdown left DuckDB's
+  `temp_directory` at `.tmp/` in the working directory, so a large sort wrote
+  agent-driven data there, up to 90% of free disk. Spilling is now off; such a
+  query fails with an out-of-memory error.
 
 ## 0.2.1 — 2026-11-07
 
