@@ -12,6 +12,8 @@ The check also found a live problem unrelated to the port. See the next section.
 
 ## Urgent: the published package has a gate bypass on DuckDB 2.0
 
+Resolved 2026-11-07: 0.2.1 (PR #16, task 1096) fails closed on unknown CTE shapes, and 0.1.0 and 0.2.0 are yanked. The record below is kept as found.
+
 `mcp-sluice` 0.2.0 declares `duckdb>=1.5.5` with no upper bound. DuckDB 2.0.0 was
 uploaded to PyPI on 2026-10-21, so a fresh install today gets it. Verified with a
 clean `uv run --with mcp-sluice`: it resolved 0.2.0 on DuckDB 2.0.0, and
