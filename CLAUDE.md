@@ -43,7 +43,11 @@ TypeScript implementation are reported as skipped by kind). `npm run build`
 emits `dist/` (JavaScript plus declarations, gitignored). Wire JSON goes
 through `src/json.ts`, never `JSON.parse`: integers are `bigint`, floats are
 `number`, objects are `Map`s in payload order, and the text channel accepts
-`NaN` and `Infinity` the way Python's `json` does.
+`NaN` and `Infinity` the way Python's `json` does. Parsing and dumping are
+iterative, so nesting depth is bounded by memory, not the call stack. One
+documented difference: an escaped surrogate next to a raw unpaired surrogate is a
+`JsonParseError` in TypeScript, because UTF-16 would merge the two into one
+character where Python keeps two code points.
 
 The M5 Hypothesis correctness property is `tests/test_property_aggregates.py`.
 The non-deterministic model-eval harness is `uv run python -m demo.median`; use

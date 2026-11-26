@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import fc from "fast-check";
 import { dumpJson, isJsonArray, JsonParseError, MAX_INT_DIGITS, parseJson, pythonFloatRepr, type JsonValue } from "../src/json.ts";
+import { coerce, ColumnType } from "../src/infer.ts";
 import { float, integer, json, key, objectOf, scalar } from "./arbitraries.ts";
 
 function plain(value: JsonValue): unknown {
@@ -87,6 +88,36 @@ test("floats print as Python's repr", () => {
   ];
   for (const [value, expected] of vectors) {
     assert.equal(pythonFloatRepr(value), expected);
+  }
+});
+
+test("nesting 100,000 deep parses, dumps and coerces like Python", () => {
+  const depth = 100_000;
+  const arrays = `${"[".repeat(depth)}${"]".repeat(depth)}`;
+  const parsedArrays = parseJson(arrays);
+  assert.equal(dumpJson(parsedArrays), arrays);
+  assert.equal(coerce(parsedArrays, ColumnType.JSON), arrays);
+  const objects = `${'{"a": '.repeat(depth)}1${"}".repeat(depth)}`;
+  const parsedObjects = parseJson(objects.replaceAll(" ", ""));
+  assert.equal(dumpJson(parsedObjects), objects);
+  assert.equal(coerce(parsedObjects, ColumnType.JSON), objects);
+  const mixed = `${'[{"k": '.repeat(depth)}null${"}]".repeat(depth)}`;
+  assert.equal(dumpJson(parseJson(mixed)), mixed);
+});
+
+test("nesting far past Python's recursion limit still parses without a stack overflow", () => {
+  const depth = 1_000_000;
+  assert.equal(dumpJson(parseJson(`${"[".repeat(depth)}${"]".repeat(depth)}`)).length, depth * 2);
+  assert.throws(() => parseJson(`${"[".repeat(depth)}${"]".repeat(depth - 1)}`), JsonParseError);
+});
+
+test("an escaped surrogate never pairs with a raw one", () => {
+  assert.equal(parseJson('"\\ud83d\\ude00"'), "\u{1F600}");
+  assert.equal(parseJson('"\ud83d\ude00"'), "\u{1F600}");
+  assert.equal(parseJson('"\\ud83dA\\ud83d"'), "\ud83dA\ud83d");
+  assert.equal(parseJson('"\ud83d\\u0041"'), "\ud83dA");
+  for (const text of ['{"\ud83d\\ude00": 1, "\u{1F600}": 2}', '"\\ud83d\ude00"', '"x\ud83d\\ude00"']) {
+    assert.throws(() => parseJson(text), JsonParseError, text);
   }
 });
 

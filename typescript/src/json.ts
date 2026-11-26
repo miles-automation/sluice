@@ -43,6 +43,16 @@ const LITERALS: readonly (readonly [string, JsonValue])[] = [
   ["-Infinity", Number.NEGATIVE_INFINITY],
 ];
 
+type Frame = { readonly items: JsonValue[] } | { readonly entries: Map<string, JsonValue>; key: string };
+
+function isHighSurrogate(unit: number): boolean {
+  return unit >= 0xd800 && unit <= 0xdbff;
+}
+
+function isLowSurrogate(unit: number): boolean {
+  return unit >= 0xdc00 && unit <= 0xdfff;
+}
+
 class Parser {
   readonly #text: string;
   #pos = 0;
@@ -75,31 +85,91 @@ class Parser {
   }
 
   #value(): JsonValue {
-    const char = this.#text[this.#pos];
-    switch (char) {
-      case '"':
-        return this.#string();
-      case "{":
-        return this.#object();
-      case "[":
-        return this.#array();
-      case undefined:
-        throw new JsonParseError("Expecting value", this.#pos);
-      default: {
-        const literal = this.#literal();
-        return literal === undefined ? this.#number() : literal[0];
+    const stack: Frame[] = [];
+    for (;;) {
+      let value: JsonValue;
+      const char = this.#text[this.#pos];
+      if (char === "[") {
+        this.#pos += 1;
+        this.#skipWhitespace();
+        if (this.#text[this.#pos] !== "]") {
+          stack.push({ items: [] });
+          continue;
+        }
+        this.#pos += 1;
+        value = [];
+      } else if (char === "{") {
+        this.#pos += 1;
+        this.#skipWhitespace();
+        if (this.#text[this.#pos] !== "}") {
+          stack.push({ entries: new Map(), key: this.#key() });
+          continue;
+        }
+        this.#pos += 1;
+        value = new Map();
+      } else {
+        value = this.#scalar();
+      }
+      for (;;) {
+        const frame = stack.at(-1);
+        if (frame === undefined) {
+          return value;
+        }
+        this.#skipWhitespace();
+        const next = this.#text[this.#pos];
+        if ("items" in frame) {
+          frame.items.push(value);
+          if (next === "]") {
+            this.#pos += 1;
+            stack.pop();
+            value = frame.items;
+            continue;
+          }
+          this.#expect(",", "Expecting ',' delimiter");
+          this.#skipWhitespace();
+          break;
+        }
+        frame.entries.set(frame.key, value);
+        if (next === "}") {
+          this.#pos += 1;
+          stack.pop();
+          value = frame.entries;
+          continue;
+        }
+        this.#expect(",", "Expecting ',' delimiter");
+        this.#skipWhitespace();
+        frame.key = this.#key();
+        break;
       }
     }
   }
 
-  #literal(): readonly [JsonValue] | undefined {
+  #key(): string {
+    if (this.#text[this.#pos] !== '"') {
+      throw new JsonParseError("Expecting property name enclosed in double quotes", this.#pos);
+    }
+    const key = this.#string();
+    this.#skipWhitespace();
+    this.#expect(":", "Expecting ':' delimiter");
+    this.#skipWhitespace();
+    return key;
+  }
+
+  #scalar(): JsonValue {
+    const char = this.#text[this.#pos];
+    if (char === '"') {
+      return this.#string();
+    }
+    if (char === undefined) {
+      throw new JsonParseError("Expecting value", this.#pos);
+    }
     for (const [word, value] of LITERALS) {
       if (this.#text.startsWith(word, this.#pos)) {
         this.#pos += word.length;
-        return [value];
+        return value;
       }
     }
-    return undefined;
+    return this.#number();
   }
 
   #number(): JsonValue {
@@ -143,7 +213,13 @@ class Parser {
           if (!HEX4.test(hex)) {
             throw new JsonParseError("Invalid \\uXXXX escape", pos);
           }
-          out += String.fromCharCode(Number.parseInt(hex, 16));
+          const unit = Number.parseInt(hex, 16);
+          const rawBefore = chunkStart < pos ? text.charCodeAt(pos - 1) : -1;
+          const rawAfter = pos + 6 < text.length ? text.charCodeAt(pos + 6) : -1;
+          if ((isLowSurrogate(unit) && isHighSurrogate(rawBefore)) || (isHighSurrogate(unit) && isLowSurrogate(rawAfter))) {
+            throw new JsonParseError("Escaped surrogate next to an unpaired raw surrogate", pos);
+          }
+          out += String.fromCharCode(unit);
           pos += 6;
         } else {
           const replacement = escape === undefined ? undefined : SIMPLE_ESCAPES[escape];
@@ -169,60 +245,13 @@ class Parser {
     }
     this.#pos += 1;
   }
-
-  #object(): JsonObject {
-    const object = new Map<string, JsonValue>();
-    this.#pos += 1;
-    this.#skipWhitespace();
-    if (this.#text[this.#pos] === "}") {
-      this.#pos += 1;
-      return object;
-    }
-    for (;;) {
-      if (this.#text[this.#pos] !== '"') {
-        throw new JsonParseError("Expecting property name enclosed in double quotes", this.#pos);
-      }
-      const key = this.#string();
-      this.#skipWhitespace();
-      this.#expect(":", "Expecting ':' delimiter");
-      this.#skipWhitespace();
-      object.set(key, this.#value());
-      this.#skipWhitespace();
-      if (this.#text[this.#pos] === "}") {
-        this.#pos += 1;
-        return object;
-      }
-      this.#expect(",", "Expecting ',' delimiter");
-      this.#skipWhitespace();
-    }
-  }
-
-  #array(): JsonArray {
-    const array: JsonValue[] = [];
-    this.#pos += 1;
-    this.#skipWhitespace();
-    if (this.#text[this.#pos] === "]") {
-      this.#pos += 1;
-      return array;
-    }
-    for (;;) {
-      array.push(this.#value());
-      this.#skipWhitespace();
-      if (this.#text[this.#pos] === "]") {
-        this.#pos += 1;
-        return array;
-      }
-      this.#expect(",", "Expecting ',' delimiter");
-      this.#skipWhitespace();
-    }
-  }
 }
 
 export function parseJson(text: string): JsonValue {
   return new Parser(text).document();
 }
 
-const NEEDS_ESCAPE = /["\\\u0000-\u001f\u007f-￿]/g;
+const NEEDS_ESCAPE = /["\\\u0000-\u001f\u007f-\uffff]/g;
 const SHORT_ESCAPES: Readonly<Record<string, string>> = {
   '"': '\\"',
   "\\": "\\\\",
@@ -280,7 +309,9 @@ function dumpNumber(value: number): string {
   return pythonFloatRepr(value);
 }
 
-export function dumpJson(value: JsonValue): string {
+type DumpTask = { readonly raw: string } | { readonly value: JsonValue };
+
+function dumpScalar(value: Exclude<JsonValue, JsonArray | JsonObject>): string {
   if (value === null) {
     return "null";
   }
@@ -294,12 +325,38 @@ export function dumpJson(value: JsonValue): string {
     case "string":
       return quote(value);
   }
-  if (isJsonArray(value)) {
-    return `[${value.map(dumpJson).join(", ")}]`;
+}
+
+export function dumpJson(value: JsonValue): string {
+  const out: string[] = [];
+  const tasks: DumpTask[] = [{ value }];
+  for (let task = tasks.pop(); task !== undefined; task = tasks.pop()) {
+    if ("raw" in task) {
+      out.push(task.raw);
+      continue;
+    }
+    const current = task.value;
+    if (isJsonArray(current)) {
+      tasks.push({ raw: "]" });
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        tasks.push({ value: current[index] ?? null });
+        if (index > 0) {
+          tasks.push({ raw: ", " });
+        }
+      }
+      tasks.push({ raw: "[" });
+    } else if (isJsonObject(current)) {
+      const entries = [...current];
+      tasks.push({ raw: "}" });
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const [key, item] = entries[index] ?? ["", null];
+        tasks.push({ value: item });
+        tasks.push({ raw: `${index > 0 ? ", " : ""}${quote(key)}: ` });
+      }
+      tasks.push({ raw: "{" });
+    } else {
+      out.push(dumpScalar(current));
+    }
   }
-  const entries: string[] = [];
-  for (const [key, item] of value) {
-    entries.push(`${quote(key)}: ${dumpJson(item)}`);
-  }
-  return `{${entries.join(", ")}}`;
+  return out.join("");
 }
