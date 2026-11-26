@@ -1,0 +1,13 @@
+{
+  "name": "sluice-duckdb2-check",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Task 1074: does @duckdb/node-api 2.x have the primitives Sluice depends on?",
+  "scripts": {
+    "check": "node check.mjs"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "2.0.0-r.1"
+  }
+}
