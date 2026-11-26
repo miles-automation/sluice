@@ -1,0 +1,448 @@
+{
+  "kind": "engine",
+  "description": "Facts about the DuckDB engine that the design rests on, stated as SQL so every binding checks them (spec 001 \u00a75.4-\u00a75.6, \u00a76.1). `lockdown` applies the spec 001 \u00a76.1 layer-2 settings after `setup`. Values are compared with their type: a string matcher needs a string value.",
+  "cases": [
+    {
+      "id": "engine.lockdown-blocks-read-json",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "SELECT * FROM read_json('/sluice-conformance-missing.json')",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-read-csv",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "SELECT * FROM read_csv('/sluice-conformance-missing.csv')",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-read-parquet",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "SELECT * FROM read_parquet('/sluice-conformance-missing.parquet')",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-read-text",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "SELECT * FROM read_text('/sluice-conformance-missing.txt')",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-glob",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "SELECT * FROM glob('/*')",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-copy-to",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "COPY (SELECT 1) TO '/tmp/sluice-conformance-exfil.csv'",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-attach",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "ATTACH '/tmp/sluice-conformance.db' AS evil",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-install",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "INSTALL httpfs",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.lockdown-blocks-load",
+      "spec": "001 \u00a75.4, \u00a76.1",
+      "note": "A permission error, not a missing-file or parse error, is what shows the lockdown and not the input stopped it.",
+      "lockdown": true,
+      "sql": "LOAD httpfs",
+      "expect": {
+        "error": "permission"
+      }
+    },
+    {
+      "id": "engine.unlocked-glob-is-not-a-permission-error",
+      "spec": "001 \u00a76.1",
+      "description": "Control for the lockdown cases: the same reader works without it.",
+      "sql": "SELECT count(*) FROM glob('/sluice-conformance-missing-*')",
+      "expect": {
+        "rows": [
+          [
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.lock-freezes-configuration",
+      "spec": "001 \u00a76.1",
+      "lockdown": true,
+      "sql": "SET threads = 3",
+      "expect": {
+        "error": "any"
+      }
+    },
+    {
+      "id": "engine.threads-is-settable-without-the-lock",
+      "spec": "001 \u00a76.1",
+      "description": "Control: proves the lock, not the option, refuses the change.",
+      "sql": "SET threads = 3",
+      "expect": {
+        "succeeds": true
+      }
+    },
+    {
+      "id": "engine.lockdown-does-not-block-pragma",
+      "spec": "001 \u00a76.1",
+      "description": "Layer 2 does not stop PRAGMA, which is why the gate needs its other layers.",
+      "lockdown": true,
+      "sql": "PRAGMA database_list",
+      "expect": {
+        "nonempty": true
+      }
+    },
+    {
+      "id": "engine.create-and-insert-still-work-after-the-lockdown",
+      "spec": "001 \u00a75.4",
+      "setup": [
+        "SET enable_external_access = false",
+        "SET lock_configuration = true",
+        "CREATE TABLE t (a BIGINT)",
+        "INSERT INTO t VALUES (1), (2)"
+      ],
+      "sql": "SELECT sum(a) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "int": "3"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.retention-ddl-rolls-back-as-one-unit",
+      "spec": "001 FR-10a",
+      "setup": [
+        "CREATE TABLE sluice_calls (call_id VARCHAR PRIMARY KEY)",
+        "BEGIN TRANSACTION",
+        "CREATE TABLE transient (value BIGINT)",
+        "INSERT INTO transient VALUES (1)",
+        "INSERT INTO sluice_calls VALUES ('c1')",
+        "ROLLBACK"
+      ],
+      "lockdown": true,
+      "sql": "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'transient'",
+      "expect": {
+        "rows": [
+          [
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.retention-ddl-commits-as-one-unit",
+      "spec": "001 \u00a77",
+      "setup": [
+        "SET enable_external_access = false",
+        "SET lock_configuration = true",
+        "CREATE TABLE sluice_calls (call_id VARCHAR PRIMARY KEY, scope_id VARCHAR, flat_reason VARCHAR)",
+        "BEGIN TRANSACTION",
+        "CREATE TABLE retained (value BIGINT)",
+        "INSERT INTO retained VALUES (1)",
+        "INSERT INTO sluice_calls VALUES ('c1', 'scope', NULL)",
+        "CREATE OR REPLACE VIEW scope_view AS SELECT * FROM sluice_calls WHERE scope_id = 'scope'",
+        "DROP TABLE retained",
+        "UPDATE sluice_calls SET flat_reason = 'retention_evicted' WHERE call_id = 'c1'",
+        "DELETE FROM sluice_calls WHERE call_id = 'c1'",
+        "DROP VIEW IF EXISTS scope_view",
+        "COMMIT"
+      ],
+      "sql": "SELECT count(*) FROM sluice_calls",
+      "expect": {
+        "rows": [
+          [
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.median-bigint-400-rows-is-exact",
+      "spec": "001 \u00a75.6",
+      "description": "median() returns DOUBLE for a BIGINT column.",
+      "setup": [
+        "CREATE TABLE t (v BIGINT)",
+        "INSERT INTO t SELECT range FROM range(400)"
+      ],
+      "sql": "SELECT median(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "double": 199.5
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.median-double-400-rows-is-exact",
+      "spec": "001 \u00a75.6",
+      "setup": [
+        "CREATE TABLE t (v DOUBLE)",
+        "INSERT INTO t SELECT CAST(range AS DOUBLE) * CAST(1.7 AS DOUBLE) FROM range(400)"
+      ],
+      "sql": "SELECT median(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "double": "339.15"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.median-bigint-401-rows-is-exact",
+      "spec": "001 \u00a75.6",
+      "description": "median() returns DOUBLE for a BIGINT column.",
+      "setup": [
+        "CREATE TABLE t (v BIGINT)",
+        "INSERT INTO t SELECT range FROM range(401)"
+      ],
+      "sql": "SELECT median(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "double": 200
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.median-double-401-rows-is-exact",
+      "spec": "001 \u00a75.6",
+      "setup": [
+        "CREATE TABLE t (v DOUBLE)",
+        "INSERT INTO t SELECT CAST(range AS DOUBLE) * CAST(1.7 AS DOUBLE) FROM range(401)"
+      ],
+      "sql": "SELECT median(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "double": "340.0"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.avg-double-needs-a-tolerance",
+      "spec": "001 \u00a75.6",
+      "description": "Close to the fmean reference but not equal to it. If this ever becomes exact, spec 001 \u00a75.6's tolerance class can shrink.",
+      "setup": [
+        "CREATE TABLE t (v DOUBLE)",
+        "INSERT INTO t SELECT CAST(range AS DOUBLE) * CAST(1.7 AS DOUBLE) FROM range(400)"
+      ],
+      "sql": "SELECT avg(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "approx": 339.15,
+              "rel": 1e-09,
+              "abs": 1e-12,
+              "exact": false
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.relative-tolerance-alone-does-not-survive-cancellation",
+      "spec": "001 \u00a75.6",
+      "description": "fmean gives 0.75; an infinite relative error.",
+      "setup": [
+        "CREATE TABLE t (v DOUBLE)",
+        "INSERT INTO t VALUES (-1e308), (1.0), (2.0), (1e308)"
+      ],
+      "sql": "SELECT avg(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "double": 0
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.median-on-json-is-lexicographic",
+      "spec": "001 \u00a75.5",
+      "description": "A number-shaped string that is not the median of anything: the reason mixed scalars become VARCHAR.",
+      "setup": [
+        "CREATE TABLE t (v JSON)",
+        "INSERT INTO t SELECT CAST(range AS VARCHAR) FROM range(300)",
+        "INSERT INTO t VALUES ('\"oops\"')"
+      ],
+      "sql": "SELECT median(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            "232"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.sum-on-json-fails",
+      "spec": "001 \u00a75.5",
+      "setup": [
+        "CREATE TABLE t (v JSON)",
+        "INSERT INTO t VALUES ('1'), ('2')"
+      ],
+      "sql": "SELECT sum(v) FROM t",
+      "expect": {
+        "error": "any"
+      }
+    },
+    {
+      "id": "engine.avg-on-json-fails",
+      "spec": "001 \u00a75.5",
+      "setup": [
+        "CREATE TABLE t (v JSON)",
+        "INSERT INTO t VALUES ('1'), ('2')"
+      ],
+      "sql": "SELECT avg(v) FROM t",
+      "expect": {
+        "error": "any"
+      }
+    },
+    {
+      "id": "engine.median-on-varchar-is-lexicographic-too",
+      "spec": "001 \u00a75.5",
+      "note": "Measured on DuckDB 1.5.5 and 2.0.1: median() over a VARCHAR column succeeds lexicographically, as on JSON; sum() and avg() fail. Spec 001 \u00a75.5 rule 2 is right that JSON is worse for sum/avg, but the claim in python/src/sluice/infer.py and tests/test_infer.py that VARCHAR 'makes the same query fail' is false for median(). The safeguard for mixed columns is exact=false in the handle, not a failing query.",
+      "setup": [
+        "CREATE TABLE t (v VARCHAR)",
+        "INSERT INTO t SELECT CAST(range AS VARCHAR) FROM range(300)",
+        "INSERT INTO t VALUES ('oops')"
+      ],
+      "sql": "SELECT median(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            "233"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.sum-on-varchar-fails",
+      "spec": "001 \u00a75.5",
+      "setup": [
+        "CREATE TABLE t (v VARCHAR)",
+        "INSERT INTO t VALUES ('1'), ('2')"
+      ],
+      "sql": "SELECT sum(v) FROM t",
+      "expect": {
+        "error": "any"
+      }
+    },
+    {
+      "id": "engine.median-of-large-bigints-loses-units",
+      "spec": "001 \u00a75.5",
+      "description": "The exact median is 9223372036854775806.",
+      "setup": [
+        "CREATE TABLE t (v BIGINT)",
+        "INSERT INTO t VALUES (0), (9223372036854775806), (9223372036854775807)"
+      ],
+      "sql": "SELECT median(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "double": "9.223372036854776e18"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.max-of-mixed-double-rounds",
+      "spec": "001 \u00a75.5",
+      "description": "The true maximum is 9007199254740993.",
+      "setup": [
+        "CREATE TABLE t (v DOUBLE)",
+        "INSERT INTO t VALUES (CAST(9007199254740993 AS DOUBLE)), (0.5)"
+      ],
+      "sql": "SELECT max(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "double": "9007199254740992"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "id": "engine.integer-sum-is-exact-hugeint",
+      "spec": "001 \u00a75.6",
+      "setup": [
+        "CREATE TABLE t (v BIGINT)",
+        "INSERT INTO t VALUES (9007199254740992), (9007199254740992)"
+      ],
+      "sql": "SELECT sum(v) FROM t",
+      "expect": {
+        "rows": [
+          [
+            {
+              "int": "18014398509481984"
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

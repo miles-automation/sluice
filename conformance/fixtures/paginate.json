@@ -1,0 +1,733 @@
+{
+  "kind": "paginate",
+  "description": "The bounded page loop (spec 002 \u00a74) driven by a scripted downstream: `pages` maps each requested offset to the page the tool returns. Expected outcomes cover completion, every stop reason, resume offsets and the exact arguments sent per page. The max_seconds wall clock is timing-dependent and not covered here.",
+  "cases": [
+    {
+      "id": "paginate.forwards-filters-and-managed-arguments",
+      "spec": "002 PG-5, PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "arguments": {
+        "q": "x"
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "text": "{\"items\": [{\"i\": 10}], \"has_more\": true, \"next_offset\": 20}"
+        },
+        "20": {
+          "text": "{\"items\": [{\"i\": 20}], \"has_more\": false, \"next_offset\": 30}"
+        }
+      },
+      "expect": {
+        "status": "complete",
+        "reason": "complete",
+        "pages": 3,
+        "resume_offset": null,
+        "rows": [
+          {
+            "i": 0
+          },
+          {
+            "i": 10
+          },
+          {
+            "i": 20
+          }
+        ],
+        "calls": [
+          {
+            "q": "x",
+            "limit": 10,
+            "offset": 0
+          },
+          {
+            "q": "x",
+            "limit": 10,
+            "offset": 10
+          },
+          {
+            "q": "x",
+            "limit": 10,
+            "offset": 20
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.a-single-page-is-complete",
+      "spec": "002 \u00a74",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}, {\"i\": 1}, {\"i\": 2}], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "status": "complete",
+        "reason": "complete",
+        "pages": 1,
+        "rows": [
+          {
+            "i": 0
+          },
+          {
+            "i": 1
+          },
+          {
+            "i": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.resume-from-an-offset",
+      "spec": "002 PG-5",
+      "config": {
+        "page_size": 10
+      },
+      "arguments": {
+        "offset": 10
+      },
+      "pages": {
+        "10": {
+          "text": "{\"items\": [{\"i\": 10}], \"has_more\": true, \"next_offset\": 20}"
+        },
+        "20": {
+          "text": "{\"items\": [{\"i\": 20}], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "status": "complete",
+        "reason": "complete",
+        "pages": 2,
+        "calls": [
+          {
+            "limit": 10,
+            "offset": 10
+          },
+          {
+            "limit": 10,
+            "offset": 20
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.default-page-size-is-200",
+      "spec": "002 \u00a72",
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "status": "complete",
+        "reason": "complete",
+        "calls": [
+          {
+            "limit": 200,
+            "offset": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.max-pages-is-partial-with-a-resume-offset",
+      "spec": "002 PG-7, PG-9",
+      "config": {
+        "page_size": 10,
+        "max_pages": 2
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "text": "{\"items\": [{\"i\": 10}], \"has_more\": true, \"next_offset\": 20}"
+        },
+        "20": {
+          "text": "{\"items\": [{\"i\": 20}], \"has_more\": true, \"next_offset\": 30}"
+        },
+        "30": {
+          "text": "{\"items\": [{\"i\": 30}], \"has_more\": true, \"next_offset\": 40}"
+        },
+        "40": {
+          "text": "{\"items\": [{\"i\": 40}], \"has_more\": true, \"next_offset\": 50}"
+        },
+        "50": {
+          "text": "{\"items\": [{\"i\": 50}], \"has_more\": true, \"next_offset\": 60}"
+        },
+        "60": {
+          "text": "{\"items\": [{\"i\": 60}], \"has_more\": true, \"next_offset\": 70}"
+        },
+        "70": {
+          "text": "{\"items\": [{\"i\": 70}], \"has_more\": true, \"next_offset\": 80}"
+        },
+        "80": {
+          "text": "{\"items\": [{\"i\": 80}], \"has_more\": true, \"next_offset\": 90}"
+        },
+        "90": {
+          "text": "{\"items\": [{\"i\": 90}], \"has_more\": true, \"next_offset\": 100}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "max_pages",
+        "pages": 2,
+        "resume_offset": 20,
+        "rows": [
+          {
+            "i": 0
+          },
+          {
+            "i": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.max-bytes-never-keeps-the-crossing-page",
+      "spec": "002 PG-7",
+      "description": "Page bytes are the UTF-8 length of the page's text content (spec 001 \u00a75.1 candidate size).",
+      "config": {
+        "page_size": 10,
+        "max_bytes": 200
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}, {\"i\": 1}, {\"i\": 2}, {\"i\": 3}, {\"i\": 4}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "text": "{\"items\": [{\"i\": 10}, {\"i\": 11}, {\"i\": 12}, {\"i\": 13}, {\"i\": 14}], \"has_more\": true, \"next_offset\": 20}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "max_bytes",
+        "pages": 1,
+        "bytes": 98,
+        "resume_offset": 10,
+        "rows": [
+          {
+            "i": 0
+          },
+          {
+            "i": 1
+          },
+          {
+            "i": 2
+          },
+          {
+            "i": 3
+          },
+          {
+            "i": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.max-bytes-exact-fit-is-kept",
+      "spec": "002 PG-7",
+      "config": {
+        "page_size": 10,
+        "max_bytes": 254
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}, {\"i\": 1}, {\"i\": 2}, {\"i\": 3}, {\"i\": 4}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "text": "{\"items\": [{\"i\": 10}, {\"i\": 11}, {\"i\": 12}, {\"i\": 13}, {\"i\": 14}], \"has_more\": true, \"next_offset\": 20}"
+        },
+        "20": {
+          "text": "{\"items\": [], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "status": "complete",
+        "reason": "complete",
+        "pages": 3,
+        "bytes": 254
+      }
+    },
+    {
+      "id": "paginate.first-page-over-max-bytes-yields-nothing",
+      "spec": "002 PG-7, PG-12",
+      "description": "No page fetched; the caller turns this into an error (PG-12), never an empty table.",
+      "config": {
+        "page_size": 10,
+        "max_bytes": 97
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}, {\"i\": 1}, {\"i\": 2}, {\"i\": 3}, {\"i\": 4}], \"has_more\": true, \"next_offset\": 10}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "max_bytes",
+        "pages": 0,
+        "bytes": 0,
+        "resume_offset": 0,
+        "rows": []
+      }
+    },
+    {
+      "id": "paginate.page-without-has-more-is-malformed-not-final",
+      "spec": "002 PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "malformed_page",
+        "pages": 0,
+        "rows": [],
+        "resume_offset": 0
+      }
+    },
+    {
+      "id": "paginate.has-more-not-a-boolean-is-malformed",
+      "spec": "002 PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": \"yes\", \"next_offset\": 10}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "malformed_page",
+        "pages": 0
+      }
+    },
+    {
+      "id": "paginate.items-not-an-array-is-malformed",
+      "spec": "002 PG-6, PG-9",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "text": "{\"items\": \"not a list\", \"has_more\": true, \"next_offset\": 20}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "malformed_page",
+        "pages": 1,
+        "resume_offset": 10,
+        "rows": [
+          {
+            "i": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.page-not-an-object-is-malformed",
+      "spec": "002 PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "[{\"i\": 0}]"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "malformed_page",
+        "pages": 0
+      }
+    },
+    {
+      "id": "paginate.page-not-json-is-malformed",
+      "spec": "002 PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "rows follow"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "malformed_page",
+        "pages": 0
+      }
+    },
+    {
+      "id": "paginate.repeated-offset-is-not-advancing",
+      "spec": "002 PG-6, PG-9",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "text": "{\"items\": [{\"i\": 10}], \"has_more\": true, \"next_offset\": 0}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "offset_not_advancing",
+        "pages": 2,
+        "resume_offset": null
+      }
+    },
+    {
+      "id": "paginate.next-offset-behind-is-not-advancing",
+      "spec": "002 PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 0}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "offset_not_advancing",
+        "pages": 1,
+        "resume_offset": null,
+        "rows": [
+          {
+            "i": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.empty-page-with-has-more-is-not-advancing",
+      "spec": "002 PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [], \"has_more\": true, \"next_offset\": 10}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "offset_not_advancing",
+        "pages": 1,
+        "resume_offset": null
+      }
+    },
+    {
+      "id": "paginate.missing-next-offset",
+      "spec": "002 PG-6, PG-9",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "missing_next_offset",
+        "pages": 1,
+        "resume_offset": null,
+        "rows": [
+          {
+            "i": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.boolean-next-offset-is-missing",
+      "spec": "002 PG-6",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": true}"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "missing_next_offset",
+        "pages": 1,
+        "resume_offset": null
+      }
+    },
+    {
+      "id": "paginate.error-on-a-later-page-keeps-earlier-pages",
+      "spec": "002 PG-8, PG-9",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "text": "page unavailable",
+          "is_error": true
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "page_error",
+        "pages": 1,
+        "resume_offset": 10,
+        "rows": [
+          {
+            "i": 0
+          }
+        ],
+        "detail_contains": [
+          "page unavailable"
+        ],
+        "first_page_error": false
+      }
+    },
+    {
+      "id": "paginate.error-on-the-first-page-is-kept-for-the-caller",
+      "spec": "002 PG-8, PG-12",
+      "description": "The downstream error result is returned with its content intact (PG-12).",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "page unavailable",
+          "is_error": true
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "page_error",
+        "pages": 0,
+        "resume_offset": 0,
+        "rows": [],
+        "first_page_error": true
+      }
+    },
+    {
+      "id": "paginate.transport-failure-is-partial",
+      "spec": "002 PG-8",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "failure": "transport",
+          "message": "pipe closed"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "page_failed",
+        "pages": 1,
+        "resume_offset": 10,
+        "detail_contains": [
+          "pipe closed"
+        ]
+      }
+    },
+    {
+      "id": "paginate.protocol-failure-is-partial",
+      "spec": "002 PG-8",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "failure": "protocol",
+          "message": "method not found"
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "page_failed",
+        "pages": 0,
+        "resume_offset": 0
+      }
+    },
+    {
+      "id": "paginate.interactive-page-stops-the-fetch",
+      "spec": "002 PG-8, 001 \u00a711",
+      "description": "Sluice never answers an elicitation on the agent's behalf.",
+      "config": {
+        "page_size": 10
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [{\"i\": 0}], \"has_more\": true, \"next_offset\": 10}"
+        },
+        "10": {
+          "input_required": true
+        }
+      },
+      "expect": {
+        "status": "partial",
+        "reason": "interactive",
+        "pages": 1,
+        "resume_offset": 10,
+        "rows": [
+          {
+            "i": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.custom-key-names",
+      "spec": "002 \u00a72",
+      "config": {
+        "items": "rows",
+        "limit_arg": "per_page",
+        "offset_arg": "start",
+        "has_more": "more",
+        "next_offset": "next",
+        "page_size": 5
+      },
+      "pages": {
+        "0": {
+          "text": "{\"rows\": [{\"i\": 0}], \"more\": true, \"next\": 5}"
+        },
+        "5": {
+          "text": "{\"rows\": [{\"i\": 5}], \"more\": false}"
+        }
+      },
+      "expect": {
+        "status": "complete",
+        "reason": "complete",
+        "pages": 2,
+        "rows": [
+          {
+            "i": 0
+          },
+          {
+            "i": 5
+          }
+        ],
+        "calls": [
+          {
+            "per_page": 5,
+            "start": 0
+          },
+          {
+            "per_page": 5,
+            "start": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "paginate.agent-supplied-limit-is-rejected",
+      "spec": "002 PG-5",
+      "config": {
+        "page_size": 10
+      },
+      "arguments": {
+        "limit": 5
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "argument_error": true,
+        "mentions": [
+          "limit"
+        ]
+      }
+    },
+    {
+      "id": "paginate.negative-offset-is-rejected",
+      "spec": "002 PG-5",
+      "config": {
+        "page_size": 10
+      },
+      "arguments": {
+        "offset": -1
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "argument_error": true,
+        "mentions": [
+          "offset"
+        ]
+      }
+    },
+    {
+      "id": "paginate.boolean-offset-is-rejected",
+      "spec": "002 PG-5",
+      "config": {
+        "page_size": 10
+      },
+      "arguments": {
+        "offset": true
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "argument_error": true,
+        "mentions": [
+          "offset"
+        ]
+      }
+    },
+    {
+      "id": "paginate.string-offset-is-rejected",
+      "spec": "002 PG-5",
+      "config": {
+        "page_size": 10
+      },
+      "arguments": {
+        "offset": "0"
+      },
+      "pages": {
+        "0": {
+          "text": "{\"items\": [], \"has_more\": false, \"next_offset\": null}"
+        }
+      },
+      "expect": {
+        "argument_error": true,
+        "mentions": [
+          "offset"
+        ]
+      }
+    }
+  ]
+}

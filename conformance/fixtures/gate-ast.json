@@ -1,0 +1,489 @@
+{
+  "kind": "gate_ast",
+  "description": "The gate's walker over DuckDB's serialized AST fails closed (spec 001 \u00a76.1). Each case serializes `sql` with the engine under test, applies `mutations` to the parsed document, and hands the mutated document to the walker in place of the real one. The statement layer still sees the original SQL. See conformance/README.md for the mutation operations.",
+  "defaults": {
+    "setup": [
+      "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+      "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+      "CREATE TABLE other (a BIGINT)",
+      "INSERT INTO other VALUES (1), (3)",
+      "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+      "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+      "CREATE TABLE gone (a BIGINT)"
+    ],
+    "allowed": [
+      "mine",
+      "other"
+    ],
+    "evicted": [
+      "gone"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gate_ast.renamed-cte-body",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "rename_first",
+          "path": [
+            "statements",
+            0,
+            "node",
+            "cte_map",
+            "map",
+            0,
+            "value"
+          ],
+          "keys": [
+            "query_node",
+            "query"
+          ],
+          "to": "future_body"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      },
+      "description": "The DuckDB 2.0 class of change: a CTE body moved and the walker must refuse, not skip."
+    },
+    {
+      "id": "gate_ast.cte-map-without-a-list",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "set",
+          "path": [
+            "statements",
+            0,
+            "node",
+            "cte_map"
+          ],
+          "value": {
+            "future_map": []
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.cte-map-not-an-object",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "set",
+          "path": [
+            "statements",
+            0,
+            "node",
+            "cte_map"
+          ],
+          "value": [
+            "x"
+          ]
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.malformed-cte-entry",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "set",
+          "path": [
+            "statements",
+            0,
+            "node",
+            "cte_map",
+            "map",
+            0
+          ],
+          "value": {
+            "name": "x"
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.unknown-cte-body-type",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "update",
+          "within": [
+            "statements",
+            0,
+            "node",
+            "cte_map",
+            "map",
+            0,
+            "value"
+          ],
+          "find": "SELECT_NODE",
+          "set": {
+            "type": "FUTURE_NODE"
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.empty-statements",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "set",
+          "path": [
+            "statements"
+          ],
+          "value": []
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.no-statements-key",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "delete",
+          "path": [
+            "statements"
+          ]
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.unknown-statement-node",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "set",
+          "path": [
+            "statements",
+            0,
+            "node",
+            "type"
+          ],
+          "value": "FUTURE_NODE"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.unknown-from-table-type",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM mine",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "SELECT_NODE",
+          "set": {
+            "from_table": {
+              "type": "FUTURE"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.from-table-not-an-object",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM mine",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "SELECT_NODE",
+          "set": {
+            "from_table": 7
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.join-without-left",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM mine m JOIN other o USING (a)",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "JOIN",
+          "set": {
+            "left": null
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.base-table-without-name",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM mine",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "BASE_TABLE",
+          "set": {
+            "table_name": null
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.function-without-name",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT abs(1)",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "FUNCTION",
+          "set": {
+            "function_name": null
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.set-operation-without-members",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT 1 UNION ALL SELECT 2",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "SET_OPERATION_NODE",
+          "set": {
+            "children": [],
+            "left": null
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.recursive-cte-without-right",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n FROM r) SELECT * FROM r",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "RECURSIVE_CTE_NODE",
+          "set": {
+            "right": null
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.subquery-without-node",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM (SELECT 1) s",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "SUBQUERY",
+          "set": {
+            "subquery": {
+              "future": {}
+            }
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.expressions-beside-a-cte-body-are-walked",
+      "spec": "001 \u00a76.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "mutations": [
+        {
+          "op": "set_serialized",
+          "path": [
+            "statements",
+            0,
+            "node",
+            "cte_map",
+            "map",
+            0,
+            "value",
+            "key_targets"
+          ],
+          "sql": "SELECT * FROM sluice_calls",
+          "value": [
+            {
+              "subquery": {
+                "node": "$node"
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      },
+      "description": "Key targets and payload aggregates hold expressions, which can hold queries."
+    },
+    {
+      "id": "gate_ast.qualified-path-cannot-hide-behind-an-empty-schema",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM mine",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "BASE_TABLE",
+          "set": {
+            "qualified_name": {
+              "path": [
+                "system",
+                "mine"
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "schema_qualified"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.catalog-alone-is-still-qualified",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM mine",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "BASE_TABLE",
+          "set": {
+            "catalog_name": "system"
+          }
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "schema_qualified"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.unknown-scalar-field-is-tolerated",
+      "spec": "001 \u00a76.1",
+      "sql": "SELECT * FROM mine",
+      "mutations": [
+        {
+          "op": "update",
+          "find": "SELECT_NODE",
+          "set": {
+            "future_annotation": 1
+          }
+        }
+      ],
+      "expect": {
+        "decision": "allow"
+      },
+      "description": "Control: the walker refuses unknown shapes in positions that can hold a query or table, not every unknown key."
+    }
+  ]
+}

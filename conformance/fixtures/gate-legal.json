@@ -1,0 +1,222 @@
+{
+  "kind": "gate",
+  "description": "Legal read-only SQL over allowed tables must pass the gate and then execute. A gate that refuses legal SQL is its own defect.",
+  "defaults": {
+    "setup": [
+      "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+      "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+      "CREATE TABLE other (a BIGINT)",
+      "INSERT INTO other VALUES (1), (3)",
+      "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+      "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+      "CREATE TABLE gone (a BIGINT)"
+    ],
+    "allowed": [
+      "mine",
+      "other"
+    ],
+    "evicted": [
+      "gone"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gate.legal.query-1",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-2",
+      "spec": "001 §6.1",
+      "sql": "FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-3",
+      "spec": "001 §6.1",
+      "sql": "TABLE mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-4",
+      "spec": "001 §6.1",
+      "sql": "SELECT a, count(*) FROM mine GROUP BY a",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-5",
+      "spec": "001 §6.1",
+      "sql": "SELECT a FROM mine ORDER BY a DESC LIMIT 1",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-6",
+      "spec": "001 §6.1",
+      "sql": "SELECT m1.a FROM mine m1 JOIN mine m2 ON m1.a = m2.a",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-7",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine UNION ALL SELECT * FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-8",
+      "spec": "001 §6.1",
+      "sql": "SELECT a AS a, b AS a FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-9",
+      "spec": "001 §6.1",
+      "sql": "SELECT a FROM mine UNION ALL SELECT a FROM other",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-10",
+      "spec": "001 §6.1",
+      "sql": "SELECT a FROM mine UNION SELECT a FROM other EXCEPT SELECT 1",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-11",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine UNION ALL BY NAME SELECT * FROM other",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-12",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine m JOIN other o USING (a)",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-13",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine, LATERAL (SELECT mine.a + 1)",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-14",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (SELECT a FROM mine) s",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-15",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine WHERE a IN (SELECT a FROM other)",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-16",
+      "spec": "001 §6.1",
+      "sql": "SELECT (SELECT max(a) FROM other) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-17",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (VALUES (1, 2)) v(x, y)",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-18",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine QUALIFY row_number() OVER (ORDER BY a) = 1",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-19",
+      "spec": "001 §6.1",
+      "sql": "SELECT b, count(*) FROM mine GROUP BY b ORDER BY 2 DESC LIMIT 5",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-20",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine TABLESAMPLE 10%",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-21",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (PIVOT mine ON b IN ('x') USING count(*))",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.legal.query-22",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1 WHERE EXISTS (SELECT 1 FROM mine)",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    }
+  ]
+}

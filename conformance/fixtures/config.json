@@ -1,0 +1,588 @@
+{
+  "kind": "config",
+  "description": "Parsing and validating sluice.toml (spec 001 \u00a77, spec 002 \u00a72). The file format is shared by every version. Each case is a TOML document plus the environment ${VAR} expansion reads; errors must name the offending key where `mentions` says so.",
+  "cases": [
+    {
+      "id": "config.minimal-config-parses",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n",
+      "expect": {
+        "ok": true,
+        "server": {
+          "name": "gh",
+          "command": "npx",
+          "args": [],
+          "cwd": null
+        },
+        "limits": {
+          "max_payload_bytes": 1048576,
+          "max_concurrent_materializations": 2,
+          "preview_bytes": 2048,
+          "preview_rows": 3,
+          "max_columns": 64,
+          "query_timeout_seconds": 10.0,
+          "query_max_rows": 100,
+          "query_max_bytes": 65536,
+          "max_cell_bytes": 512,
+          "duckdb_max_memory": "1GB",
+          "max_session_bytes": 268435456,
+          "max_session_calls": 1000
+        }
+      },
+      "description": "The defaults of spec 001 \u00a77."
+    },
+    {
+      "id": "config.example-config-is-valid",
+      "spec": "001 \u00a77",
+      "toml_file": "sluice.example.toml",
+      "note": "Whatever ${VAR} references the example file holds must be listed in environ.",
+      "environ": {
+        "GITHUB_TOKEN": "x"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "id": "config.env-vars-expand",
+      "spec": "001 \u00a77",
+      "toml": "[servers.s]\ncommand = \"${BIN}/server\"\nargs = [\"--token\", \"${TOKEN}\"]\nenv = { TOKEN = \"${TOKEN}\" }\n",
+      "environ": {
+        "BIN": "/opt/bin",
+        "TOKEN": "t0k"
+      },
+      "expect": {
+        "ok": true,
+        "server": {
+          "command": "/opt/bin/server",
+          "args": [
+            "--token",
+            "t0k"
+          ],
+          "env": {
+            "TOKEN": "t0k"
+          }
+        }
+      }
+    },
+    {
+      "id": "config.missing-env-var-is-an-error",
+      "spec": "001 \u00a77",
+      "toml": "[servers.s]\ncommand = \"${NOPE}\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "NOPE"
+        ]
+      }
+    },
+    {
+      "id": "config.no-servers",
+      "spec": "001 FR-6",
+      "toml": "[limits]\nmax_columns = 3\n",
+      "expect": {
+        "error": true
+      }
+    },
+    {
+      "id": "config.two-servers-are-refused",
+      "spec": "001 FR-7",
+      "toml": "[servers.a]\ncommand = \"x\"\n[servers.b]\ncommand = \"y\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "exactly one"
+        ]
+      }
+    },
+    {
+      "id": "config.url-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.a]\nurl = \"https://example.com\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "url"
+        ]
+      }
+    },
+    {
+      "id": "config.command-and-url-are-exclusive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.a]\ncommand = \"x\"\nurl = \"https://example.com\"\n",
+      "expect": {
+        "error": true
+      }
+    },
+    {
+      "id": "config.command-must-be-a-string",
+      "spec": "001 \u00a77",
+      "toml": "[servers.a]\ncommand = 3\n",
+      "expect": {
+        "error": true
+      }
+    },
+    {
+      "id": "config.args-must-be-strings",
+      "spec": "001 \u00a77",
+      "toml": "[servers.a]\ncommand = \"x\"\nargs = [1]\n",
+      "expect": {
+        "error": true
+      }
+    },
+    {
+      "id": "config.unknown-limit-key",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nnope = 1\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "nope"
+        ]
+      }
+    },
+    {
+      "id": "config.max-payload-bytes-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_payload_bytes = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_payload_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.max-concurrent-materializations-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_concurrent_materializations = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_concurrent_materializations"
+        ]
+      }
+    },
+    {
+      "id": "config.max-columns-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_columns = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_columns"
+        ]
+      }
+    },
+    {
+      "id": "config.query-max-rows-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_max_rows = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_max_rows"
+        ]
+      }
+    },
+    {
+      "id": "config.query-max-bytes-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_max_bytes = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_max_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.max-cell-bytes-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_cell_bytes = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_cell_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.max-session-bytes-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_session_bytes = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_session_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.max-session-calls-must-be-positive",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_session_calls = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_session_calls"
+        ]
+      }
+    },
+    {
+      "id": "config.preview-bytes-must-not-be-negative",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\npreview_bytes = -1\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "preview_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.preview-bytes-may-be-zero",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\npreview_bytes = 0\n",
+      "expect": {
+        "ok": true,
+        "limits": {
+          "preview_bytes": 0
+        }
+      }
+    },
+    {
+      "id": "config.preview-rows-must-not-be-negative",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\npreview_rows = -1\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "preview_rows"
+        ]
+      }
+    },
+    {
+      "id": "config.preview-rows-may-be-zero",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\npreview_rows = 0\n",
+      "expect": {
+        "ok": true,
+        "limits": {
+          "preview_rows": 0
+        }
+      }
+    },
+    {
+      "id": "config.limit-as-string-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_payload_bytes = \"100\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_payload_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.limit-as-boolean-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_columns = true\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_columns"
+        ]
+      }
+    },
+    {
+      "id": "config.limit-as-float-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_max_rows = 1.5\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_max_rows"
+        ]
+      }
+    },
+    {
+      "id": "config.fractional-timeout-is-allowed",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_timeout_seconds = 0.5\n",
+      "expect": {
+        "ok": true,
+        "limits": {
+          "query_timeout_seconds": 0.5
+        }
+      }
+    },
+    {
+      "id": "config.timeout-0-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_timeout_seconds = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_timeout_seconds"
+        ]
+      }
+    },
+    {
+      "id": "config.timeout-minus-1-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_timeout_seconds = -1\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_timeout_seconds"
+        ]
+      }
+    },
+    {
+      "id": "config.timeout-inf-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_timeout_seconds = inf\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_timeout_seconds"
+        ]
+      }
+    },
+    {
+      "id": "config.timeout-nan-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_timeout_seconds = nan\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_timeout_seconds"
+        ]
+      }
+    },
+    {
+      "id": "config.timeout-as-string-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_timeout_seconds = \"10\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_timeout_seconds"
+        ]
+      }
+    },
+    {
+      "id": "config.empty-memory-limit-is-refused",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nduckdb_max_memory = \"  \"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "duckdb_max_memory"
+        ]
+      }
+    },
+    {
+      "id": "config.session-retention-must-cover-the-payload-limit",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_payload_bytes = 2048\nmax_session_bytes = 1024\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_session_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.session-retention-limit-parses",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_payload_bytes = 1024\nmax_session_bytes = 4096\n",
+      "expect": {
+        "ok": true,
+        "limits": {
+          "max_session_bytes": 4096
+        }
+      }
+    },
+    {
+      "id": "config.query-output-must-fit-the-notices",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_max_bytes = 383\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "query_max_bytes"
+        ]
+      },
+      "description": "The floor exists so truncation notices cannot themselves be truncated."
+    },
+    {
+      "id": "config.query-output-floor-is-allowed",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nquery_max_bytes = 384\n",
+      "note": "384 is Python's notice reserve; spec 001 \u00a76.3 requires a reserve but does not fix its size.",
+      "expect": {
+        "ok": true,
+        "limits": {
+          "query_max_bytes": 384
+        }
+      }
+    },
+    {
+      "id": "config.cell-must-fit-an-ellipsis",
+      "spec": "001 \u00a77",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_cell_bytes = 3\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_cell_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.bad-toml-is-an-error",
+      "spec": "001 \u00a77",
+      "toml": "[servers.a\ncommand = \"x\"\n",
+      "expect": {
+        "error": true
+      }
+    },
+    {
+      "id": "config.missing-file-is-an-error",
+      "spec": "001 \u00a77",
+      "missing_file": true,
+      "expect": {
+        "error": true
+      }
+    },
+    {
+      "id": "config.pagination-defaults",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\n",
+      "expect": {
+        "ok": true,
+        "pagination": {
+          "list": {
+            "items": "items",
+            "limit_arg": "limit",
+            "offset_arg": "offset",
+            "has_more": "has_more",
+            "next_offset": "next_offset",
+            "page_size": 200,
+            "max_pages": 100,
+            "max_bytes": 8388608,
+            "max_seconds": 120.0
+          }
+        }
+      }
+    },
+    {
+      "id": "config.pagination-rejects-unknown-key",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\nnope = 1\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "unknown"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-zero-page-size",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\npage_size = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "page_size"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-string-page-size",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\npage_size = \"10\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "page_size"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-boolean-max-pages",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\nmax_pages = true\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_pages"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-zero-max-seconds",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\nmax_seconds = 0\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_seconds"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-string-max-seconds",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\nmax_seconds = \"fast\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_seconds"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-empty-items-key",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\nitems = \"\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "items"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-same-limit-and-offset",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\nlimit_arg = \"x\"\noffset_arg = \"x\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "differ"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-rejects-max-bytes-over-session",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination.list]\nmax_bytes = 1000000000000\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_session_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-must-be-tables",
+      "spec": "002 \u00a72",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[pagination]\nlist = 3\n",
+      "expect": {
+        "error": true
+      }
+    }
+  ]
+}

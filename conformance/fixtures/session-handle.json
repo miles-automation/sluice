@@ -1,0 +1,2339 @@
+{
+  "kind": "session",
+  "description": "The handle and the envelope (spec 001 §3, §4, §5.1-§5.3, FR-8 to FR-14). Each case runs tool results through a fresh session and checks what the agent can observe: the handle's structured content, and SQL through the `query` tool.",
+  "cases": [
+    {
+      "id": "session.handle.rows-are-replaced-by-a-handle",
+      "spec": "001 FR-11, §4, §5.5",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 1, \"name\": \"row-0001\", \"score\": 5.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 2, \"name\": \"row-0002\", \"score\": 10.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 3, \"name\": \"row-0003\", \"score\": 15.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 4, \"name\": \"row-0004\", \"score\": 21.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 5, \"name\": \"row-0005\", \"score\": 26.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 6, \"name\": \"row-0006\", \"score\": 31.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 7, \"name\": \"row-0007\", \"score\": 37.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 8, \"name\": \"row-0008\", \"score\": 42.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 9, \"name\": \"row-0009\", \"score\": 47.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 10, \"name\": \"row-0010\", \"score\": 52.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 11, \"name\": \"row-0011\", \"score\": 58.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 12, \"name\": \"row-0012\", \"score\": 63.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 13, \"name\": \"row-0013\", \"score\": 68.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 14, \"name\": \"row-0014\", \"score\": 74.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 15, \"name\": \"row-0015\", \"score\": 79.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 16, \"name\": \"row-0016\", \"score\": 84.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 17, \"name\": \"row-0017\", \"score\": 89.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 18, \"name\": \"row-0018\", \"score\": 95.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 19, \"name\": \"row-0019\", \"score\": 100.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 20, \"name\": \"row-0020\", \"score\": 105.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 21, \"name\": \"row-0021\", \"score\": 111.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 22, \"name\": \"row-0022\", \"score\": 116.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 23, \"name\": \"row-0023\", \"score\": 121.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 24, \"name\": \"row-0024\", \"score\": 126.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 25, \"name\": \"row-0025\", \"score\": 132.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 26, \"name\": \"row-0026\", \"score\": 137.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 27, \"name\": \"row-0027\", \"score\": 142.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 28, \"name\": \"row-0028\", \"score\": 5.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 29, \"name\": \"row-0029\", \"score\": 10.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 30, \"name\": \"row-0030\", \"score\": 15.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 31, \"name\": \"row-0031\", \"score\": 21.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 32, \"name\": \"row-0032\", \"score\": 26.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 33, \"name\": \"row-0033\", \"score\": 31.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 34, \"name\": \"row-0034\", \"score\": 36.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 35, \"name\": \"row-0035\", \"score\": 42.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 36, \"name\": \"row-0036\", \"score\": 47.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 37, \"name\": \"row-0037\", \"score\": 52.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 38, \"name\": \"row-0038\", \"score\": 58.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 39, \"name\": \"row-0039\", \"score\": 63.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 40, \"name\": \"row-0040\", \"score\": 68.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 41, \"name\": \"row-0041\", \"score\": 73.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 42, \"name\": \"row-0042\", \"score\": 79.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 43, \"name\": \"row-0043\", \"score\": 84.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 44, \"name\": \"row-0044\", \"score\": 89.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 45, \"name\": \"row-0045\", \"score\": 95.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 46, \"name\": \"row-0046\", \"score\": 100.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 47, \"name\": \"row-0047\", \"score\": 105.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 48, \"name\": \"row-0048\", \"score\": 110.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 49, \"name\": \"row-0049\", \"score\": 116.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 50, \"name\": \"row-0050\", \"score\": 121.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 51, \"name\": \"row-0051\", \"score\": 126.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 52, \"name\": \"row-0052\", \"score\": 132.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 53, \"name\": \"row-0053\", \"score\": 137.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 54, \"name\": \"row-0054\", \"score\": 142.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 55, \"name\": \"row-0055\", \"score\": 5.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 56, \"name\": \"row-0056\", \"score\": 10.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 57, \"name\": \"row-0057\", \"score\": 15.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 58, \"name\": \"row-0058\", \"score\": 20.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 59, \"name\": \"row-0059\", \"score\": 26.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 60, \"name\": \"row-0060\", \"score\": 31.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 61, \"name\": \"row-0061\", \"score\": 36.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 62, \"name\": \"row-0062\", \"score\": 42.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 63, \"name\": \"row-0063\", \"score\": 47.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 64, \"name\": \"row-0064\", \"score\": 52.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 65, \"name\": \"row-0065\", \"score\": 57.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 66, \"name\": \"row-0066\", \"score\": 63.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 67, \"name\": \"row-0067\", \"score\": 68.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 68, \"name\": \"row-0068\", \"score\": 73.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 69, \"name\": \"row-0069\", \"score\": 79.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 70, \"name\": \"row-0070\", \"score\": 84.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 71, \"name\": \"row-0071\", \"score\": 89.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 72, \"name\": \"row-0072\", \"score\": 94.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 73, \"name\": \"row-0073\", \"score\": 100.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 74, \"name\": \"row-0074\", \"score\": 105.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 75, \"name\": \"row-0075\", \"score\": 110.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 76, \"name\": \"row-0076\", \"score\": 116.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 77, \"name\": \"row-0077\", \"score\": 121.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 78, \"name\": \"row-0078\", \"score\": 126.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 79, \"name\": \"row-0079\", \"score\": 131.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 80, \"name\": \"row-0080\", \"score\": 137.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 81, \"name\": \"row-0081\", \"score\": 142.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 82, \"name\": \"row-0082\", \"score\": 4.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 83, \"name\": \"row-0083\", \"score\": 10.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 84, \"name\": \"row-0084\", \"score\": 15.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 85, \"name\": \"row-0085\", \"score\": 20.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 86, \"name\": \"row-0086\", \"score\": 26.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 87, \"name\": \"row-0087\", \"score\": 31.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 88, \"name\": \"row-0088\", \"score\": 36.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 89, \"name\": \"row-0089\", \"score\": 41.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 90, \"name\": \"row-0090\", \"score\": 47.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 91, \"name\": \"row-0091\", \"score\": 52.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 92, \"name\": \"row-0092\", \"score\": 57.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 93, \"name\": \"row-0093\", \"score\": 63.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 94, \"name\": \"row-0094\", \"score\": 68.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 95, \"name\": \"row-0095\", \"score\": 73.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 96, \"name\": \"row-0096\", \"score\": 78.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 97, \"name\": \"row-0097\", \"score\": 84.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 98, \"name\": \"row-0098\", \"score\": 89.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 99, \"name\": \"row-0099\", \"score\": 94.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 100, \"name\": \"row-0100\", \"score\": 100.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 101, \"name\": \"row-0101\", \"score\": 105.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 102, \"name\": \"row-0102\", \"score\": 110.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 103, \"name\": \"row-0103\", \"score\": 115.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 104, \"name\": \"row-0104\", \"score\": 121.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 105, \"name\": \"row-0105\", \"score\": 126.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 106, \"name\": \"row-0106\", \"score\": 131.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 107, \"name\": \"row-0107\", \"score\": 137.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 108, \"name\": \"row-0108\", \"score\": 142.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 109, \"name\": \"row-0109\", \"score\": 4.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 110, \"name\": \"row-0110\", \"score\": 10.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 111, \"name\": \"row-0111\", \"score\": 15.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 112, \"name\": \"row-0112\", \"score\": 20.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 113, \"name\": \"row-0113\", \"score\": 25.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 114, \"name\": \"row-0114\", \"score\": 31.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 115, \"name\": \"row-0115\", \"score\": 36.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 116, \"name\": \"row-0116\", \"score\": 41.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 117, \"name\": \"row-0117\", \"score\": 47.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 118, \"name\": \"row-0118\", \"score\": 52.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 119, \"name\": \"row-0119\", \"score\": 57.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 120, \"name\": \"row-0120\", \"score\": 62.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 121, \"name\": \"row-0121\", \"score\": 68.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 122, \"name\": \"row-0122\", \"score\": 73.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 123, \"name\": \"row-0123\", \"score\": 78.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 124, \"name\": \"row-0124\", \"score\": 84.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 125, \"name\": \"row-0125\", \"score\": 89.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 126, \"name\": \"row-0126\", \"score\": 94.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 127, \"name\": \"row-0127\", \"score\": 99.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 128, \"name\": \"row-0128\", \"score\": 105.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 129, \"name\": \"row-0129\", \"score\": 110.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 130, \"name\": \"row-0130\", \"score\": 115.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 131, \"name\": \"row-0131\", \"score\": 121.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 132, \"name\": \"row-0132\", \"score\": 126.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 133, \"name\": \"row-0133\", \"score\": 131.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 134, \"name\": \"row-0134\", \"score\": 136.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 135, \"name\": \"row-0135\", \"score\": 142.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 136, \"name\": \"row-0136\", \"score\": 4.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 137, \"name\": \"row-0137\", \"score\": 9.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 138, \"name\": \"row-0138\", \"score\": 15.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 139, \"name\": \"row-0139\", \"score\": 20.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 140, \"name\": \"row-0140\", \"score\": 25.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 141, \"name\": \"row-0141\", \"score\": 31.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 142, \"name\": \"row-0142\", \"score\": 36.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 143, \"name\": \"row-0143\", \"score\": 41.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 144, \"name\": \"row-0144\", \"score\": 46.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 145, \"name\": \"row-0145\", \"score\": 52.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 146, \"name\": \"row-0146\", \"score\": 57.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 147, \"name\": \"row-0147\", \"score\": 62.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 148, \"name\": \"row-0148\", \"score\": 68.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 149, \"name\": \"row-0149\", \"score\": 73.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 150, \"name\": \"row-0150\", \"score\": 78.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 151, \"name\": \"row-0151\", \"score\": 83.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 152, \"name\": \"row-0152\", \"score\": 89.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 153, \"name\": \"row-0153\", \"score\": 94.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 154, \"name\": \"row-0154\", \"score\": 99.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 155, \"name\": \"row-0155\", \"score\": 105.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 156, \"name\": \"row-0156\", \"score\": 110.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 157, \"name\": \"row-0157\", \"score\": 115.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 158, \"name\": \"row-0158\", \"score\": 120.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 159, \"name\": \"row-0159\", \"score\": 126.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 160, \"name\": \"row-0160\", \"score\": 131.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 161, \"name\": \"row-0161\", \"score\": 136.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 162, \"name\": \"row-0162\", \"score\": 142.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 163, \"name\": \"row-0163\", \"score\": 4.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 164, \"name\": \"row-0164\", \"score\": 9.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 165, \"name\": \"row-0165\", \"score\": 15.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 166, \"name\": \"row-0166\", \"score\": 20.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 167, \"name\": \"row-0167\", \"score\": 25.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 168, \"name\": \"row-0168\", \"score\": 30.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 169, \"name\": \"row-0169\", \"score\": 36.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 170, \"name\": \"row-0170\", \"score\": 41.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 171, \"name\": \"row-0171\", \"score\": 46.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 172, \"name\": \"row-0172\", \"score\": 52.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 173, \"name\": \"row-0173\", \"score\": 57.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 174, \"name\": \"row-0174\", \"score\": 62.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 175, \"name\": \"row-0175\", \"score\": 67.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 176, \"name\": \"row-0176\", \"score\": 73.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 177, \"name\": \"row-0177\", \"score\": 78.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 178, \"name\": \"row-0178\", \"score\": 83.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 179, \"name\": \"row-0179\", \"score\": 89.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 180, \"name\": \"row-0180\", \"score\": 94.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 181, \"name\": \"row-0181\", \"score\": 99.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 182, \"name\": \"row-0182\", \"score\": 104.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 183, \"name\": \"row-0183\", \"score\": 110.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 184, \"name\": \"row-0184\", \"score\": 115.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 185, \"name\": \"row-0185\", \"score\": 120.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 186, \"name\": \"row-0186\", \"score\": 126.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 187, \"name\": \"row-0187\", \"score\": 131.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 188, \"name\": \"row-0188\", \"score\": 136.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 189, \"name\": \"row-0189\", \"score\": 141.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 190, \"name\": \"row-0190\", \"score\": 4.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 191, \"name\": \"row-0191\", \"score\": 9.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 192, \"name\": \"row-0192\", \"score\": 14.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 193, \"name\": \"row-0193\", \"score\": 20.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 194, \"name\": \"row-0194\", \"score\": 25.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 195, \"name\": \"row-0195\", \"score\": 30.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 196, \"name\": \"row-0196\", \"score\": 36.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 197, \"name\": \"row-0197\", \"score\": 41.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 198, \"name\": \"row-0198\", \"score\": 46.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 199, \"name\": \"row-0199\", \"score\": 51.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 200, \"name\": \"row-0200\", \"score\": 57.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 201, \"name\": \"row-0201\", \"score\": 62.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 202, \"name\": \"row-0202\", \"score\": 67.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 203, \"name\": \"row-0203\", \"score\": 73.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 204, \"name\": \"row-0204\", \"score\": 78.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 205, \"name\": \"row-0205\", \"score\": 83.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 206, \"name\": \"row-0206\", \"score\": 88.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 207, \"name\": \"row-0207\", \"score\": 94.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 208, \"name\": \"row-0208\", \"score\": 99.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 209, \"name\": \"row-0209\", \"score\": 104.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 210, \"name\": \"row-0210\", \"score\": 110.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 211, \"name\": \"row-0211\", \"score\": 115.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 212, \"name\": \"row-0212\", \"score\": 120.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 213, \"name\": \"row-0213\", \"score\": 125.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 214, \"name\": \"row-0214\", \"score\": 131.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 215, \"name\": \"row-0215\", \"score\": 136.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 216, \"name\": \"row-0216\", \"score\": 141.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 217, \"name\": \"row-0217\", \"score\": 4.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 218, \"name\": \"row-0218\", \"score\": 9.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 219, \"name\": \"row-0219\", \"score\": 14.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 220, \"name\": \"row-0220\", \"score\": 20.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 221, \"name\": \"row-0221\", \"score\": 25.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 222, \"name\": \"row-0222\", \"score\": 30.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 223, \"name\": \"row-0223\", \"score\": 35.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 224, \"name\": \"row-0224\", \"score\": 41.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 225, \"name\": \"row-0225\", \"score\": 46.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 226, \"name\": \"row-0226\", \"score\": 51.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 227, \"name\": \"row-0227\", \"score\": 57.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 228, \"name\": \"row-0228\", \"score\": 62.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 229, \"name\": \"row-0229\", \"score\": 67.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 230, \"name\": \"row-0230\", \"score\": 72.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 231, \"name\": \"row-0231\", \"score\": 78.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 232, \"name\": \"row-0232\", \"score\": 83.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 233, \"name\": \"row-0233\", \"score\": 88.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 234, \"name\": \"row-0234\", \"score\": 94.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 235, \"name\": \"row-0235\", \"score\": 99.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 236, \"name\": \"row-0236\", \"score\": 104.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 237, \"name\": \"row-0237\", \"score\": 109.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 238, \"name\": \"row-0238\", \"score\": 115.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 239, \"name\": \"row-0239\", \"score\": 120.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 240, \"name\": \"row-0240\", \"score\": 125.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 241, \"name\": \"row-0241\", \"score\": 131.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 242, \"name\": \"row-0242\", \"score\": 136.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 243, \"name\": \"row-0243\", \"score\": 141.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 244, \"name\": \"row-0244\", \"score\": 4.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 245, \"name\": \"row-0245\", \"score\": 9.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 246, \"name\": \"row-0246\", \"score\": 14.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 247, \"name\": \"row-0247\", \"score\": 19.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 248, \"name\": \"row-0248\", \"score\": 25.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 249, \"name\": \"row-0249\", \"score\": 30.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 250, \"name\": \"row-0250\", \"score\": 35.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 251, \"name\": \"row-0251\", \"score\": 41.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 252, \"name\": \"row-0252\", \"score\": 46.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 253, \"name\": \"row-0253\", \"score\": 51.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 254, \"name\": \"row-0254\", \"score\": 56.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 255, \"name\": \"row-0255\", \"score\": 62.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 256, \"name\": \"row-0256\", \"score\": 67.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 257, \"name\": \"row-0257\", \"score\": 72.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 258, \"name\": \"row-0258\", \"score\": 78.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 259, \"name\": \"row-0259\", \"score\": 83.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 260, \"name\": \"row-0260\", \"score\": 88.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 261, \"name\": \"row-0261\", \"score\": 93.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 262, \"name\": \"row-0262\", \"score\": 99.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 263, \"name\": \"row-0263\", \"score\": 104.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 264, \"name\": \"row-0264\", \"score\": 109.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 265, \"name\": \"row-0265\", \"score\": 115.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 266, \"name\": \"row-0266\", \"score\": 120.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 267, \"name\": \"row-0267\", \"score\": 125.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 268, \"name\": \"row-0268\", \"score\": 130.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 269, \"name\": \"row-0269\", \"score\": 136.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 270, \"name\": \"row-0270\", \"score\": 141.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 271, \"name\": \"row-0271\", \"score\": 3.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 272, \"name\": \"row-0272\", \"score\": 9.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 273, \"name\": \"row-0273\", \"score\": 14.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 274, \"name\": \"row-0274\", \"score\": 19.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 275, \"name\": \"row-0275\", \"score\": 25.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 276, \"name\": \"row-0276\", \"score\": 30.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 277, \"name\": \"row-0277\", \"score\": 35.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 278, \"name\": \"row-0278\", \"score\": 40.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 279, \"name\": \"row-0279\", \"score\": 46.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 280, \"name\": \"row-0280\", \"score\": 51.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 281, \"name\": \"row-0281\", \"score\": 56.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 282, \"name\": \"row-0282\", \"score\": 62.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 283, \"name\": \"row-0283\", \"score\": 67.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 284, \"name\": \"row-0284\", \"score\": 72.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 285, \"name\": \"row-0285\", \"score\": 77.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 286, \"name\": \"row-0286\", \"score\": 83.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 287, \"name\": \"row-0287\", \"score\": 88.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 288, \"name\": \"row-0288\", \"score\": 93.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 289, \"name\": \"row-0289\", \"score\": 99.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 290, \"name\": \"row-0290\", \"score\": 104.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 291, \"name\": \"row-0291\", \"score\": 109.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 292, \"name\": \"row-0292\", \"score\": 114.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 293, \"name\": \"row-0293\", \"score\": 120.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 294, \"name\": \"row-0294\", \"score\": 125.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 295, \"name\": \"row-0295\", \"score\": 130.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 296, \"name\": \"row-0296\", \"score\": 136.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 297, \"name\": \"row-0297\", \"score\": 141.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 298, \"name\": \"row-0298\", \"score\": 3.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 299, \"name\": \"row-0299\", \"score\": 9.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 300, \"name\": \"row-0300\", \"score\": 14.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 301, \"name\": \"row-0301\", \"score\": 19.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 302, \"name\": \"row-0302\", \"score\": 24.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 303, \"name\": \"row-0303\", \"score\": 30.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 304, \"name\": \"row-0304\", \"score\": 35.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 305, \"name\": \"row-0305\", \"score\": 40.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 306, \"name\": \"row-0306\", \"score\": 46.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 307, \"name\": \"row-0307\", \"score\": 51.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 308, \"name\": \"row-0308\", \"score\": 56.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 309, \"name\": \"row-0309\", \"score\": 61.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 310, \"name\": \"row-0310\", \"score\": 67.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 311, \"name\": \"row-0311\", \"score\": 72.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 312, \"name\": \"row-0312\", \"score\": 77.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 313, \"name\": \"row-0313\", \"score\": 83.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 314, \"name\": \"row-0314\", \"score\": 88.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 315, \"name\": \"row-0315\", \"score\": 93.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 316, \"name\": \"row-0316\", \"score\": 98.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 317, \"name\": \"row-0317\", \"score\": 104.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 318, \"name\": \"row-0318\", \"score\": 109.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 319, \"name\": \"row-0319\", \"score\": 114.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 320, \"name\": \"row-0320\", \"score\": 120.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 321, \"name\": \"row-0321\", \"score\": 125.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 322, \"name\": \"row-0322\", \"score\": 130.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 323, \"name\": \"row-0323\", \"score\": 135.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 324, \"name\": \"row-0324\", \"score\": 141.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 325, \"name\": \"row-0325\", \"score\": 3.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 326, \"name\": \"row-0326\", \"score\": 8.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 327, \"name\": \"row-0327\", \"score\": 14.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 328, \"name\": \"row-0328\", \"score\": 19.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 329, \"name\": \"row-0329\", \"score\": 24.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 330, \"name\": \"row-0330\", \"score\": 30.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 331, \"name\": \"row-0331\", \"score\": 35.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 332, \"name\": \"row-0332\", \"score\": 40.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 333, \"name\": \"row-0333\", \"score\": 45.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 334, \"name\": \"row-0334\", \"score\": 51.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 335, \"name\": \"row-0335\", \"score\": 56.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 336, \"name\": \"row-0336\", \"score\": 61.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 337, \"name\": \"row-0337\", \"score\": 67.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 338, \"name\": \"row-0338\", \"score\": 72.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 339, \"name\": \"row-0339\", \"score\": 77.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 340, \"name\": \"row-0340\", \"score\": 82.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 341, \"name\": \"row-0341\", \"score\": 88.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 342, \"name\": \"row-0342\", \"score\": 93.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 343, \"name\": \"row-0343\", \"score\": 98.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 344, \"name\": \"row-0344\", \"score\": 104.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 345, \"name\": \"row-0345\", \"score\": 109.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 346, \"name\": \"row-0346\", \"score\": 114.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 347, \"name\": \"row-0347\", \"score\": 119.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 348, \"name\": \"row-0348\", \"score\": 125.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 349, \"name\": \"row-0349\", \"score\": 130.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 350, \"name\": \"row-0350\", \"score\": 135.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 351, \"name\": \"row-0351\", \"score\": 141.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 352, \"name\": \"row-0352\", \"score\": 3.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 353, \"name\": \"row-0353\", \"score\": 8.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 354, \"name\": \"row-0354\", \"score\": 14.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 355, \"name\": \"row-0355\", \"score\": 19.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 356, \"name\": \"row-0356\", \"score\": 24.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 357, \"name\": \"row-0357\", \"score\": 29.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 358, \"name\": \"row-0358\", \"score\": 35.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 359, \"name\": \"row-0359\", \"score\": 40.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 360, \"name\": \"row-0360\", \"score\": 45.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 361, \"name\": \"row-0361\", \"score\": 51.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 362, \"name\": \"row-0362\", \"score\": 56.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 363, \"name\": \"row-0363\", \"score\": 61.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 364, \"name\": \"row-0364\", \"score\": 66.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 365, \"name\": \"row-0365\", \"score\": 72.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 366, \"name\": \"row-0366\", \"score\": 77.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 367, \"name\": \"row-0367\", \"score\": 82.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 368, \"name\": \"row-0368\", \"score\": 88.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 369, \"name\": \"row-0369\", \"score\": 93.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 370, \"name\": \"row-0370\", \"score\": 98.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 371, \"name\": \"row-0371\", \"score\": 103.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 372, \"name\": \"row-0372\", \"score\": 109.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 373, \"name\": \"row-0373\", \"score\": 114.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 374, \"name\": \"row-0374\", \"score\": 119.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 375, \"name\": \"row-0375\", \"score\": 125.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 376, \"name\": \"row-0376\", \"score\": 130.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 377, \"name\": \"row-0377\", \"score\": 135.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 378, \"name\": \"row-0378\", \"score\": 140.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 379, \"name\": \"row-0379\", \"score\": 3.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 380, \"name\": \"row-0380\", \"score\": 8.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 381, \"name\": \"row-0381\", \"score\": 13.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 382, \"name\": \"row-0382\", \"score\": 19.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 383, \"name\": \"row-0383\", \"score\": 24.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 384, \"name\": \"row-0384\", \"score\": 29.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 385, \"name\": \"row-0385\", \"score\": 35.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 386, \"name\": \"row-0386\", \"score\": 40.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 387, \"name\": \"row-0387\", \"score\": 45.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 388, \"name\": \"row-0388\", \"score\": 50.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 389, \"name\": \"row-0389\", \"score\": 56.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 390, \"name\": \"row-0390\", \"score\": 61.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 391, \"name\": \"row-0391\", \"score\": 66.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 392, \"name\": \"row-0392\", \"score\": 72.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 393, \"name\": \"row-0393\", \"score\": 77.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 394, \"name\": \"row-0394\", \"score\": 82.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 395, \"name\": \"row-0395\", \"score\": 87.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 396, \"name\": \"row-0396\", \"score\": 93.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 397, \"name\": \"row-0397\", \"score\": 98.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 398, \"name\": \"row-0398\", \"score\": 103.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 399, \"name\": \"row-0399\", \"score\": 109.0, \"tag\": \"alpha\", \"active\": false}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "text",
+            "channel_conflict": false,
+            "flat_reason": null,
+            "preview_complete": false,
+            "preview_rows": 3,
+            "preview_total_rows": 400,
+            "text_max_bytes": 4000,
+            "preview_excludes": [
+              "row-0399"
+            ],
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 400,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "name",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "score",
+                    "type": "DOUBLE",
+                    "exact": false
+                  },
+                  {
+                    "name": "tag",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "active",
+                    "type": "BOOLEAN",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT count(*) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                400
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.small-payload-is-previewed-in-full",
+      "spec": "001 FR-14",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 1, \"name\": \"row-0001\", \"score\": 5.2857, \"tag\": \"beta\", \"active\": false}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "preview_complete": true,
+            "preview_contains": [
+              "row-0001"
+            ],
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 2,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "name",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "score",
+                    "type": "DOUBLE",
+                    "exact": false
+                  },
+                  {
+                    "name": "tag",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "active",
+                    "type": "BOOLEAN",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.structured-channel-wins-over-prose",
+      "spec": "001 §5.1, FR-9, §6.4",
+      "description": "The downstream structuredContent survives on the envelope even though the outgoing one is replaced by the handle.",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Found 3 records for your query."
+              }
+            ],
+            "structured_content_json": "{\"items\": [{\"id\": 0, \"score\": 0}, {\"id\": 1, \"score\": 2}, {\"id\": 2, \"score\": 4}]}"
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "structured",
+            "channel_conflict": false,
+            "preview_contains": [
+              "items"
+            ],
+            "preview_excludes": [
+              "Found 3 records"
+            ],
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 3,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "score",
+                    "type": "BIGINT",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT result_text, CAST(json_extract(result_structured, '$.items[2].score') AS BIGINT) FROM \"{{c1.envelope}}\" WHERE call_id = '{{c1.call_id}}'"
+          },
+          "expect": {
+            "rows": [
+              [
+                "Found 3 records for your query.",
+                4
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.channel-disagreement-is-surfaced",
+      "spec": "001 §5.1 step 4",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"scores\": [100, 200]}"
+              }
+            ],
+            "structured_content_json": "{\"scores\": [1, 2]}"
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "structured",
+            "channel_conflict": true,
+            "tables": [
+              {
+                "source_path": "$",
+                "row_count": 1,
+                "columns": [
+                  {
+                    "name": "scores",
+                    "type": "JSON",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT channel_conflict, source_channel FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                {
+                  "bool": true
+                },
+                "structured"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.agreeing-channels-are-not-a-conflict",
+      "spec": "001 §5.1 step 4",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1}]}"
+              }
+            ],
+            "structured_content_json": "{\"items\": [{\"id\": 1}]}"
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "structured",
+            "channel_conflict": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.non-json-text-is-envelope-only",
+      "spec": "001 §5.1 step 3d",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "no json here, only prose"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "none",
+            "flat_reason": "not_json",
+            "preview_contains": [
+              "no json here"
+            ],
+            "tables": []
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT result_text FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                "no json here, only prose"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.two-json-blocks-do-not-concatenate",
+      "spec": "001 §5.1 step 3",
+      "description": "Two blocks that each parse are neither 'exactly one' (3b) nor a parseable concatenation (3c).",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"a\": 1}"
+              },
+              {
+                "type": "text",
+                "text": "{\"b\": 2}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "none",
+            "flat_reason": "not_json",
+            "tables": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.one-json-block-beside-prose",
+      "spec": "001 §5.1 step 3b",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Here you go:"
+              },
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1}, {\"id\": 2}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "text",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 2,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.split-json-concatenates",
+      "spec": "001 §5.1 step 3c",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\""
+              },
+              {
+                "type": "text",
+                "text": ": 1}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "text",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 1,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.every-candidate-array-becomes-a-table",
+      "spec": "001 §5.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"rows\": [{\"id\": 0, \"amount\": 0}, {\"id\": 1, \"amount\": 10}, {\"id\": 2, \"amount\": 20}, {\"id\": 3, \"amount\": 30}, {\"id\": 4, \"amount\": 40}, {\"id\": 5, \"amount\": 50}, {\"id\": 6, \"amount\": 60}, {\"id\": 7, \"amount\": 70}, {\"id\": 8, \"amount\": 80}, {\"id\": 9, \"amount\": 90}, {\"id\": 10, \"amount\": 100}, {\"id\": 11, \"amount\": 110}, {\"id\": 12, \"amount\": 120}, {\"id\": 13, \"amount\": 130}, {\"id\": 14, \"amount\": 140}, {\"id\": 15, \"amount\": 150}, {\"id\": 16, \"amount\": 160}, {\"id\": 17, \"amount\": 170}, {\"id\": 18, \"amount\": 180}, {\"id\": 19, \"amount\": 190}], \"facets\": [{\"bucket\": \"b0\", \"count\": 0}, {\"bucket\": \"b1\", \"count\": 1}, {\"bucket\": \"b2\", \"count\": 2}, {\"bucket\": \"b3\", \"count\": 3}, {\"bucket\": \"b4\", \"count\": 4}, {\"bucket\": \"b5\", \"count\": 5}, {\"bucket\": \"b6\", \"count\": 6}, {\"bucket\": \"b7\", \"count\": 7}, {\"bucket\": \"b8\", \"count\": 8}, {\"bucket\": \"b9\", \"count\": 9}, {\"bucket\": \"b10\", \"count\": 10}, {\"bucket\": \"b11\", \"count\": 11}, {\"bucket\": \"b12\", \"count\": 12}, {\"bucket\": \"b13\", \"count\": 13}, {\"bucket\": \"b14\", \"count\": 14}, {\"bucket\": \"b15\", \"count\": 15}, {\"bucket\": \"b16\", \"count\": 16}, {\"bucket\": \"b17\", \"count\": 17}, {\"bucket\": \"b18\", \"count\": 18}, {\"bucket\": \"b19\", \"count\": 19}, {\"bucket\": \"b20\", \"count\": 20}, {\"bucket\": \"b21\", \"count\": 21}, {\"bucket\": \"b22\", \"count\": 22}, {\"bucket\": \"b23\", \"count\": 23}, {\"bucket\": \"b24\", \"count\": 24}, {\"bucket\": \"b25\", \"count\": 25}, {\"bucket\": \"b26\", \"count\": 26}, {\"bucket\": \"b27\", \"count\": 27}, {\"bucket\": \"b28\", \"count\": 28}, {\"bucket\": \"b29\", \"count\": 29}, {\"bucket\": \"b30\", \"count\": 30}, {\"bucket\": \"b31\", \"count\": 31}, {\"bucket\": \"b32\", \"count\": 32}, {\"bucket\": \"b33\", \"count\": 33}, {\"bucket\": \"b34\", \"count\": 34}, {\"bucket\": \"b35\", \"count\": 35}, {\"bucket\": \"b36\", \"count\": 36}, {\"bucket\": \"b37\", \"count\": 37}, {\"bucket\": \"b38\", \"count\": 38}, {\"bucket\": \"b39\", \"count\": 39}, {\"bucket\": \"b40\", \"count\": 40}, {\"bucket\": \"b41\", \"count\": 41}, {\"bucket\": \"b42\", \"count\": 42}, {\"bucket\": \"b43\", \"count\": 43}, {\"bucket\": \"b44\", \"count\": 44}, {\"bucket\": \"b45\", \"count\": 45}, {\"bucket\": \"b46\", \"count\": 46}, {\"bucket\": \"b47\", \"count\": 47}, {\"bucket\": \"b48\", \"count\": 48}, {\"bucket\": \"b49\", \"count\": 49}, {\"bucket\": \"b50\", \"count\": 50}, {\"bucket\": \"b51\", \"count\": 51}, {\"bucket\": \"b52\", \"count\": 52}, {\"bucket\": \"b53\", \"count\": 53}, {\"bucket\": \"b54\", \"count\": 54}, {\"bucket\": \"b55\", \"count\": 55}, {\"bucket\": \"b56\", \"count\": 56}, {\"bucket\": \"b57\", \"count\": 57}, {\"bucket\": \"b58\", \"count\": 58}, {\"bucket\": \"b59\", \"count\": 59}, {\"bucket\": \"b60\", \"count\": 60}, {\"bucket\": \"b61\", \"count\": 61}, {\"bucket\": \"b62\", \"count\": 62}, {\"bucket\": \"b63\", \"count\": 63}, {\"bucket\": \"b64\", \"count\": 64}, {\"bucket\": \"b65\", \"count\": 65}, {\"bucket\": \"b66\", \"count\": 66}, {\"bucket\": \"b67\", \"count\": 67}, {\"bucket\": \"b68\", \"count\": 68}, {\"bucket\": \"b69\", \"count\": 69}, {\"bucket\": \"b70\", \"count\": 70}, {\"bucket\": \"b71\", \"count\": 71}, {\"bucket\": \"b72\", \"count\": 72}, {\"bucket\": \"b73\", \"count\": 73}, {\"bucket\": \"b74\", \"count\": 74}, {\"bucket\": \"b75\", \"count\": 75}, {\"bucket\": \"b76\", \"count\": 76}, {\"bucket\": \"b77\", \"count\": 77}, {\"bucket\": \"b78\", \"count\": 78}, {\"bucket\": \"b79\", \"count\": 79}, {\"bucket\": \"b80\", \"count\": 80}, {\"bucket\": \"b81\", \"count\": 81}, {\"bucket\": \"b82\", \"count\": 82}, {\"bucket\": \"b83\", \"count\": 83}, {\"bucket\": \"b84\", \"count\": 84}, {\"bucket\": \"b85\", \"count\": 85}, {\"bucket\": \"b86\", \"count\": 86}, {\"bucket\": \"b87\", \"count\": 87}, {\"bucket\": \"b88\", \"count\": 88}, {\"bucket\": \"b89\", \"count\": 89}, {\"bucket\": \"b90\", \"count\": 90}, {\"bucket\": \"b91\", \"count\": 91}, {\"bucket\": \"b92\", \"count\": 92}, {\"bucket\": \"b93\", \"count\": 93}, {\"bucket\": \"b94\", \"count\": 94}, {\"bucket\": \"b95\", \"count\": 95}, {\"bucket\": \"b96\", \"count\": 96}, {\"bucket\": \"b97\", \"count\": 97}, {\"bucket\": \"b98\", \"count\": 98}, {\"bucket\": \"b99\", \"count\": 99}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.rows",
+                "row_count": 20,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "amount",
+                    "type": "BIGINT",
+                    "exact": true
+                  }
+                ]
+              },
+              {
+                "source_path": "$.facets",
+                "row_count": 100,
+                "columns": [
+                  {
+                    "name": "bucket",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "count",
+                    "type": "BIGINT",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(amount) FROM \"{{c1.table.0}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                1900
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(\"count\") FROM \"{{c1.table.1}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                4950
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.mixed-elements-produce-no-table",
+      "spec": "001 §5.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0}, {\"id\": 1}, {\"id\": 2}, {\"id\": 3}, {\"id\": 4}, {\"id\": 5}, {\"id\": 6}, {\"id\": 7}, {\"id\": 8}, 42]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "flat_reason": "mixed_elements",
+            "tables": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.empty-result-says-so",
+      "spec": "001 §5.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": []}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "flat_reason": "empty",
+            "tables": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.scalar-result-says-so",
+      "spec": "001 §5.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "42"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "text",
+            "flat_reason": "scalar",
+            "tables": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.single-object-is-one-row",
+      "spec": "001 §5.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"id\": 1, \"name\": \"solo\", \"nested\": {\"a\": 1}}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$",
+                "row_count": 1,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "name",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "nested",
+                    "type": "JSON",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.bare-array-of-objects",
+      "spec": "001 §5.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "[{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 1, \"name\": \"row-0001\", \"score\": 5.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 2, \"name\": \"row-0002\", \"score\": 10.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 3, \"name\": \"row-0003\", \"score\": 15.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 4, \"name\": \"row-0004\", \"score\": 21.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 5, \"name\": \"row-0005\", \"score\": 26.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 6, \"name\": \"row-0006\", \"score\": 31.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 7, \"name\": \"row-0007\", \"score\": 37.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 8, \"name\": \"row-0008\", \"score\": 42.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 9, \"name\": \"row-0009\", \"score\": 47.5714, \"tag\": \"alpha\", \"active\": false}]"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$",
+                "row_count": 10,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "name",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "score",
+                    "type": "DOUBLE",
+                    "exact": false
+                  },
+                  {
+                    "name": "tag",
+                    "type": "VARCHAR",
+                    "exact": true
+                  },
+                  {
+                    "name": "active",
+                    "type": "BOOLEAN",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.nested-values-become-json-columns",
+      "spec": "001 §5.3, §4.1",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"meta\": {\"k\": 0, \"deep\": {\"deeper\": 0}}, \"tags\": [\"t0\", \"x\"]}, {\"id\": 1, \"meta\": {\"k\": 1, \"deep\": {\"deeper\": 1}}, \"tags\": [\"t1\", \"x\"]}, {\"id\": 2, \"meta\": {\"k\": 2, \"deep\": {\"deeper\": 2}}, \"tags\": [\"t2\", \"x\"]}, {\"id\": 3, \"meta\": {\"k\": 3, \"deep\": {\"deeper\": 3}}, \"tags\": [\"t3\", \"x\"]}, {\"id\": 4, \"meta\": {\"k\": 4, \"deep\": {\"deeper\": 4}}, \"tags\": [\"t4\", \"x\"]}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "text_contains": [
+              "json_extract"
+            ],
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 5,
+                "columns": [
+                  {
+                    "name": "id",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "meta",
+                    "type": "JSON",
+                    "exact": false
+                  },
+                  {
+                    "name": "tags",
+                    "type": "JSON",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(CAST(json_extract(meta, '$.k') AS BIGINT)) AS s FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "columns": [
+              "s"
+            ],
+            "rows": [
+              [
+                10
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(meta) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "execution_error"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.wide-payloads-spill-to-extra",
+      "spec": "001 §5.3",
+      "description": "200 equally present keys keep the first 64 by first appearance; the rest go to _extra.",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"k000\": 0, \"k001\": 1, \"k002\": 2, \"k003\": 3, \"k004\": 4, \"k005\": 5, \"k006\": 6, \"k007\": 7, \"k008\": 8, \"k009\": 9, \"k010\": 10, \"k011\": 11, \"k012\": 12, \"k013\": 13, \"k014\": 14, \"k015\": 15, \"k016\": 16, \"k017\": 17, \"k018\": 18, \"k019\": 19, \"k020\": 20, \"k021\": 21, \"k022\": 22, \"k023\": 23, \"k024\": 24, \"k025\": 25, \"k026\": 26, \"k027\": 27, \"k028\": 28, \"k029\": 29, \"k030\": 30, \"k031\": 31, \"k032\": 32, \"k033\": 33, \"k034\": 34, \"k035\": 35, \"k036\": 36, \"k037\": 37, \"k038\": 38, \"k039\": 39, \"k040\": 40, \"k041\": 41, \"k042\": 42, \"k043\": 43, \"k044\": 44, \"k045\": 45, \"k046\": 46, \"k047\": 47, \"k048\": 48, \"k049\": 49, \"k050\": 50, \"k051\": 51, \"k052\": 52, \"k053\": 53, \"k054\": 54, \"k055\": 55, \"k056\": 56, \"k057\": 57, \"k058\": 58, \"k059\": 59, \"k060\": 60, \"k061\": 61, \"k062\": 62, \"k063\": 63, \"k064\": 64, \"k065\": 65, \"k066\": 66, \"k067\": 67, \"k068\": 68, \"k069\": 69, \"k070\": 70, \"k071\": 71, \"k072\": 72, \"k073\": 73, \"k074\": 74, \"k075\": 75, \"k076\": 76, \"k077\": 77, \"k078\": 78, \"k079\": 79, \"k080\": 80, \"k081\": 81, \"k082\": 82, \"k083\": 83, \"k084\": 84, \"k085\": 85, \"k086\": 86, \"k087\": 87, \"k088\": 88, \"k089\": 89, \"k090\": 90, \"k091\": 91, \"k092\": 92, \"k093\": 93, \"k094\": 94, \"k095\": 95, \"k096\": 96, \"k097\": 97, \"k098\": 98, \"k099\": 99, \"k100\": 100, \"k101\": 101, \"k102\": 102, \"k103\": 103, \"k104\": 104, \"k105\": 105, \"k106\": 106, \"k107\": 107, \"k108\": 108, \"k109\": 109, \"k110\": 110, \"k111\": 111, \"k112\": 112, \"k113\": 113, \"k114\": 114, \"k115\": 115, \"k116\": 116, \"k117\": 117, \"k118\": 118, \"k119\": 119, \"k120\": 120, \"k121\": 121, \"k122\": 122, \"k123\": 123, \"k124\": 124, \"k125\": 125, \"k126\": 126, \"k127\": 127, \"k128\": 128, \"k129\": 129, \"k130\": 130, \"k131\": 131, \"k132\": 132, \"k133\": 133, \"k134\": 134, \"k135\": 135, \"k136\": 136, \"k137\": 137, \"k138\": 138, \"k139\": 139, \"k140\": 140, \"k141\": 141, \"k142\": 142, \"k143\": 143, \"k144\": 144, \"k145\": 145, \"k146\": 146, \"k147\": 147, \"k148\": 148, \"k149\": 149, \"k150\": 150, \"k151\": 151, \"k152\": 152, \"k153\": 153, \"k154\": 154, \"k155\": 155, \"k156\": 156, \"k157\": 157, \"k158\": 158, \"k159\": 159, \"k160\": 160, \"k161\": 161, \"k162\": 162, \"k163\": 163, \"k164\": 164, \"k165\": 165, \"k166\": 166, \"k167\": 167, \"k168\": 168, \"k169\": 169, \"k170\": 170, \"k171\": 171, \"k172\": 172, \"k173\": 173, \"k174\": 174, \"k175\": 175, \"k176\": 176, \"k177\": 177, \"k178\": 178, \"k179\": 179, \"k180\": 180, \"k181\": 181, \"k182\": 182, \"k183\": 183, \"k184\": 184, \"k185\": 185, \"k186\": 186, \"k187\": 187, \"k188\": 188, \"k189\": 189, \"k190\": 190, \"k191\": 191, \"k192\": 192, \"k193\": 193, \"k194\": 194, \"k195\": 195, \"k196\": 196, \"k197\": 197, \"k198\": 198, \"k199\": 199}, {\"k000\": 0, \"k001\": 1, \"k002\": 2, \"k003\": 3, \"k004\": 4, \"k005\": 5, \"k006\": 6, \"k007\": 7, \"k008\": 8, \"k009\": 9, \"k010\": 10, \"k011\": 11, \"k012\": 12, \"k013\": 13, \"k014\": 14, \"k015\": 15, \"k016\": 16, \"k017\": 17, \"k018\": 18, \"k019\": 19, \"k020\": 20, \"k021\": 21, \"k022\": 22, \"k023\": 23, \"k024\": 24, \"k025\": 25, \"k026\": 26, \"k027\": 27, \"k028\": 28, \"k029\": 29, \"k030\": 30, \"k031\": 31, \"k032\": 32, \"k033\": 33, \"k034\": 34, \"k035\": 35, \"k036\": 36, \"k037\": 37, \"k038\": 38, \"k039\": 39, \"k040\": 40, \"k041\": 41, \"k042\": 42, \"k043\": 43, \"k044\": 44, \"k045\": 45, \"k046\": 46, \"k047\": 47, \"k048\": 48, \"k049\": 49, \"k050\": 50, \"k051\": 51, \"k052\": 52, \"k053\": 53, \"k054\": 54, \"k055\": 55, \"k056\": 56, \"k057\": 57, \"k058\": 58, \"k059\": 59, \"k060\": 60, \"k061\": 61, \"k062\": 62, \"k063\": 63, \"k064\": 64, \"k065\": 65, \"k066\": 66, \"k067\": 67, \"k068\": 68, \"k069\": 69, \"k070\": 70, \"k071\": 71, \"k072\": 72, \"k073\": 73, \"k074\": 74, \"k075\": 75, \"k076\": 76, \"k077\": 77, \"k078\": 78, \"k079\": 79, \"k080\": 80, \"k081\": 81, \"k082\": 82, \"k083\": 83, \"k084\": 84, \"k085\": 85, \"k086\": 86, \"k087\": 87, \"k088\": 88, \"k089\": 89, \"k090\": 90, \"k091\": 91, \"k092\": 92, \"k093\": 93, \"k094\": 94, \"k095\": 95, \"k096\": 96, \"k097\": 97, \"k098\": 98, \"k099\": 99, \"k100\": 100, \"k101\": 101, \"k102\": 102, \"k103\": 103, \"k104\": 104, \"k105\": 105, \"k106\": 106, \"k107\": 107, \"k108\": 108, \"k109\": 109, \"k110\": 110, \"k111\": 111, \"k112\": 112, \"k113\": 113, \"k114\": 114, \"k115\": 115, \"k116\": 116, \"k117\": 117, \"k118\": 118, \"k119\": 119, \"k120\": 120, \"k121\": 121, \"k122\": 122, \"k123\": 123, \"k124\": 124, \"k125\": 125, \"k126\": 126, \"k127\": 127, \"k128\": 128, \"k129\": 129, \"k130\": 130, \"k131\": 131, \"k132\": 132, \"k133\": 133, \"k134\": 134, \"k135\": 135, \"k136\": 136, \"k137\": 137, \"k138\": 138, \"k139\": 139, \"k140\": 140, \"k141\": 141, \"k142\": 142, \"k143\": 143, \"k144\": 144, \"k145\": 145, \"k146\": 146, \"k147\": 147, \"k148\": 148, \"k149\": 149, \"k150\": 150, \"k151\": 151, \"k152\": 152, \"k153\": 153, \"k154\": 154, \"k155\": 155, \"k156\": 156, \"k157\": 157, \"k158\": 158, \"k159\": 159, \"k160\": 160, \"k161\": 161, \"k162\": 162, \"k163\": 163, \"k164\": 164, \"k165\": 165, \"k166\": 166, \"k167\": 167, \"k168\": 168, \"k169\": 169, \"k170\": 170, \"k171\": 171, \"k172\": 172, \"k173\": 173, \"k174\": 174, \"k175\": 175, \"k176\": 176, \"k177\": 177, \"k178\": 178, \"k179\": 179, \"k180\": 180, \"k181\": 181, \"k182\": 182, \"k183\": 183, \"k184\": 184, \"k185\": 185, \"k186\": 186, \"k187\": 187, \"k188\": 188, \"k189\": 189, \"k190\": 190, \"k191\": 191, \"k192\": 192, \"k193\": 193, \"k194\": 194, \"k195\": 195, \"k196\": 196, \"k197\": 197, \"k198\": 198, \"k199\": 199}, {\"k000\": 0, \"k001\": 1, \"k002\": 2, \"k003\": 3, \"k004\": 4, \"k005\": 5, \"k006\": 6, \"k007\": 7, \"k008\": 8, \"k009\": 9, \"k010\": 10, \"k011\": 11, \"k012\": 12, \"k013\": 13, \"k014\": 14, \"k015\": 15, \"k016\": 16, \"k017\": 17, \"k018\": 18, \"k019\": 19, \"k020\": 20, \"k021\": 21, \"k022\": 22, \"k023\": 23, \"k024\": 24, \"k025\": 25, \"k026\": 26, \"k027\": 27, \"k028\": 28, \"k029\": 29, \"k030\": 30, \"k031\": 31, \"k032\": 32, \"k033\": 33, \"k034\": 34, \"k035\": 35, \"k036\": 36, \"k037\": 37, \"k038\": 38, \"k039\": 39, \"k040\": 40, \"k041\": 41, \"k042\": 42, \"k043\": 43, \"k044\": 44, \"k045\": 45, \"k046\": 46, \"k047\": 47, \"k048\": 48, \"k049\": 49, \"k050\": 50, \"k051\": 51, \"k052\": 52, \"k053\": 53, \"k054\": 54, \"k055\": 55, \"k056\": 56, \"k057\": 57, \"k058\": 58, \"k059\": 59, \"k060\": 60, \"k061\": 61, \"k062\": 62, \"k063\": 63, \"k064\": 64, \"k065\": 65, \"k066\": 66, \"k067\": 67, \"k068\": 68, \"k069\": 69, \"k070\": 70, \"k071\": 71, \"k072\": 72, \"k073\": 73, \"k074\": 74, \"k075\": 75, \"k076\": 76, \"k077\": 77, \"k078\": 78, \"k079\": 79, \"k080\": 80, \"k081\": 81, \"k082\": 82, \"k083\": 83, \"k084\": 84, \"k085\": 85, \"k086\": 86, \"k087\": 87, \"k088\": 88, \"k089\": 89, \"k090\": 90, \"k091\": 91, \"k092\": 92, \"k093\": 93, \"k094\": 94, \"k095\": 95, \"k096\": 96, \"k097\": 97, \"k098\": 98, \"k099\": 99, \"k100\": 100, \"k101\": 101, \"k102\": 102, \"k103\": 103, \"k104\": 104, \"k105\": 105, \"k106\": 106, \"k107\": 107, \"k108\": 108, \"k109\": 109, \"k110\": 110, \"k111\": 111, \"k112\": 112, \"k113\": 113, \"k114\": 114, \"k115\": 115, \"k116\": 116, \"k117\": 117, \"k118\": 118, \"k119\": 119, \"k120\": 120, \"k121\": 121, \"k122\": 122, \"k123\": 123, \"k124\": 124, \"k125\": 125, \"k126\": 126, \"k127\": 127, \"k128\": 128, \"k129\": 129, \"k130\": 130, \"k131\": 131, \"k132\": 132, \"k133\": 133, \"k134\": 134, \"k135\": 135, \"k136\": 136, \"k137\": 137, \"k138\": 138, \"k139\": 139, \"k140\": 140, \"k141\": 141, \"k142\": 142, \"k143\": 143, \"k144\": 144, \"k145\": 145, \"k146\": 146, \"k147\": 147, \"k148\": 148, \"k149\": 149, \"k150\": 150, \"k151\": 151, \"k152\": 152, \"k153\": 153, \"k154\": 154, \"k155\": 155, \"k156\": 156, \"k157\": 157, \"k158\": 158, \"k159\": 159, \"k160\": 160, \"k161\": 161, \"k162\": 162, \"k163\": 163, \"k164\": 164, \"k165\": 165, \"k166\": 166, \"k167\": 167, \"k168\": 168, \"k169\": 169, \"k170\": 170, \"k171\": 171, \"k172\": 172, \"k173\": 173, \"k174\": 174, \"k175\": 175, \"k176\": 176, \"k177\": 177, \"k178\": 178, \"k179\": 179, \"k180\": 180, \"k181\": 181, \"k182\": 182, \"k183\": 183, \"k184\": 184, \"k185\": 185, \"k186\": 186, \"k187\": 187, \"k188\": 188, \"k189\": 189, \"k190\": 190, \"k191\": 191, \"k192\": 192, \"k193\": 193, \"k194\": 194, \"k195\": 195, \"k196\": 196, \"k197\": 197, \"k198\": 198, \"k199\": 199}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 3,
+                "column_count": 65,
+                "columns_include": [
+                  {
+                    "name": "k000",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "k063",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "_extra",
+                    "type": "JSON",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT CAST(json_extract(_extra, '$.k199') AS BIGINT) FROM \"{{c1.table}}\" LIMIT 1"
+          },
+          "expect": {
+            "rows": [
+              [
+                199
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.edge-numbers-are-flagged-inexact",
+      "spec": "001 §5.5, §5.6",
+      "note": "The text uses the non-standard Infinity literal that Python's json module accepts; see conformance/README.md. Values survive materialization exactly even where aggregates are inexact.",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"big\": 9223372036854775807, \"huge\": 18446744073709551617, \"mid\": 9007199254740993, \"f\": 0.5}, {\"big\": 0, \"huge\": 0, \"mid\": 1, \"f\": Infinity}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 2,
+                "columns": [
+                  {
+                    "name": "big",
+                    "type": "BIGINT",
+                    "exact": false
+                  },
+                  {
+                    "name": "huge",
+                    "type": "HUGEINT",
+                    "exact": false
+                  },
+                  {
+                    "name": "mid",
+                    "type": "BIGINT",
+                    "exact": false
+                  },
+                  {
+                    "name": "f",
+                    "type": "DOUBLE",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT max(big), max(huge), max(mid) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                {
+                  "int": "9223372036854775807"
+                },
+                {
+                  "int": "18446744073709551617"
+                },
+                {
+                  "int": "9007199254740993"
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.scalar-arrays-get-a-value-column",
+      "spec": "001 §5.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "[0.0, 1.5, 3.0, 4.5, 6.0, 7.5, 9.0, 10.5, 12.0, 13.5]"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$",
+                "row_count": 10,
+                "columns": [
+                  {
+                    "name": "value",
+                    "type": "DOUBLE",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(value) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                {
+                  "double": 67.5
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.reserved-column-collision-is-published",
+      "spec": "001 §3.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"_row\": \"clash\", \"a\": 1}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 1,
+                "columns": [
+                  {
+                    "name": "_row__src",
+                    "type": "VARCHAR",
+                    "exact": true,
+                    "renamed_from": "_row"
+                  },
+                  {
+                    "name": "a",
+                    "type": "BIGINT",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT \"_row__src\", _row FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                "clash",
+                0
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.columns-keep-source-keys-verbatim",
+      "spec": "001 §3.2",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"Weird Key\": 1, \"a-b\": \"x\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 1,
+                "columns": [
+                  {
+                    "name": "Weird Key",
+                    "type": "BIGINT",
+                    "exact": true
+                  },
+                  {
+                    "name": "a-b",
+                    "type": "VARCHAR",
+                    "exact": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT \"Weird Key\", \"a-b\" FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                1,
+                "x"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.colliding-tool-names-get-separate-tables",
+      "spec": "001 §3.2",
+      "steps": [
+        {
+          "call": "c1",
+          "tool": "hyphen-tool",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"which\": \"hyphen-tool\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c2",
+          "tool": "hyphen_tool",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"which\": \"hyphen_tool\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT which FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                "hyphen-tool"
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT which FROM \"{{c2.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                "hyphen_tool"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.rows-are-traceable-to-the-call",
+      "spec": "001 §3.1, FR-10a",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 1, \"name\": \"row-0001\", \"score\": 5.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 2, \"name\": \"row-0002\", \"score\": 10.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 3, \"name\": \"row-0003\", \"score\": 15.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 4, \"name\": \"row-0004\", \"score\": 21.1429, \"tag\": \"beta\", \"active\": true}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT _row, _call_id = '{{c1.call_id}}', id FROM \"{{c1.table}}\" ORDER BY _row"
+          },
+          "expect": {
+            "rows": [
+              [
+                0,
+                {
+                  "bool": true
+                },
+                0
+              ],
+              [
+                1,
+                {
+                  "bool": true
+                },
+                1
+              ],
+              [
+                2,
+                {
+                  "bool": true
+                },
+                2
+              ],
+              [
+                3,
+                {
+                  "bool": true
+                },
+                3
+              ],
+              [
+                4,
+                {
+                  "bool": true
+                },
+                4
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT len(flat_tables), flat_tables[1] = '{{c1.table}}', source_paths[1], tool, seq FROM \"{{c1.envelope}}\" WHERE call_id = '{{c1.call_id}}'"
+          },
+          "expect": {
+            "rows": [
+              [
+                1,
+                {
+                  "bool": true
+                },
+                "$.items",
+                "tool",
+                1
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.scope-comes-from-the-conversation-id",
+      "spec": "001 §12",
+      "steps": [
+        {
+          "call": "c1",
+          "meta": {
+            "conversationId": "conv-1"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 1, \"name\": \"row-0001\", \"score\": 5.2857, \"tag\": \"beta\", \"active\": false}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "scope_id": "997ab4ea1fdf4f352749770d3a023ce3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.call-sequence-counts-per-tool",
+      "spec": "001 §3.1",
+      "steps": [
+        {
+          "call": "c1",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c2",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c3",
+          "tool": "other",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT tool, seq FROM \"{{c1.envelope}}\" ORDER BY tool, seq"
+          },
+          "expect": {
+            "rows": [
+              [
+                "other",
+                1
+              ],
+              [
+                "tool",
+                1
+              ],
+              [
+                "tool",
+                2
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.preview-never-switches-to-a-later-table",
+      "spec": "001 §4.1",
+      "limits": {
+        "max_payload_bytes": 5000,
+        "max_session_bytes": 100000,
+        "preview_bytes": 64
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "summary"
+              }
+            ],
+            "structured_content_json": "{\"first\": [{\"blob\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}], \"second\": [{\"id\": 2}]}"
+          },
+          "expect": {
+            "outcome": "handle",
+            "preview_complete": false,
+            "preview_equals": "",
+            "preview_rows": 0,
+            "preview_total_rows": 1,
+            "tables": [
+              {
+                "source_path": "$.first",
+                "row_count": 1
+              },
+              {
+                "source_path": "$.second",
+                "row_count": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.preview-uses-raw-rows-not-storage-columns",
+      "spec": "001 §4.1",
+      "limits": {
+        "max_payload_bytes": 20000,
+        "max_session_bytes": 100000,
+        "preview_bytes": 2000,
+        "max_columns": 2
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"source-key\": \"kept\", \"another\": \"also\", \"third\": \"extra\"}, {\"source-key\": \"second\", \"another\": \"row\"}], \"tail\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "preview_complete": false,
+            "preview_contains": [
+              "source-key",
+              "kept"
+            ],
+            "preview_excludes": [
+              "_extra",
+              "__"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.passthrough.errors-are-returned-verbatim-and-recorded",
+      "spec": "001 FR-8, FR-12, §3.1",
+      "steps": [
+        {
+          "call": "c1",
+          "meta": {
+            "conversationId": "conf-error"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "downstream says no"
+              }
+            ],
+            "is_error": true
+          },
+          "expect": {
+            "outcome": "passthrough",
+            "passthrough": "is_error"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT is_error, failure_class, result IS NULL, result_text IS NULL, result_blocks IS NULL, result_structured IS NULL, len(flat_tables) FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                {
+                  "bool": true
+                },
+                "tool_error",
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                0
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.passthrough.images-are-returned-verbatim-and-bytes-not-stored",
+      "spec": "001 FR-13, §3.1",
+      "steps": [
+        {
+          "call": "c1",
+          "meta": {
+            "conversationId": "conf-image"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "image",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+                "mimeType": "image/png"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "passthrough",
+            "passthrough": "non_text"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT len(content_kinds), content_kinds[1], result_blocks IS NULL, wire_bytes IS NULL, is_error FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                1,
+                "image",
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": false
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.passthrough.text-beside-an-image-is-not-materialized",
+      "spec": "001 §5.1 step 1",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1}]}"
+              },
+              {
+                "type": "image",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+                "mimeType": "image/png"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "passthrough",
+            "passthrough": "non_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.passthrough.oversize-payloads-pass-through-with-a-note",
+      "spec": "001 §5.1 step 2, §3.1",
+      "limits": {
+        "max_payload_bytes": 64
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "arguments": {
+            "n": 400
+          },
+          "meta": {
+            "conversationId": "conf-oversize"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"name\": \"row-0000\", \"score\": 0.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 1, \"name\": \"row-0001\", \"score\": 5.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 2, \"name\": \"row-0002\", \"score\": 10.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 3, \"name\": \"row-0003\", \"score\": 15.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 4, \"name\": \"row-0004\", \"score\": 21.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 5, \"name\": \"row-0005\", \"score\": 26.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 6, \"name\": \"row-0006\", \"score\": 31.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 7, \"name\": \"row-0007\", \"score\": 37.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 8, \"name\": \"row-0008\", \"score\": 42.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 9, \"name\": \"row-0009\", \"score\": 47.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 10, \"name\": \"row-0010\", \"score\": 52.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 11, \"name\": \"row-0011\", \"score\": 58.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 12, \"name\": \"row-0012\", \"score\": 63.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 13, \"name\": \"row-0013\", \"score\": 68.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 14, \"name\": \"row-0014\", \"score\": 74.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 15, \"name\": \"row-0015\", \"score\": 79.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 16, \"name\": \"row-0016\", \"score\": 84.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 17, \"name\": \"row-0017\", \"score\": 89.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 18, \"name\": \"row-0018\", \"score\": 95.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 19, \"name\": \"row-0019\", \"score\": 100.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 20, \"name\": \"row-0020\", \"score\": 105.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 21, \"name\": \"row-0021\", \"score\": 111.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 22, \"name\": \"row-0022\", \"score\": 116.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 23, \"name\": \"row-0023\", \"score\": 121.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 24, \"name\": \"row-0024\", \"score\": 126.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 25, \"name\": \"row-0025\", \"score\": 132.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 26, \"name\": \"row-0026\", \"score\": 137.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 27, \"name\": \"row-0027\", \"score\": 142.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 28, \"name\": \"row-0028\", \"score\": 5.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 29, \"name\": \"row-0029\", \"score\": 10.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 30, \"name\": \"row-0030\", \"score\": 15.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 31, \"name\": \"row-0031\", \"score\": 21.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 32, \"name\": \"row-0032\", \"score\": 26.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 33, \"name\": \"row-0033\", \"score\": 31.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 34, \"name\": \"row-0034\", \"score\": 36.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 35, \"name\": \"row-0035\", \"score\": 42.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 36, \"name\": \"row-0036\", \"score\": 47.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 37, \"name\": \"row-0037\", \"score\": 52.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 38, \"name\": \"row-0038\", \"score\": 58.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 39, \"name\": \"row-0039\", \"score\": 63.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 40, \"name\": \"row-0040\", \"score\": 68.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 41, \"name\": \"row-0041\", \"score\": 73.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 42, \"name\": \"row-0042\", \"score\": 79.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 43, \"name\": \"row-0043\", \"score\": 84.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 44, \"name\": \"row-0044\", \"score\": 89.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 45, \"name\": \"row-0045\", \"score\": 95.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 46, \"name\": \"row-0046\", \"score\": 100.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 47, \"name\": \"row-0047\", \"score\": 105.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 48, \"name\": \"row-0048\", \"score\": 110.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 49, \"name\": \"row-0049\", \"score\": 116.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 50, \"name\": \"row-0050\", \"score\": 121.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 51, \"name\": \"row-0051\", \"score\": 126.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 52, \"name\": \"row-0052\", \"score\": 132.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 53, \"name\": \"row-0053\", \"score\": 137.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 54, \"name\": \"row-0054\", \"score\": 142.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 55, \"name\": \"row-0055\", \"score\": 5.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 56, \"name\": \"row-0056\", \"score\": 10.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 57, \"name\": \"row-0057\", \"score\": 15.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 58, \"name\": \"row-0058\", \"score\": 20.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 59, \"name\": \"row-0059\", \"score\": 26.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 60, \"name\": \"row-0060\", \"score\": 31.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 61, \"name\": \"row-0061\", \"score\": 36.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 62, \"name\": \"row-0062\", \"score\": 42.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 63, \"name\": \"row-0063\", \"score\": 47.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 64, \"name\": \"row-0064\", \"score\": 52.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 65, \"name\": \"row-0065\", \"score\": 57.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 66, \"name\": \"row-0066\", \"score\": 63.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 67, \"name\": \"row-0067\", \"score\": 68.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 68, \"name\": \"row-0068\", \"score\": 73.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 69, \"name\": \"row-0069\", \"score\": 79.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 70, \"name\": \"row-0070\", \"score\": 84.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 71, \"name\": \"row-0071\", \"score\": 89.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 72, \"name\": \"row-0072\", \"score\": 94.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 73, \"name\": \"row-0073\", \"score\": 100.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 74, \"name\": \"row-0074\", \"score\": 105.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 75, \"name\": \"row-0075\", \"score\": 110.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 76, \"name\": \"row-0076\", \"score\": 116.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 77, \"name\": \"row-0077\", \"score\": 121.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 78, \"name\": \"row-0078\", \"score\": 126.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 79, \"name\": \"row-0079\", \"score\": 131.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 80, \"name\": \"row-0080\", \"score\": 137.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 81, \"name\": \"row-0081\", \"score\": 142.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 82, \"name\": \"row-0082\", \"score\": 4.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 83, \"name\": \"row-0083\", \"score\": 10.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 84, \"name\": \"row-0084\", \"score\": 15.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 85, \"name\": \"row-0085\", \"score\": 20.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 86, \"name\": \"row-0086\", \"score\": 26.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 87, \"name\": \"row-0087\", \"score\": 31.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 88, \"name\": \"row-0088\", \"score\": 36.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 89, \"name\": \"row-0089\", \"score\": 41.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 90, \"name\": \"row-0090\", \"score\": 47.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 91, \"name\": \"row-0091\", \"score\": 52.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 92, \"name\": \"row-0092\", \"score\": 57.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 93, \"name\": \"row-0093\", \"score\": 63.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 94, \"name\": \"row-0094\", \"score\": 68.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 95, \"name\": \"row-0095\", \"score\": 73.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 96, \"name\": \"row-0096\", \"score\": 78.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 97, \"name\": \"row-0097\", \"score\": 84.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 98, \"name\": \"row-0098\", \"score\": 89.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 99, \"name\": \"row-0099\", \"score\": 94.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 100, \"name\": \"row-0100\", \"score\": 100.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 101, \"name\": \"row-0101\", \"score\": 105.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 102, \"name\": \"row-0102\", \"score\": 110.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 103, \"name\": \"row-0103\", \"score\": 115.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 104, \"name\": \"row-0104\", \"score\": 121.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 105, \"name\": \"row-0105\", \"score\": 126.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 106, \"name\": \"row-0106\", \"score\": 131.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 107, \"name\": \"row-0107\", \"score\": 137.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 108, \"name\": \"row-0108\", \"score\": 142.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 109, \"name\": \"row-0109\", \"score\": 4.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 110, \"name\": \"row-0110\", \"score\": 10.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 111, \"name\": \"row-0111\", \"score\": 15.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 112, \"name\": \"row-0112\", \"score\": 20.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 113, \"name\": \"row-0113\", \"score\": 25.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 114, \"name\": \"row-0114\", \"score\": 31.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 115, \"name\": \"row-0115\", \"score\": 36.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 116, \"name\": \"row-0116\", \"score\": 41.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 117, \"name\": \"row-0117\", \"score\": 47.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 118, \"name\": \"row-0118\", \"score\": 52.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 119, \"name\": \"row-0119\", \"score\": 57.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 120, \"name\": \"row-0120\", \"score\": 62.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 121, \"name\": \"row-0121\", \"score\": 68.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 122, \"name\": \"row-0122\", \"score\": 73.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 123, \"name\": \"row-0123\", \"score\": 78.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 124, \"name\": \"row-0124\", \"score\": 84.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 125, \"name\": \"row-0125\", \"score\": 89.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 126, \"name\": \"row-0126\", \"score\": 94.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 127, \"name\": \"row-0127\", \"score\": 99.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 128, \"name\": \"row-0128\", \"score\": 105.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 129, \"name\": \"row-0129\", \"score\": 110.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 130, \"name\": \"row-0130\", \"score\": 115.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 131, \"name\": \"row-0131\", \"score\": 121.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 132, \"name\": \"row-0132\", \"score\": 126.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 133, \"name\": \"row-0133\", \"score\": 131.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 134, \"name\": \"row-0134\", \"score\": 136.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 135, \"name\": \"row-0135\", \"score\": 142.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 136, \"name\": \"row-0136\", \"score\": 4.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 137, \"name\": \"row-0137\", \"score\": 9.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 138, \"name\": \"row-0138\", \"score\": 15.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 139, \"name\": \"row-0139\", \"score\": 20.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 140, \"name\": \"row-0140\", \"score\": 25.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 141, \"name\": \"row-0141\", \"score\": 31.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 142, \"name\": \"row-0142\", \"score\": 36.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 143, \"name\": \"row-0143\", \"score\": 41.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 144, \"name\": \"row-0144\", \"score\": 46.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 145, \"name\": \"row-0145\", \"score\": 52.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 146, \"name\": \"row-0146\", \"score\": 57.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 147, \"name\": \"row-0147\", \"score\": 62.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 148, \"name\": \"row-0148\", \"score\": 68.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 149, \"name\": \"row-0149\", \"score\": 73.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 150, \"name\": \"row-0150\", \"score\": 78.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 151, \"name\": \"row-0151\", \"score\": 83.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 152, \"name\": \"row-0152\", \"score\": 89.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 153, \"name\": \"row-0153\", \"score\": 94.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 154, \"name\": \"row-0154\", \"score\": 99.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 155, \"name\": \"row-0155\", \"score\": 105.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 156, \"name\": \"row-0156\", \"score\": 110.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 157, \"name\": \"row-0157\", \"score\": 115.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 158, \"name\": \"row-0158\", \"score\": 120.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 159, \"name\": \"row-0159\", \"score\": 126.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 160, \"name\": \"row-0160\", \"score\": 131.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 161, \"name\": \"row-0161\", \"score\": 136.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 162, \"name\": \"row-0162\", \"score\": 142.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 163, \"name\": \"row-0163\", \"score\": 4.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 164, \"name\": \"row-0164\", \"score\": 9.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 165, \"name\": \"row-0165\", \"score\": 15.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 166, \"name\": \"row-0166\", \"score\": 20.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 167, \"name\": \"row-0167\", \"score\": 25.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 168, \"name\": \"row-0168\", \"score\": 30.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 169, \"name\": \"row-0169\", \"score\": 36.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 170, \"name\": \"row-0170\", \"score\": 41.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 171, \"name\": \"row-0171\", \"score\": 46.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 172, \"name\": \"row-0172\", \"score\": 52.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 173, \"name\": \"row-0173\", \"score\": 57.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 174, \"name\": \"row-0174\", \"score\": 62.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 175, \"name\": \"row-0175\", \"score\": 67.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 176, \"name\": \"row-0176\", \"score\": 73.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 177, \"name\": \"row-0177\", \"score\": 78.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 178, \"name\": \"row-0178\", \"score\": 83.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 179, \"name\": \"row-0179\", \"score\": 89.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 180, \"name\": \"row-0180\", \"score\": 94.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 181, \"name\": \"row-0181\", \"score\": 99.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 182, \"name\": \"row-0182\", \"score\": 104.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 183, \"name\": \"row-0183\", \"score\": 110.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 184, \"name\": \"row-0184\", \"score\": 115.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 185, \"name\": \"row-0185\", \"score\": 120.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 186, \"name\": \"row-0186\", \"score\": 126.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 187, \"name\": \"row-0187\", \"score\": 131.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 188, \"name\": \"row-0188\", \"score\": 136.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 189, \"name\": \"row-0189\", \"score\": 141.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 190, \"name\": \"row-0190\", \"score\": 4.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 191, \"name\": \"row-0191\", \"score\": 9.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 192, \"name\": \"row-0192\", \"score\": 14.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 193, \"name\": \"row-0193\", \"score\": 20.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 194, \"name\": \"row-0194\", \"score\": 25.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 195, \"name\": \"row-0195\", \"score\": 30.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 196, \"name\": \"row-0196\", \"score\": 36.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 197, \"name\": \"row-0197\", \"score\": 41.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 198, \"name\": \"row-0198\", \"score\": 46.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 199, \"name\": \"row-0199\", \"score\": 51.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 200, \"name\": \"row-0200\", \"score\": 57.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 201, \"name\": \"row-0201\", \"score\": 62.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 202, \"name\": \"row-0202\", \"score\": 67.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 203, \"name\": \"row-0203\", \"score\": 73.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 204, \"name\": \"row-0204\", \"score\": 78.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 205, \"name\": \"row-0205\", \"score\": 83.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 206, \"name\": \"row-0206\", \"score\": 88.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 207, \"name\": \"row-0207\", \"score\": 94.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 208, \"name\": \"row-0208\", \"score\": 99.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 209, \"name\": \"row-0209\", \"score\": 104.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 210, \"name\": \"row-0210\", \"score\": 110.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 211, \"name\": \"row-0211\", \"score\": 115.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 212, \"name\": \"row-0212\", \"score\": 120.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 213, \"name\": \"row-0213\", \"score\": 125.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 214, \"name\": \"row-0214\", \"score\": 131.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 215, \"name\": \"row-0215\", \"score\": 136.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 216, \"name\": \"row-0216\", \"score\": 141.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 217, \"name\": \"row-0217\", \"score\": 4.1429, \"tag\": \"beta\", \"active\": false}, {\"id\": 218, \"name\": \"row-0218\", \"score\": 9.4286, \"tag\": \"gamma\", \"active\": true}, {\"id\": 219, \"name\": \"row-0219\", \"score\": 14.7143, \"tag\": \"alpha\", \"active\": false}, {\"id\": 220, \"name\": \"row-0220\", \"score\": 20.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 221, \"name\": \"row-0221\", \"score\": 25.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 222, \"name\": \"row-0222\", \"score\": 30.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 223, \"name\": \"row-0223\", \"score\": 35.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 224, \"name\": \"row-0224\", \"score\": 41.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 225, \"name\": \"row-0225\", \"score\": 46.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 226, \"name\": \"row-0226\", \"score\": 51.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 227, \"name\": \"row-0227\", \"score\": 57.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 228, \"name\": \"row-0228\", \"score\": 62.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 229, \"name\": \"row-0229\", \"score\": 67.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 230, \"name\": \"row-0230\", \"score\": 72.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 231, \"name\": \"row-0231\", \"score\": 78.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 232, \"name\": \"row-0232\", \"score\": 83.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 233, \"name\": \"row-0233\", \"score\": 88.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 234, \"name\": \"row-0234\", \"score\": 94.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 235, \"name\": \"row-0235\", \"score\": 99.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 236, \"name\": \"row-0236\", \"score\": 104.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 237, \"name\": \"row-0237\", \"score\": 109.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 238, \"name\": \"row-0238\", \"score\": 115.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 239, \"name\": \"row-0239\", \"score\": 120.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 240, \"name\": \"row-0240\", \"score\": 125.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 241, \"name\": \"row-0241\", \"score\": 131.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 242, \"name\": \"row-0242\", \"score\": 136.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 243, \"name\": \"row-0243\", \"score\": 141.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 244, \"name\": \"row-0244\", \"score\": 4.0, \"tag\": \"beta\", \"active\": true}, {\"id\": 245, \"name\": \"row-0245\", \"score\": 9.2857, \"tag\": \"gamma\", \"active\": false}, {\"id\": 246, \"name\": \"row-0246\", \"score\": 14.5714, \"tag\": \"alpha\", \"active\": true}, {\"id\": 247, \"name\": \"row-0247\", \"score\": 19.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 248, \"name\": \"row-0248\", \"score\": 25.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 249, \"name\": \"row-0249\", \"score\": 30.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 250, \"name\": \"row-0250\", \"score\": 35.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 251, \"name\": \"row-0251\", \"score\": 41.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 252, \"name\": \"row-0252\", \"score\": 46.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 253, \"name\": \"row-0253\", \"score\": 51.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 254, \"name\": \"row-0254\", \"score\": 56.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 255, \"name\": \"row-0255\", \"score\": 62.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 256, \"name\": \"row-0256\", \"score\": 67.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 257, \"name\": \"row-0257\", \"score\": 72.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 258, \"name\": \"row-0258\", \"score\": 78.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 259, \"name\": \"row-0259\", \"score\": 83.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 260, \"name\": \"row-0260\", \"score\": 88.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 261, \"name\": \"row-0261\", \"score\": 93.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 262, \"name\": \"row-0262\", \"score\": 99.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 263, \"name\": \"row-0263\", \"score\": 104.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 264, \"name\": \"row-0264\", \"score\": 109.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 265, \"name\": \"row-0265\", \"score\": 115.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 266, \"name\": \"row-0266\", \"score\": 120.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 267, \"name\": \"row-0267\", \"score\": 125.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 268, \"name\": \"row-0268\", \"score\": 130.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 269, \"name\": \"row-0269\", \"score\": 136.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 270, \"name\": \"row-0270\", \"score\": 141.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 271, \"name\": \"row-0271\", \"score\": 3.8571, \"tag\": \"beta\", \"active\": false}, {\"id\": 272, \"name\": \"row-0272\", \"score\": 9.1429, \"tag\": \"gamma\", \"active\": true}, {\"id\": 273, \"name\": \"row-0273\", \"score\": 14.4286, \"tag\": \"alpha\", \"active\": false}, {\"id\": 274, \"name\": \"row-0274\", \"score\": 19.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 275, \"name\": \"row-0275\", \"score\": 25.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 276, \"name\": \"row-0276\", \"score\": 30.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 277, \"name\": \"row-0277\", \"score\": 35.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 278, \"name\": \"row-0278\", \"score\": 40.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 279, \"name\": \"row-0279\", \"score\": 46.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 280, \"name\": \"row-0280\", \"score\": 51.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 281, \"name\": \"row-0281\", \"score\": 56.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 282, \"name\": \"row-0282\", \"score\": 62.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 283, \"name\": \"row-0283\", \"score\": 67.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 284, \"name\": \"row-0284\", \"score\": 72.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 285, \"name\": \"row-0285\", \"score\": 77.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 286, \"name\": \"row-0286\", \"score\": 83.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 287, \"name\": \"row-0287\", \"score\": 88.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 288, \"name\": \"row-0288\", \"score\": 93.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 289, \"name\": \"row-0289\", \"score\": 99.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 290, \"name\": \"row-0290\", \"score\": 104.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 291, \"name\": \"row-0291\", \"score\": 109.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 292, \"name\": \"row-0292\", \"score\": 114.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 293, \"name\": \"row-0293\", \"score\": 120.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 294, \"name\": \"row-0294\", \"score\": 125.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 295, \"name\": \"row-0295\", \"score\": 130.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 296, \"name\": \"row-0296\", \"score\": 136.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 297, \"name\": \"row-0297\", \"score\": 141.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 298, \"name\": \"row-0298\", \"score\": 3.7143, \"tag\": \"beta\", \"active\": true}, {\"id\": 299, \"name\": \"row-0299\", \"score\": 9.0, \"tag\": \"gamma\", \"active\": false}, {\"id\": 300, \"name\": \"row-0300\", \"score\": 14.2857, \"tag\": \"alpha\", \"active\": true}, {\"id\": 301, \"name\": \"row-0301\", \"score\": 19.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 302, \"name\": \"row-0302\", \"score\": 24.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 303, \"name\": \"row-0303\", \"score\": 30.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 304, \"name\": \"row-0304\", \"score\": 35.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 305, \"name\": \"row-0305\", \"score\": 40.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 306, \"name\": \"row-0306\", \"score\": 46.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 307, \"name\": \"row-0307\", \"score\": 51.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 308, \"name\": \"row-0308\", \"score\": 56.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 309, \"name\": \"row-0309\", \"score\": 61.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 310, \"name\": \"row-0310\", \"score\": 67.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 311, \"name\": \"row-0311\", \"score\": 72.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 312, \"name\": \"row-0312\", \"score\": 77.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 313, \"name\": \"row-0313\", \"score\": 83.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 314, \"name\": \"row-0314\", \"score\": 88.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 315, \"name\": \"row-0315\", \"score\": 93.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 316, \"name\": \"row-0316\", \"score\": 98.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 317, \"name\": \"row-0317\", \"score\": 104.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 318, \"name\": \"row-0318\", \"score\": 109.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 319, \"name\": \"row-0319\", \"score\": 114.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 320, \"name\": \"row-0320\", \"score\": 120.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 321, \"name\": \"row-0321\", \"score\": 125.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 322, \"name\": \"row-0322\", \"score\": 130.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 323, \"name\": \"row-0323\", \"score\": 135.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 324, \"name\": \"row-0324\", \"score\": 141.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 325, \"name\": \"row-0325\", \"score\": 3.5714, \"tag\": \"beta\", \"active\": false}, {\"id\": 326, \"name\": \"row-0326\", \"score\": 8.8571, \"tag\": \"gamma\", \"active\": true}, {\"id\": 327, \"name\": \"row-0327\", \"score\": 14.1429, \"tag\": \"alpha\", \"active\": false}, {\"id\": 328, \"name\": \"row-0328\", \"score\": 19.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 329, \"name\": \"row-0329\", \"score\": 24.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 330, \"name\": \"row-0330\", \"score\": 30.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 331, \"name\": \"row-0331\", \"score\": 35.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 332, \"name\": \"row-0332\", \"score\": 40.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 333, \"name\": \"row-0333\", \"score\": 45.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 334, \"name\": \"row-0334\", \"score\": 51.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 335, \"name\": \"row-0335\", \"score\": 56.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 336, \"name\": \"row-0336\", \"score\": 61.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 337, \"name\": \"row-0337\", \"score\": 67.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 338, \"name\": \"row-0338\", \"score\": 72.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 339, \"name\": \"row-0339\", \"score\": 77.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 340, \"name\": \"row-0340\", \"score\": 82.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 341, \"name\": \"row-0341\", \"score\": 88.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 342, \"name\": \"row-0342\", \"score\": 93.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 343, \"name\": \"row-0343\", \"score\": 98.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 344, \"name\": \"row-0344\", \"score\": 104.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 345, \"name\": \"row-0345\", \"score\": 109.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 346, \"name\": \"row-0346\", \"score\": 114.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 347, \"name\": \"row-0347\", \"score\": 119.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 348, \"name\": \"row-0348\", \"score\": 125.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 349, \"name\": \"row-0349\", \"score\": 130.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 350, \"name\": \"row-0350\", \"score\": 135.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 351, \"name\": \"row-0351\", \"score\": 141.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 352, \"name\": \"row-0352\", \"score\": 3.4286, \"tag\": \"beta\", \"active\": true}, {\"id\": 353, \"name\": \"row-0353\", \"score\": 8.7143, \"tag\": \"gamma\", \"active\": false}, {\"id\": 354, \"name\": \"row-0354\", \"score\": 14.0, \"tag\": \"alpha\", \"active\": true}, {\"id\": 355, \"name\": \"row-0355\", \"score\": 19.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 356, \"name\": \"row-0356\", \"score\": 24.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 357, \"name\": \"row-0357\", \"score\": 29.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 358, \"name\": \"row-0358\", \"score\": 35.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 359, \"name\": \"row-0359\", \"score\": 40.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 360, \"name\": \"row-0360\", \"score\": 45.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 361, \"name\": \"row-0361\", \"score\": 51.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 362, \"name\": \"row-0362\", \"score\": 56.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 363, \"name\": \"row-0363\", \"score\": 61.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 364, \"name\": \"row-0364\", \"score\": 66.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 365, \"name\": \"row-0365\", \"score\": 72.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 366, \"name\": \"row-0366\", \"score\": 77.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 367, \"name\": \"row-0367\", \"score\": 82.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 368, \"name\": \"row-0368\", \"score\": 88.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 369, \"name\": \"row-0369\", \"score\": 93.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 370, \"name\": \"row-0370\", \"score\": 98.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 371, \"name\": \"row-0371\", \"score\": 103.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 372, \"name\": \"row-0372\", \"score\": 109.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 373, \"name\": \"row-0373\", \"score\": 114.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 374, \"name\": \"row-0374\", \"score\": 119.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 375, \"name\": \"row-0375\", \"score\": 125.0, \"tag\": \"alpha\", \"active\": false}, {\"id\": 376, \"name\": \"row-0376\", \"score\": 130.2857, \"tag\": \"beta\", \"active\": true}, {\"id\": 377, \"name\": \"row-0377\", \"score\": 135.5714, \"tag\": \"gamma\", \"active\": false}, {\"id\": 378, \"name\": \"row-0378\", \"score\": 140.8571, \"tag\": \"alpha\", \"active\": true}, {\"id\": 379, \"name\": \"row-0379\", \"score\": 3.2857, \"tag\": \"beta\", \"active\": false}, {\"id\": 380, \"name\": \"row-0380\", \"score\": 8.5714, \"tag\": \"gamma\", \"active\": true}, {\"id\": 381, \"name\": \"row-0381\", \"score\": 13.8571, \"tag\": \"alpha\", \"active\": false}, {\"id\": 382, \"name\": \"row-0382\", \"score\": 19.1429, \"tag\": \"beta\", \"active\": true}, {\"id\": 383, \"name\": \"row-0383\", \"score\": 24.4286, \"tag\": \"gamma\", \"active\": false}, {\"id\": 384, \"name\": \"row-0384\", \"score\": 29.7143, \"tag\": \"alpha\", \"active\": true}, {\"id\": 385, \"name\": \"row-0385\", \"score\": 35.0, \"tag\": \"beta\", \"active\": false}, {\"id\": 386, \"name\": \"row-0386\", \"score\": 40.2857, \"tag\": \"gamma\", \"active\": true}, {\"id\": 387, \"name\": \"row-0387\", \"score\": 45.5714, \"tag\": \"alpha\", \"active\": false}, {\"id\": 388, \"name\": \"row-0388\", \"score\": 50.8571, \"tag\": \"beta\", \"active\": true}, {\"id\": 389, \"name\": \"row-0389\", \"score\": 56.1429, \"tag\": \"gamma\", \"active\": false}, {\"id\": 390, \"name\": \"row-0390\", \"score\": 61.4286, \"tag\": \"alpha\", \"active\": true}, {\"id\": 391, \"name\": \"row-0391\", \"score\": 66.7143, \"tag\": \"beta\", \"active\": false}, {\"id\": 392, \"name\": \"row-0392\", \"score\": 72.0, \"tag\": \"gamma\", \"active\": true}, {\"id\": 393, \"name\": \"row-0393\", \"score\": 77.2857, \"tag\": \"alpha\", \"active\": false}, {\"id\": 394, \"name\": \"row-0394\", \"score\": 82.5714, \"tag\": \"beta\", \"active\": true}, {\"id\": 395, \"name\": \"row-0395\", \"score\": 87.8571, \"tag\": \"gamma\", \"active\": false}, {\"id\": 396, \"name\": \"row-0396\", \"score\": 93.1429, \"tag\": \"alpha\", \"active\": true}, {\"id\": 397, \"name\": \"row-0397\", \"score\": 98.4286, \"tag\": \"beta\", \"active\": false}, {\"id\": 398, \"name\": \"row-0398\", \"score\": 103.7143, \"tag\": \"gamma\", \"active\": true}, {\"id\": 399, \"name\": \"row-0399\", \"score\": 109.0, \"tag\": \"alpha\", \"active\": false}], \"next_cursor\": null}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "passthrough",
+            "passthrough": "oversize",
+            "size_note": true
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT CAST(json_extract(args, '$.n') AS BIGINT), byte_size > 64, wire_bytes IS NULL, result IS NULL, result_text IS NULL, result_blocks IS NULL, result_structured IS NULL FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                400,
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.passthrough.dual-channels-share-one-ceiling",
+      "spec": "001 §5.1 step 2",
+      "description": "A tiny structured channel must not smuggle a large text channel past the ceiling.",
+      "limits": {
+        "max_payload_bytes": 128,
+        "max_session_bytes": 128
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "meta": {
+            "conversationId": "conf-dual"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ],
+            "structured_content_json": "{\"items\": [{\"id\": 1}]}"
+          },
+          "expect": {
+            "outcome": "passthrough",
+            "passthrough": "oversize",
+            "size_note": true
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT byte_size > 128, result IS NULL, result_text IS NULL, result_structured IS NULL FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.passthrough.metadata-is-bounded",
+      "spec": "001 §3.1, §7",
+      "description": "A passthrough record over the retention budget keeps no arguments, and its block kinds are bounded rather than one entry per untrusted block.",
+      "limits": {
+        "max_payload_bytes": 500,
+        "max_session_bytes": 500
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "arguments": {
+            "untrusted": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "meta": {
+            "conversationId": "conf-bounded"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AA==",
+                "mimeType": "image/png"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "passthrough",
+            "passthrough": "non_text"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT args IS NULL, len(content_kinds) < 100, result IS NULL FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.mixed-scalars-are-stored-as-text",
+      "spec": "001 §5.5",
+      "description": "Mixed scalars and integers beyond int128 are stored as their JSON text in a VARCHAR column, so sum() fails instead of lying. Booleans store as true and false.",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"v\": 1}, {\"v\": \"oops\"}, {\"v\": true}, {\"v\": 2.5}, {\"v\": null}, {\"v\": 1606938044258990275541962092341162602522202993782792835301376}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 6,
+                "columns": [
+                  {
+                    "name": "v",
+                    "type": "VARCHAR",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT v FROM \"{{c1.table}}\" ORDER BY _row"
+          },
+          "expect": {
+            "rows": [
+              [
+                "1"
+              ],
+              [
+                "oops"
+              ],
+              [
+                "true"
+              ],
+              [
+                "2.5"
+              ],
+              [
+                null
+              ],
+              [
+                "1606938044258990275541962092341162602522202993782792835301376"
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(v) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "execution_error"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.json-columns-store-the-value",
+      "spec": "001 §5.3",
+      "note": "JSON text formatting (whitespace) is implementation-defined; compare through json functions.",
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"m\": {\"k\": [1, 2]}}, {\"m\": [{\"a\": null}]}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 2,
+                "columns": [
+                  {
+                    "name": "m",
+                    "type": "JSON",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT CAST(json_extract(m, '$.k[1]') AS BIGINT), json_array_length(m) FROM \"{{c1.table}}\" ORDER BY _row"
+          },
+          "expect": {
+            "rows": [
+              [
+                2,
+                0
+              ],
+              [
+                null,
+                1
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.table-sequence-counts-tables-per-tool",
+      "spec": "001 §3.2",
+      "description": "The table counter is per tool and separate from the call counter: one call may create several tables.",
+      "steps": [
+        {
+          "call": "c1",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"rows\": [{\"id\": 1}], \"facets\": [{\"n\": 1}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.rows",
+                "row_count": 1,
+                "name_suffix": "__3899cbf2bbe606b305a65b559330d720__0001"
+              },
+              {
+                "source_path": "$.facets",
+                "row_count": 1,
+                "name_suffix": "__3899cbf2bbe606b305a65b559330d720__0002"
+              }
+            ]
+          }
+        },
+        {
+          "call": "c2",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"rows\": [{\"id\": 2}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.rows",
+                "row_count": 1,
+                "name_suffix": "__0003"
+              }
+            ]
+          }
+        },
+        {
+          "call": "c3",
+          "tool": "other",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"rows\": [{\"id\": 3}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.rows",
+                "row_count": 1,
+                "name_suffix": "__0001"
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT seq FROM \"{{c2.envelope}}\" WHERE call_id = '{{c2.call_id}}'"
+          },
+          "expect": {
+            "rows": [
+              [
+                2
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

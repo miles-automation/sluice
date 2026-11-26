@@ -1,0 +1,270 @@
+{
+  "kind": "project",
+  "description": "Depth-1 projection with a bounded column count (spec 001 §5.3, §3.2). Input is the row set as JSON text plus max_columns; output is the stored column order, the renamed-key map, the keys spilled to _extra, and optionally the projected records (with the _row ordinal).",
+  "cases": [
+    {
+      "id": "project.adds-a-row-ordinal",
+      "spec": "001 §5.3",
+      "rows_json": "[{\"a\": 1}, {\"a\": 2}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "a"
+        ],
+        "records": [
+          {
+            "_row": 0,
+            "a": 1
+          },
+          {
+            "_row": 1,
+            "a": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "project.missing-keys-become-null",
+      "spec": "001 §5.3",
+      "rows_json": "[{\"a\": 1}, {\"b\": 2}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "a",
+          "b"
+        ],
+        "records": [
+          {
+            "_row": 0,
+            "a": 1,
+            "b": null
+          },
+          {
+            "_row": 1,
+            "a": null,
+            "b": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "project.missing-key-and-json-null-are-indistinguishable",
+      "spec": "001 §5.3",
+      "description": "Deliberate and lossy; §5.6 defines the reference against this normalization.",
+      "rows_json": "[{}, {\"x\": null}, {\"x\": 1}]",
+      "max_columns": 64,
+      "expect": {
+        "records": [
+          {
+            "_row": 0,
+            "x": null
+          },
+          {
+            "_row": 1,
+            "x": null
+          },
+          {
+            "_row": 2,
+            "x": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "project.nested-values-stay-whole",
+      "spec": "001 §5.3",
+      "rows_json": "[{\"id\": 1, \"meta\": {\"k\": {\"deep\": 1}}, \"tags\": [\"a\"]}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "id",
+          "meta",
+          "tags"
+        ],
+        "records": [
+          {
+            "_row": 0,
+            "id": 1,
+            "meta": {
+              "k": {
+                "deep": 1
+              }
+            },
+            "tags": [
+              "a"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "project.reserved-column-collision-is-renamed",
+      "spec": "001 §3.2",
+      "rows_json": "[{\"_row\": \"clash\", \"a\": 1}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "_row__src",
+          "a"
+        ],
+        "renamed": {
+          "_row": "_row__src"
+        },
+        "records": [
+          {
+            "_row": 0,
+            "_row__src": "clash",
+            "a": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "project.every-reserved-name-is-renamed",
+      "spec": "001 §3.2",
+      "rows_json": "[{\"_row\": 1, \"_call_id\": 2, \"_extra\": 3}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "_row__src",
+          "_call_id__src",
+          "_extra__src"
+        ],
+        "renamed": {
+          "_row": "_row__src",
+          "_call_id": "_call_id__src",
+          "_extra": "_extra__src"
+        }
+      }
+    },
+    {
+      "id": "project.repeated-reserved-collisions-keep-allocating",
+      "spec": "001 §3.2",
+      "rows_json": "[{\"_row\": 1, \"_row__src\": 2}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "_row__src",
+          "_row__src__src"
+        ],
+        "renamed": {
+          "_row": "_row__src",
+          "_row__src": "_row__src__src"
+        }
+      },
+      "note": "Spec 001 §3.2 defines renaming for reserved names only. When a renamed column takes a name a later source key holds verbatim, Python renames that later key too (<key>__src). Pinned as observed."
+    },
+    {
+      "id": "project.reserved-rename-skips-a-taken-name",
+      "spec": "001 §3.2",
+      "rows_json": "[{\"_row__src\": 2, \"_row\": 1}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "_row__src",
+          "_row__src2"
+        ],
+        "renamed": {
+          "_row": "_row__src2"
+        }
+      }
+    },
+    {
+      "id": "project.column-names-are-source-keys-verbatim",
+      "spec": "001 §3.2",
+      "rows_json": "[{\"Weird Key\": 1, \"a-b\": 2, \"a_b\": 3, \"we\\\"ird\": 4}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "Weird Key",
+          "a-b",
+          "a_b",
+          "we\"ird"
+        ],
+        "renamed": {}
+      }
+    },
+    {
+      "id": "project.column-cap-keeps-the-most-present",
+      "spec": "001 §5.3",
+      "rows_json": "[{\"common\": 1, \"rare\": 2}, {\"common\": 1}, {\"common\": 1}]",
+      "max_columns": 1,
+      "expect": {
+        "columns": [
+          "common",
+          "_extra"
+        ],
+        "extra_keys": [
+          "rare"
+        ],
+        "records": [
+          {
+            "_row": 0,
+            "common": 1,
+            "_extra": {
+              "rare": 2
+            }
+          },
+          {
+            "_row": 1,
+            "common": 1,
+            "_extra": null
+          },
+          {
+            "_row": 2,
+            "common": 1,
+            "_extra": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "project.column-cap-restores-payload-order",
+      "spec": "001 §5.3",
+      "rows_json": "[{\"rare\": 0, \"b\": 1, \"a\": 2}, {\"b\": 1, \"a\": 2}]",
+      "max_columns": 2,
+      "expect": {
+        "columns": [
+          "b",
+          "a",
+          "_extra"
+        ],
+        "extra_keys": [
+          "rare"
+        ]
+      }
+    },
+    {
+      "id": "project.column-cap-ties-break-by-first-appearance",
+      "spec": "001 §5.3",
+      "description": "200 equally present keys; without a tie-break the surviving set is undefined.",
+      "rows_json": "[{\"k000\": 0, \"k001\": 1, \"k002\": 2, \"k003\": 3, \"k004\": 4, \"k005\": 5}]",
+      "max_columns": 3,
+      "expect": {
+        "columns": [
+          "k000",
+          "k001",
+          "k002",
+          "_extra"
+        ],
+        "extra_keys": [
+          "k003",
+          "k004",
+          "k005"
+        ]
+      }
+    },
+    {
+      "id": "project.later-rows-introduce-later-columns",
+      "spec": "001 §5.3",
+      "rows_json": "[{\"b\": 1}, {\"a\": 1, \"b\": 2}]",
+      "max_columns": 64,
+      "expect": {
+        "columns": [
+          "b",
+          "a"
+        ]
+      }
+    }
+  ]
+}

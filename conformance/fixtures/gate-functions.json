@@ -1,0 +1,545 @@
+{
+  "kind": "gate",
+  "description": "Function calls (spec 001 §6.1): mutating, blocking, plan-binding and attacker-sized allocation functions are refused by name as written, before macro expansion; macros that run a query or reach a denied function are refused transitively. Ordinary scalar functions, macros and aggregates still work.",
+  "defaults": {
+    "setup": [
+      "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+      "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+      "CREATE TABLE other (a BIGINT)",
+      "INSERT INTO other VALUES (1), (3)",
+      "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+      "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+      "CREATE TABLE gone (a BIGINT)"
+    ],
+    "allowed": [
+      "mine",
+      "other"
+    ],
+    "evicted": [
+      "gone"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gate.function.unnest-range",
+      "spec": "001 §6.1",
+      "sql": "SELECT unnest(range(1000000000))",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.write-log",
+      "spec": "001 §6.1",
+      "sql": "SELECT write_log('agent-controlled')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "write_log"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.lpad",
+      "spec": "001 §6.1",
+      "sql": "SELECT lpad('x', 1000000000, 'x')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "lpad"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.rpad",
+      "spec": "001 §6.1",
+      "sql": "SELECT rpad('x', 1000000000, 'x')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "rpad"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.list-resize",
+      "spec": "001 §6.1",
+      "sql": "SELECT list_resize([1], 1000000000)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "list_resize"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.array-resize",
+      "spec": "001 §6.1",
+      "sql": "SELECT array_resize([1], 1000000000)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "array_resize"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.bitstring",
+      "spec": "001 §6.1",
+      "sql": "SELECT bitstring('1', 1000000000)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "bitstring"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.sleep-ms",
+      "spec": "001 §6.1",
+      "sql": "SELECT sleep_ms(1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "sleep_ms"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.nextval",
+      "spec": "001 §6.1",
+      "sql": "SELECT nextval('s')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "nextval"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.setseed",
+      "spec": "001 §6.1",
+      "sql": "SELECT setseed(0.5)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "setseed"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.format",
+      "spec": "001 §6.1",
+      "sql": "SELECT format('{}', 1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "format"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.printf",
+      "spec": "001 §6.1",
+      "sql": "SELECT printf('%s', 1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "printf"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.pg-get-viewdef-scan",
+      "spec": "001 §6.1",
+      "sql": "WITH RECURSIVE r(n) AS (SELECT 0 UNION ALL SELECT n + 1 FROM r WHERE n < 2000) SELECT n, pg_get_viewdef(n) FROM r WHERE pg_get_viewdef(n) LIKE '%sluice_calls__%'",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "pg_get_viewdef"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.pg-get-viewdef-qualified",
+      "spec": "001 §6.1",
+      "sql": "SELECT pg_catalog.pg_get_viewdef(1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "pg_get_viewdef"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.pg-get-viewdef-uppercase",
+      "spec": "001 §6.1",
+      "sql": "SELECT PG_GET_VIEWDEF(1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "pg_get_viewdef"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.pg-get-viewdef-in-derived-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (SELECT pg_get_viewdef(1) AS v) s",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "pg_get_viewdef"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.pg-get-viewdef-in-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT pg_get_viewdef(1)) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "pg_get_viewdef"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.pg-get-constraintdef",
+      "spec": "001 §6.1",
+      "sql": "SELECT pg_get_constraintdef(1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "pg_get_constraintdef"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.format-type",
+      "spec": "001 §6.1",
+      "sql": "SELECT format_type(1, 1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "format_type"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.get-block-size",
+      "spec": "001 §6.1",
+      "sql": "SELECT get_block_size('memory')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "get_block_size"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.pg-sleep",
+      "spec": "001 §6.1",
+      "sql": "SELECT pg_sleep(2)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "pg_sleep"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.generate-subscripts",
+      "spec": "001 §6.1",
+      "sql": "SELECT generate_subscripts([1, 2, 3], 1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "generate_subscripts"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.regexp-split-to-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT regexp_split_to_table('a,b', ',')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "regexp_split_to_table"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.json-serialize-plan",
+      "spec": "001 §6.1",
+      "sql": "SELECT json_serialize_plan('SELECT * FROM sluice_calls__0124')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "json_serialize_plan"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.json-serialize-plan-quoted-uppercase",
+      "spec": "001 §6.1",
+      "sql": "SELECT \"JSON_SERIALIZE_PLAN\"('SELECT 1')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "json_serialize_plan"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.user-macro-reaching-a-denied-function",
+      "spec": "001 §6.1",
+      "setup": [
+        "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+        "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+        "CREATE TABLE other (a BIGINT)",
+        "INSERT INTO other VALUES (1), (3)",
+        "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+        "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+        "CREATE TABLE gone (a BIGINT)",
+        "CREATE MACRO nap(x) AS \"sleep_ms\"(x)",
+        "CREATE MACRO nap_twice(x) AS nap(x) + nap(x)"
+      ],
+      "sql": "SELECT nap_twice(1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "nap_twice"
+        ]
+      },
+      "description": "Macro definitions are followed transitively, quoted calls included."
+    },
+    {
+      "id": "gate.function.user-macro-running-a-query",
+      "spec": "001 §6.1",
+      "setup": [
+        "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+        "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+        "CREATE TABLE other (a BIGINT)",
+        "INSERT INTO other VALUES (1), (3)",
+        "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+        "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+        "CREATE TABLE gone (a BIGINT)",
+        "CREATE MACRO peek(x) AS (SELECT count(*) FROM sluice_calls)"
+      ],
+      "sql": "SELECT peek(1)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "peek"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.user-table-macro",
+      "spec": "001 §6.1",
+      "setup": [
+        "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+        "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+        "CREATE TABLE other (a BIGINT)",
+        "INSERT INTO other VALUES (1), (3)",
+        "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+        "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+        "CREATE TABLE gone (a BIGINT)",
+        "CREATE MACRO peek_all() AS TABLE SELECT * FROM sluice_calls"
+      ],
+      "sql": "SELECT * FROM peek_all()",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "peek_all"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.harmless-user-macro-is-allowed",
+      "spec": "001 §6.1",
+      "setup": [
+        "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+        "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+        "CREATE TABLE other (a BIGINT)",
+        "INSERT INTO other VALUES (1), (3)",
+        "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+        "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+        "CREATE TABLE gone (a BIGINT)",
+        "CREATE MACRO twice(x) AS x * 2"
+      ],
+      "sql": "SELECT twice(a) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-1",
+      "spec": "001 §6.1",
+      "sql": "SELECT json_extract('{\"a\": 1}', '$.a')",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-2",
+      "spec": "001 §6.1",
+      "sql": "SELECT list_avg([1, 2, 3])",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-3",
+      "spec": "001 §6.1",
+      "sql": "SELECT json_group_array(a) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-4",
+      "spec": "001 §6.1",
+      "sql": "SELECT histogram(a) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-5",
+      "spec": "001 §6.1",
+      "sql": "SELECT if(a > 1, 'big', 'small') FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-6",
+      "spec": "001 §6.1",
+      "sql": "SELECT array_to_string(['a', 'b'], ',')",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-7",
+      "spec": "001 §6.1",
+      "sql": "SELECT date_add(DATE '2026-01-01', INTERVAL 1 DAY)",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-8",
+      "spec": "001 §6.1",
+      "sql": "SELECT abs(-1), upper(b), length(b) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.function.ordinary-9",
+      "spec": "001 §6.1",
+      "sql": "SELECT median(a), avg(a), sum(a) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    }
+  ]
+}

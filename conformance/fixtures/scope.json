@@ -1,0 +1,129 @@
+{
+  "kind": "scope",
+  "description": "Scope ids (spec 001 §12): derived from a client conversation id with BLAKE2b, otherwise minted per call.",
+  "cases": [
+    {
+      "id": "scope.conversation-id-vector",
+      "spec": "001 §12",
+      "op": "from_conversation_id",
+      "conversation_id": "conv-1",
+      "expect": {
+        "scope": "997ab4ea1fdf4f352749770d3a023ce3"
+      },
+      "description": "BLAKE2b with a 16-byte digest, hex. Never a per-process seeded hash."
+    },
+    {
+      "id": "scope.conversation-id-non-ascii",
+      "spec": "001 §12",
+      "op": "from_conversation_id",
+      "conversation_id": "日本",
+      "expect": {
+        "scope": "f1ce8b3b662c4ad195390fde84f6fd79"
+      },
+      "description": "The identifier is hashed as UTF-8."
+    },
+    {
+      "id": "scope.derive-prefers-conversation-id",
+      "spec": "001 §12",
+      "op": "derive",
+      "meta": {
+        "conversationId": "abc"
+      },
+      "expect": {
+        "from_client": true,
+        "scope": "cf4ab791c62b8d2b2109c90275287816"
+      }
+    },
+    {
+      "id": "scope.derive-reads-session-id",
+      "spec": "001 §12",
+      "op": "derive",
+      "meta": {
+        "sessionId": "same"
+      },
+      "expect": {
+        "from_client": true,
+        "scope": "3899cbf2bbe606b305a65b559330d720"
+      }
+    },
+    {
+      "id": "scope.derive-key-order",
+      "spec": "001 §12",
+      "op": "derive",
+      "meta": {
+        "sessionId": "same",
+        "conversationId": "abc"
+      },
+      "expect": {
+        "from_client": true,
+        "scope": "cf4ab791c62b8d2b2109c90275287816"
+      },
+      "description": "conversationId, conversation_id, sessionId, session_id, threadId, thread_id, first present wins."
+    },
+    {
+      "id": "scope.derive-snake-case-thread-id",
+      "spec": "001 §12",
+      "op": "derive",
+      "meta": {
+        "thread_id": "abc"
+      },
+      "expect": {
+        "from_client": true,
+        "scope": "cf4ab791c62b8d2b2109c90275287816"
+      }
+    },
+    {
+      "id": "scope.derive-mints-without-meta",
+      "spec": "001 §12",
+      "op": "derive",
+      "expect": {
+        "from_client": false,
+        "pattern": "^[0-9a-f]{32}$",
+        "distinct_over": 20
+      }
+    },
+    {
+      "id": "scope.derive-mints-for-empty-meta",
+      "spec": "001 §12",
+      "op": "derive",
+      "meta": {},
+      "expect": {
+        "from_client": false,
+        "pattern": "^[0-9a-f]{32}$",
+        "distinct_over": 20
+      }
+    },
+    {
+      "id": "scope.derive-ignores-empty-string",
+      "spec": "001 §12",
+      "op": "derive",
+      "meta": {
+        "conversationId": ""
+      },
+      "expect": {
+        "from_client": false
+      }
+    },
+    {
+      "id": "scope.derive-ignores-non-string",
+      "spec": "001 §12",
+      "op": "derive",
+      "meta": {
+        "conversationId": 42
+      },
+      "expect": {
+        "from_client": false
+      }
+    },
+    {
+      "id": "scope.minted-scopes-are-full-width-and-distinct",
+      "spec": "001 §12",
+      "op": "mint",
+      "expect": {
+        "pattern": "^[0-9a-f]{32}$",
+        "distinct_over": 100
+      },
+      "description": "128 bits from a CSPRNG. Distinctness alone does not prove unguessability; the source is checked per language."
+    }
+  ]
+}

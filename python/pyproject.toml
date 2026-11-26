@@ -45,6 +45,8 @@ dev = [
     "pytest-cov",
     "anyio>=4",
     "hypothesis>=6",
+    "jsonschema>=4.23",
+    "types-jsonschema",
     "ruff",
     "mypy",
 ]

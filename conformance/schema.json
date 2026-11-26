@@ -1,0 +1,1797 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/miles-automation/sluice/conformance/schema.json",
+  "title": "Sluice conformance fixture file",
+  "description": "One file holds cases of one kind. See conformance/README.md for what each kind means and how a runner must drive it.",
+  "type": "object",
+  "required": [
+    "kind",
+    "description",
+    "cases"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "extract",
+        "project",
+        "infer",
+        "naming",
+        "scope",
+        "cell",
+        "gate",
+        "gate_ast",
+        "engine",
+        "session",
+        "paginate",
+        "config"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "defaults": {
+      "type": "object"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "extract"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/extractCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "project"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/projectCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "infer"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/inferCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "naming"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/namingCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "scope"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/scopeCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "cell"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/cellCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gate"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/gateCase"
+            }
+          },
+          "defaults": {
+            "$ref": "#/$defs/gateDefaults"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "gate_ast"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/gateAstCase"
+            }
+          },
+          "defaults": {
+            "$ref": "#/$defs/gateDefaults"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "engine"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/engineCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "session"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/sessionCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "paginate"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/paginateCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "config"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/$defs/configCase"
+            }
+          },
+          "defaults": false
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "common": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "description": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "jsonText": {
+      "type": "string",
+      "description": "JSON text exactly as it would arrive on the wire. Kept as text so integer versus float literals and integers beyond 2^53 survive the fixture loader."
+    },
+    "category": {
+      "enum": [
+        "parse_error",
+        "no_statement",
+        "multiple_statements",
+        "not_select",
+        "unanalyzable",
+        "table_function",
+        "function",
+        "schema_qualified",
+        "unknown_table",
+        "evicted_table",
+        "show_describe",
+        "invalid_argument",
+        "timeout",
+        "execution_error"
+      ]
+    },
+    "rejection": {
+      "type": "object",
+      "required": [
+        "categories"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/category"
+          }
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_mentions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "matcher": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "object",
+          "required": [
+            "int"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "int": {
+              "type": "string",
+              "pattern": "^-?[0-9]+$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "double"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "double": {
+              "type": [
+                "number",
+                "string"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "approx",
+            "rel",
+            "abs"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "approx": {
+              "type": "number"
+            },
+            "rel": {
+              "type": "number",
+              "minimum": 0
+            },
+            "abs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "exact": {
+              "const": false
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "bool"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "bool": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/matcher"
+        }
+      }
+    },
+    "columnType": {
+      "enum": [
+        "BOOLEAN",
+        "BIGINT",
+        "HUGEINT",
+        "DOUBLE",
+        "VARCHAR",
+        "JSON"
+      ]
+    },
+    "column": {
+      "type": "object",
+      "required": [
+        "name",
+        "type",
+        "exact"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/columnType"
+        },
+        "exact": {
+          "type": "boolean"
+        },
+        "renamed_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "extractCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "payload_json",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "payload_json": {
+          "$ref": "#/$defs/jsonText"
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "row_sets"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "row_sets": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "source_path",
+                      "rows"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "source_path": {
+                        "type": "string"
+                      },
+                      "rows": {
+                        "type": "array"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "reason": {
+                  "enum": [
+                    "empty",
+                    "mixed_elements",
+                    "scalar"
+                  ]
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "projectCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "rows_json",
+        "max_columns",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "rows_json": {
+          "$ref": "#/$defs/jsonText"
+        },
+        "max_columns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expect": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "columns_prefix": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "column_count": {
+              "type": "integer"
+            },
+            "renamed": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "extra_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "inferCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "values_json",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "values_json": {
+          "$ref": "#/$defs/jsonText"
+        },
+        "expect": {
+          "type": "object",
+          "required": [
+            "type",
+            "exact"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "$ref": "#/$defs/columnType"
+            },
+            "exact": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "namingCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "op",
+        "args",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "slug",
+            "tag",
+            "mounted_name",
+            "collection_name",
+            "table_name",
+            "quote_ident",
+            "assert_injective",
+            "distinct"
+          ]
+        },
+        "args": {
+          "type": "object"
+        },
+        "expect": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {},
+            "prefix": {
+              "type": "string"
+            },
+            "suffix": {
+              "type": "string"
+            },
+            "max_length": {
+              "type": "integer"
+            },
+            "distinct": {
+              "type": "boolean"
+            },
+            "count": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "scopeCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "op",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "from_conversation_id",
+            "derive",
+            "mint"
+          ]
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "meta": {},
+        "expect": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scope": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "from_client": {
+              "type": "boolean"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "distinct_over": {
+              "type": "integer",
+              "minimum": 2
+            }
+          }
+        }
+      }
+    },
+    "cellCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "value",
+        "max_bytes",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "value": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ]
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expect": {
+          "type": "object",
+          "required": [
+            "text",
+            "truncated"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "gateDefaults": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/gateCatalog"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "gateExpect": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "decision"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "const": "allow"
+            },
+            "executes": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "decision",
+            "categories"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "const": "reject"
+            },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/category"
+              }
+            },
+            "mentions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "not_mentions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "gateCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        },
+        {
+          "$ref": "#/$defs/gateCatalog"
+        }
+      ],
+      "required": [
+        "sql",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "sql": {
+          "type": "string"
+        },
+        "expect": {
+          "$ref": "#/$defs/gateExpect"
+        }
+      }
+    },
+    "path": {
+      "type": "array",
+      "items": {
+        "type": [
+          "string",
+          "integer"
+        ]
+      }
+    },
+    "mutation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "find",
+            "set"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "update"
+            },
+            "within": {
+              "$ref": "#/$defs/path"
+            },
+            "find": {
+              "type": "string"
+            },
+            "set": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "path",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "set"
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            },
+            "value": {}
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "delete"
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "path",
+            "keys",
+            "to"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "rename_first"
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            },
+            "keys": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "path",
+            "sql",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "set_serialized"
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            },
+            "sql": {
+              "type": "string"
+            },
+            "value": {}
+          }
+        }
+      ]
+    },
+    "gateAstCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        },
+        {
+          "$ref": "#/$defs/gateCatalog"
+        }
+      ],
+      "required": [
+        "sql",
+        "mutations",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "sql": {
+          "type": "string"
+        },
+        "mutations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/mutation"
+          }
+        },
+        "expect": {
+          "$ref": "#/$defs/gateExpect"
+        }
+      }
+    },
+    "engineCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "sql",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "lockdown": {
+          "type": "boolean"
+        },
+        "setup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sql": {
+          "type": "string"
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "rows"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "rows": {
+                  "$ref": "#/$defs/rows"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "nonempty"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "nonempty": {
+                  "const": true
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "succeeds"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "succeeds": {
+                  "const": true
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "enum": [
+                    "any",
+                    "permission"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_payload_bytes": {
+          "type": "integer"
+        },
+        "max_concurrent_materializations": {
+          "type": "integer"
+        },
+        "preview_bytes": {
+          "type": "integer"
+        },
+        "preview_rows": {
+          "type": "integer"
+        },
+        "max_columns": {
+          "type": "integer"
+        },
+        "query_timeout_seconds": {
+          "type": "number"
+        },
+        "query_max_rows": {
+          "type": "integer"
+        },
+        "query_max_bytes": {
+          "type": "integer"
+        },
+        "max_cell_bytes": {
+          "type": "integer"
+        },
+        "duckdb_max_memory": {
+          "type": "string"
+        },
+        "max_session_bytes": {
+          "type": "integer"
+        },
+        "max_session_calls": {
+          "type": "integer"
+        }
+      }
+    },
+    "contentBlock": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "data",
+            "mimeType"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "image"
+            },
+            "data": {
+              "type": "string"
+            },
+            "mimeType": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "callStep": {
+      "type": "object",
+      "required": [
+        "call",
+        "result",
+        "expect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/id"
+        },
+        "server": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object"
+        },
+        "meta": {
+          "type": "object"
+        },
+        "result": {
+          "type": "object",
+          "required": [
+            "content"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/contentBlock"
+              }
+            },
+            "structured_content_json": {
+              "$ref": "#/$defs/jsonText"
+            },
+            "is_error": {
+              "type": "boolean"
+            }
+          }
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "outcome",
+                "passthrough"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "outcome": {
+                  "const": "passthrough"
+                },
+                "passthrough": {
+                  "enum": [
+                    "is_error",
+                    "non_text",
+                    "oversize"
+                  ]
+                },
+                "size_note": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "outcome"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "outcome": {
+                  "const": "handle"
+                },
+                "source_channel": {
+                  "enum": [
+                    "structured",
+                    "text",
+                    "none"
+                  ]
+                },
+                "channel_conflict": {
+                  "type": "boolean"
+                },
+                "flat_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scope_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "preview_complete": {
+                  "type": "boolean"
+                },
+                "preview_rows": {
+                  "type": "integer"
+                },
+                "preview_total_rows": {
+                  "type": "integer"
+                },
+                "preview_equals": {
+                  "type": "string"
+                },
+                "preview_contains": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "preview_excludes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "text_contains": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "text_max_bytes": {
+                  "type": "integer"
+                },
+                "tables": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "source_path",
+                      "row_count"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "source_path": {
+                        "type": "string"
+                      },
+                      "row_count": {
+                        "type": "integer"
+                      },
+                      "columns": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/column"
+                        }
+                      },
+                      "column_count": {
+                        "type": "integer"
+                      },
+                      "columns_include": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/column"
+                        }
+                      },
+                      "name_suffix": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "queryExpect": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "const": true
+            },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/category"
+              }
+            },
+            "mentions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "not_mentions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "rows": {
+              "$ref": "#/$defs/rows"
+            },
+            "row_count": {
+              "type": "integer"
+            },
+            "shown": {
+              "type": "integer"
+            },
+            "more_rows": {
+              "type": "boolean"
+            },
+            "rows_omitted": {
+              "type": "integer"
+            },
+            "cells_truncated": {
+              "type": "integer"
+            },
+            "headers_truncated": {
+              "type": "integer"
+            },
+            "headers_truncated_or_table_omitted": {
+              "const": true
+            },
+            "table_omitted": {
+              "type": "boolean"
+            },
+            "text_excludes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "accounted_rows": {
+              "type": "integer",
+              "description": "Rows shown plus rows reported omitted for the byte cap must equal this: every row is accounted for."
+            },
+            "rows_omitted_min": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "queryStep": {
+      "type": "object",
+      "required": [
+        "query",
+        "expect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "object",
+          "description": "The raw `query` tool arguments. String values may hold placeholders {{<call>.table}}, {{<call>.table.<n>}}, {{<call>.envelope}}, {{<call>.call_id}}, {{<call>.scope}}."
+        },
+        "expect": {
+          "$ref": "#/$defs/queryExpect"
+        }
+      }
+    },
+    "sessionCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "steps"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/callStep"
+              },
+              {
+                "$ref": "#/$defs/queryStep"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "pageResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "is_error": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "failure",
+            "message"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "failure": {
+              "enum": [
+                "tool_error",
+                "output_schema",
+                "protocol",
+                "transport"
+              ]
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "input_required"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "input_required": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "paginateCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "pages",
+        "expect"
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "type": "string"
+            },
+            "limit_arg": {
+              "type": "string"
+            },
+            "offset_arg": {
+              "type": "string"
+            },
+            "has_more": {
+              "type": "string"
+            },
+            "next_offset": {
+              "type": "string"
+            },
+            "page_size": {
+              "type": "integer"
+            },
+            "max_pages": {
+              "type": "integer"
+            },
+            "max_bytes": {
+              "type": "integer"
+            }
+          }
+        },
+        "arguments": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "pages": {
+          "type": "object",
+          "description": "Response by requested offset, as a decimal string key.",
+          "additionalProperties": {
+            "$ref": "#/$defs/pageResponse"
+          }
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "argument_error"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "argument_error": {
+                  "const": true
+                },
+                "mentions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "status",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "complete",
+                    "partial"
+                  ]
+                },
+                "reason": {
+                  "enum": [
+                    "complete",
+                    "max_pages",
+                    "max_bytes",
+                    "max_seconds",
+                    "page_error",
+                    "page_failed",
+                    "interactive",
+                    "malformed_page",
+                    "missing_next_offset",
+                    "offset_not_advancing"
+                  ]
+                },
+                "pages": {
+                  "type": "integer"
+                },
+                "bytes": {
+                  "type": "integer"
+                },
+                "resume_offset": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "rows": {
+                  "type": "array"
+                },
+                "calls": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "detail_contains": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "first_page_error": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "configCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        }
+      ],
+      "required": [
+        "expect"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "toml"
+          ]
+        },
+        {
+          "required": [
+            "toml_file"
+          ]
+        },
+        {
+          "required": [
+            "missing_file"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "toml": {
+          "type": "string"
+        },
+        "toml_file": {
+          "type": "string",
+          "description": "Path relative to the repository root."
+        },
+        "missing_file": {
+          "const": true
+        },
+        "environ": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "const": true
+                },
+                "mentions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "ok"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "server": {
+                  "type": "object"
+                },
+                "limits": {
+                  "type": "object"
+                },
+                "pagination": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "gateCatalog": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evicted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

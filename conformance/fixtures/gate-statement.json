@@ -1,0 +1,352 @@
+{
+  "kind": "gate",
+  "description": "The statement layer (spec 001 §6.1 layer 1): exactly one statement, and it must read. Categories that differ only by which layer refuses first are listed together; see conformance/README.md.",
+  "defaults": {
+    "setup": [
+      "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+      "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+      "CREATE TABLE other (a BIGINT)",
+      "INSERT INTO other VALUES (1), (3)",
+      "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+      "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+      "CREATE TABLE gone (a BIGINT)"
+    ],
+    "allowed": [
+      "mine",
+      "other"
+    ],
+    "evicted": [
+      "gone"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gate.statement.insert-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "INSERT INTO mine VALUES (3, 'z')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.update-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "UPDATE mine SET a = 9",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.delete-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "DELETE FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.create-as-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "CREATE TABLE evil AS SELECT 1",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.drop-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "DROP TABLE mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.drop-envelope-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "DROP TABLE sluice_calls",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.attach-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "ATTACH '/tmp/x.db' AS x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.copy-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "COPY (SELECT 1) TO '/tmp/out.csv'",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.set-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "SET enable_external_access = true",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.call-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "CALL duckdb_tables()",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.two-statements-are-counted-not-split",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1; DROP TABLE mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "multiple_statements"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.two-selects-are-rejected",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1; SELECT 2",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "multiple_statements"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.semicolon-inside-a-string-is-one-statement",
+      "spec": "001 §6.1",
+      "sql": "SELECT ';' AS semi",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.statement.unparseable-sql-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "SELECT FROM WHERE",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "parse_error"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.blank-sql-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "   ",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "no_statement"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.empty-sql-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "no_statement"
+        ]
+      }
+    },
+    {
+      "id": "gate.statement.comment-only-sql-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "-- nothing here",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "no_statement"
+        ]
+      },
+      "note": "Node's extractStatements throws an opaque native error here (review/duckdb2-node-check.md constraint 2); the port must map it to no_statement."
+    },
+    {
+      "id": "gate.statement.show-tables-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "SHOW TABLES",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "show_describe"
+        ]
+      },
+      "note": "The statement layer types this as SELECT on DuckDB 1.5.5 and 2.x; only the object layer stops it."
+    },
+    {
+      "id": "gate.statement.show-all-tables-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "SHOW ALL TABLES",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "show_describe"
+        ]
+      },
+      "note": "The statement layer types this as SELECT on DuckDB 1.5.5 and 2.x; only the object layer stops it."
+    },
+    {
+      "id": "gate.statement.describe-mine-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "DESCRIBE mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "show_describe"
+        ]
+      },
+      "note": "The statement layer types this as SELECT on DuckDB 1.5.5 and 2.x; only the object layer stops it."
+    },
+    {
+      "id": "gate.statement.summarize-mine-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "SUMMARIZE mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "show_describe"
+        ]
+      },
+      "note": "The statement layer types this as SELECT on DuckDB 1.5.5 and 2.x; only the object layer stops it."
+    },
+    {
+      "id": "gate.statement.pragma-show-tables-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "PRAGMA show_tables",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      },
+      "note": "DuckDB 1.5.5 types PRAGMA as SELECT and it fails closed as unanalyzable; Python on DuckDB 2.x types it PRAGMA; Node on 2.0 reports it as SELECT. Every path must refuse it."
+    },
+    {
+      "id": "gate.statement.pragma-database-list-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "PRAGMA database_list",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      },
+      "note": "DuckDB 1.5.5 types PRAGMA as SELECT and it fails closed as unanalyzable; Python on DuckDB 2.x types it PRAGMA; Node on 2.0 reports it as SELECT. Every path must refuse it."
+    },
+    {
+      "id": "gate.statement.pragma-table-info-is-rejected",
+      "spec": "001 §6.1",
+      "sql": "PRAGMA table_info('mine')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select",
+          "unanalyzable"
+        ]
+      },
+      "note": "DuckDB 1.5.5 types PRAGMA as SELECT and it fails closed as unanalyzable; Python on DuckDB 2.x types it PRAGMA; Node on 2.0 reports it as SELECT. Every path must refuse it."
+    },
+    {
+      "id": "gate.statement.legal-single-select-1",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.statement.legal-single-select-2",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1;",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.statement.legal-single-select-3",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1;\n",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.statement.legal-single-select-4",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1 -- ; a comment",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.statement.legal-single-select-5",
+      "spec": "001 §6.1",
+      "sql": "SELECT /* ; */ 1",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    }
+  ]
+}
