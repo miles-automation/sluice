@@ -91,17 +91,22 @@ should be covered by the CI matrix in task 1075.
 4. **The libuv pool is shared, and `connect()` uses it too.** With every pool thread
    (default 4) in a slow query, new queries and even `connect()` wait. An early
    version of this check hung by awaiting `connect()` before calling `interrupt()`.
-   `interrupt()` itself is synchronous and always gets through. So: deadlines run on
-   timers and never await a DuckDB call first; connect before starting the query;
-   admission caps in-flight queries below `UV_THREADPOOL_SIZE`, which must be set
-   before the first pool use (in the environment for a separate process).
+   `interrupt()` itself is synchronous and reaches a query that is already running.
+   It does not reach a query still waiting for a pool thread: found in review, a
+   fifth query interrupted while the pool was full kept running once it started, and
+   only a second `interrupt()` stopped it. So: deadlines run on timers and never
+   await a DuckDB call first; connect before starting the query; admission must cap
+   in-flight queries below `UV_THREADPOOL_SIZE` (set before the first pool use, in
+   the environment for a separate process). The cap is what makes deadlines hold, not
+   an extra. `check.mjs` only interrupts running queries.
 5. **Render values from `getRows()`, not `getRowsJS()`.** `getRowsJS` turned DECIMAL
    12345678901234567.12 into 12345678901234568. `String()` over `getRows()` is exact
    for BIGINT, HUGEINT, DECIMAL and DOUBLE, and keeps NULL distinct from the empty
    string. This matters to a tool that sells exact answers.
 6. **`JSON.parse` of the AST rounds very large integers.** `query_location` becomes
    18446744073709552000. The gate does not read it. Ignoring that field, Node and
-   Python 2.0 produce identical ASTs on all 48 statements.
+   Python 2.0 produced identical ASTs on all 48 statements. Unverified from this
+   folder: the Python 2.0 dump was not committed.
 
 ## AST changes from 1.5.5 to 2.0.0
 
@@ -121,10 +126,11 @@ Fields `gate.py` depends on:
 | `FUNCTION.function_name` | present | present | None |
 | `RECURSIVE_CTE_NODE.left`, `.right` | present | present | None once the CTE body is found |
 | `SHOW_REF` | `show_type: SHOW_UNQUALIFIED` | `SHOW_SPECIAL` | None, the gate matches the type |
-| Subquery | `subquery.node`, `named_param_map` | `subquery.node` | None |
+| Subquery | `subquery.node`, `named_param_map` | same | None |
 
 Other additions: `query_location_length` on most nodes, `payload_aggregates` on CTE
-entries, `subquery_type` replacing `comparison_type` on subqueries. Non-SELECT
+entries. Subqueries carry both `subquery_type` and `comparison_type` on both
+versions. Non-SELECT
 statements still serialize to `error: true`. `PIVOT` now types as MULTI in Node, not
 as two statements; refused either way.
 
@@ -148,6 +154,8 @@ SELECT, so it is refused one layer earlier with a different message:
 - `test_the_statement_gate_alone_would_pass_these` (asserts the old type)
 
 ## Native size
+
+Measured by hand on 2026-11-06; no script or output is committed for this section or the next.
 
 | Platform | Binding | Contents |
 | --- | --- | --- |
