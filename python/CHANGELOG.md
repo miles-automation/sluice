@@ -3,6 +3,17 @@
 This tracks what has landed against the milestones in
 `plan/001-scratch-db.md`.
 
+## 0.2.2 — 2026-11-25
+
+- **Security: a Unicode CTE name could shadow a table the gate protects.** The
+  gate folded identifiers with `str.casefold()`, which maps `ſ` (U+017F) to `s`,
+  while DuckDB matches identifiers case-insensitively over ASCII only. So
+  `WITH "ſluice_calls" AS (SELECT 1 AS a) SELECT * FROM sluice_calls` was
+  admitted as if it read the CTE, and DuckDB read the physical `sluice_calls`,
+  which lists every conversation's tables. The same shape reached `sqlite_master`
+  and another conversation's envelope view. Affects every released version on
+  DuckDB 1.5.5 and 2.x. The gate now folds ASCII only. Upgrade.
+
 ## 0.2.1 — 2026-11-07
 
 - **Security: the query gate could be bypassed through a CTE on DuckDB 2.0.**

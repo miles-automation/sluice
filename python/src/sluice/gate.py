@@ -29,6 +29,7 @@ table can no longer be found.
 
 import json
 import re
+import string
 from typing import Any
 
 import duckdb
@@ -107,6 +108,13 @@ class QueryRejectedError(ValueError):
 
 class GateContractError(RuntimeError):
     """This DuckDB's parser output is not one the gate can enforce. Refuse to run."""
+
+
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+
+
+def _fold(name: str) -> str:
+    return name.translate(_ASCII_LOWER)
 
 
 def check(
@@ -196,18 +204,18 @@ def _check_objects(
     evicted_objects: set[str] | frozenset[str],
 ) -> None:
     document = _serialize(sql, connection)
-    # DuckDB resolves unquoted identifiers case-insensitively. Normalize both
+    # DuckDB resolves identifiers case-insensitively over ASCII only. Normalize both
     # sides so a CTE cannot evade or accidentally gain the allowlist merely by
     # changing its spelling.
-    allowed = frozenset(name.casefold() for name in allowed_objects)
-    evicted = frozenset(name.casefold() for name in evicted_objects)
+    allowed = frozenset(_fold(name) for name in allowed_objects)
+    evicted = frozenset(_fold(name) for name in evicted_objects)
     # Some DuckDB table functions also have scalar syntax. In particular,
     # `SELECT unnest(range(...))` does not produce a TABLE_FUNCTION AST node,
     # so checking that node alone leaves a resource-amplification bypass. Build
     # the deny set from the engine catalog rather than trying to keep a copy of
     # DuckDB's growing function list here.
     table_function_names = frozenset(
-        str(row[0]).casefold()
+        _fold(str(row[0]))
         for row in connection.execute(
             "SELECT DISTINCT function_name FROM duckdb_functions() WHERE function_type = 'table'"
         ).fetchall()
@@ -232,7 +240,7 @@ def _restricted_macros(
         "SELECT function_name, macro_definition FROM duckdb_functions() "
         "WHERE function_type = 'macro'"
     ).fetchall():
-        key = str(name).casefold()
+        key = _fold(str(name))
         macros[key] = macros.get(key, "") + " " + str(definition or "")
     denied = set(restricted)
     changed = True
@@ -241,7 +249,7 @@ def _restricted_macros(
         for name, definition in macros.items():
             if name in denied:
                 continue
-            calls = {m.casefold() for m in _MACRO_CALL_RE.findall(definition)}
+            calls = {_fold(m) for m in _MACRO_CALL_RE.findall(definition)}
             if _MACRO_QUERY_RE.search(definition) or calls & denied:
                 denied.add(name)
                 changed = True
@@ -317,7 +325,7 @@ def _cte_entries(node: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
             isinstance(entry, dict) and entry.get("key") and isinstance(entry.get("value"), dict)
         ):
             raise _unreadable("a CTE entry has an unrecognized shape")
-        entries.append((str(entry["key"]).casefold(), entry["value"]))
+        entries.append((_fold(str(entry["key"])), entry["value"]))
     return entries
 
 
@@ -416,7 +424,7 @@ def _validate(
                 raise QueryRejectedError(
                     f"schema-qualified tables are not available: {'.'.join(map(str, path))}"
                 )
-            normalized_name = name.casefold()
+            normalized_name = _fold(name)
             if normalized_name not in local and normalized_name in evicted_objects:
                 raise QueryRejectedError(
                     f"table {name!r} was evicted by the session retention budget; "
@@ -437,7 +445,7 @@ def _validate(
             if not isinstance(raw_name, str) or not raw_name:
                 raise _unreadable("a function call has no name")
             name = raw_name
-            if name.casefold() in restricted_functions:
+            if _fold(name) in restricted_functions:
                 raise QueryRejectedError(f"function not allowed: {name}")
         elif kind == "SHOW_REF":
             raise QueryRejectedError(

@@ -13,9 +13,9 @@ over-ceiling results deliberately pass through unchanged.
 
 ## Status
 
-The current release, [v0.2.1](https://pypi.org/project/mcp-sluice/0.2.1/),
-is available from PyPI. Do not use 0.2.0 with DuckDB 2.0: its query gate can be
-bypassed through a CTE (see `CHANGELOG.md`). Proxying, envelope/handle recording, flattening and
+The current release, [v0.2.2](https://pypi.org/project/mcp-sluice/0.2.2/),
+is available from PyPI. Every earlier release has a query gate bypass (see
+`CHANGELOG.md`); upgrade. Proxying, envelope/handle recording, flattening and
 type inference, the read-only `query` gate, aggregate-correctness properties,
 bounded runtime retention, final adversarial review, and bounded pagination
 for approved read-only tools (spec 002) are implemented and covered by the

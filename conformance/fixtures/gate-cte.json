@@ -483,10 +483,6 @@
         "categories": [
           "unknown_table"
         ]
-      },
-      "only": {
-        "version": "typescript",
-        "reason": "Python fails this case today: gate.py folds names with str.casefold(), which maps U+017F LATIN SMALL LETTER LONG S to 's', while DuckDB matches identifiers case-insensitively over ASCII only, so the CTE does not shadow the physical table the gate believes it shadows. Found in task 1077; the TypeScript gate folds ASCII only. Remove this marking when Python is fixed."
       }
     },
     {
@@ -499,10 +495,6 @@
         "categories": [
           "unknown_table"
         ]
-      },
-      "only": {
-        "version": "typescript",
-        "reason": "Python fails this case today: gate.py folds names with str.casefold(), which maps U+017F LATIN SMALL LETTER LONG S to 's', while DuckDB matches identifiers case-insensitively over ASCII only, so the CTE does not shadow the physical table the gate believes it shadows. Found in task 1077; the TypeScript gate folds ASCII only. Remove this marking when Python is fixed."
       }
     },
     {
@@ -515,10 +507,6 @@
         "categories": [
           "unknown_table"
         ]
-      },
-      "only": {
-        "version": "typescript",
-        "reason": "Python fails this case today: gate.py folds names with str.casefold(), which maps U+017F LATIN SMALL LETTER LONG S to 's', while DuckDB matches identifiers case-insensitively over ASCII only, so the CTE does not shadow the physical table the gate believes it shadows. Found in task 1077; the TypeScript gate folds ASCII only. Remove this marking when Python is fixed."
       }
     },
     {
