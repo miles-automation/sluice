@@ -5,6 +5,12 @@ spec 001 changes. Motivated by the 2026-09-13 comparison recorded in the platfor
 `research/sluice-bof-comparison/RESULTS.md`, where an agent fetching 19 pages of one tool spent 19 of
 its 22 turns on the loop and then hand-wrote a 19-table `UNION ALL`.
 
+Versions (spec 001 §0): implemented and verified in the Python version only. The page loop (§4) is
+pinned by the `paginate` conformance fixtures and the configuration (§2) by the `config` fixtures,
+rechecked 2026-11-25 on Python; the `max_seconds` wall clock and everything that needs a live
+downstream (§3, §5) are covered by the Python suite only. The TypeScript version implements this in
+task 1078 and is unverified until then.
+
 ## 1. What it is
 
 An explicitly configured operation that fetches successive pages of **one** downstream tool and records

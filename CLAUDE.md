@@ -13,9 +13,15 @@ the rules below.
 ## Layout
 
 The Python package lives in `python/` (PyPI `mcp-sluice`, import and CLI
-`sluice`). `spec/`, `intent/`, `plan/`, `review/` and `sluice.example.toml` stay
-at the repo root, shared by every version. A TypeScript version will live in
-`typescript/`.
+`sluice`). The TypeScript version lives in `typescript/` (npm `mcp-sluice`,
+private until task 1095; today it holds only the conformance harness).
+`spec/`, `intent/`, `plan/`, `review/`, `conformance/` and `sluice.example.toml`
+stay at the repo root, shared by every version.
+
+`conformance/` is the language-neutral suite both versions run (see its README).
+A behavior change lands in both versions with a fixture, or the fixture's `note`
+records it as one-sided. `conformance/COVERAGE.md` maps every Python test to a
+fixture or to why it stays Python-only, and a test fails if it goes stale.
 
 ## Commands
 
@@ -29,6 +35,10 @@ uv run pytest -m "not slow"   # skip timing-sensitive tests (concurrency, timeou
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src tests
 ```
+
+Run from `typescript/`: `npm ci && npm run check` (typecheck plus every
+conformance fixture; kinds with no TypeScript implementation are reported as
+skipped by kind).
 
 The M5 Hypothesis correctness property is `tests/test_property_aggregates.py`.
 The non-deterministic model-eval harness is `uv run python -m demo.median`; use
