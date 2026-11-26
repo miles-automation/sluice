@@ -1,9 +1,22 @@
 {
   "name": "mcp-sluice",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Passthrough MCP server that materializes tool results into a DuckDB scratch database",
   "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "duckdb"
+  ],
+  "homepage": "https://github.com/miles-automation/sluice/tree/main/typescript#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miles-automation/sluice.git",
+    "directory": "typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/miles-automation/sluice/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -20,7 +33,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -41,5 +56,8 @@
     "ajv": "^8.20.0",
     "fast-check": "^4.11.0",
     "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

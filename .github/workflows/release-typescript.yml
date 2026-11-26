@@ -1,0 +1,140 @@
+name: Release TypeScript
+
+on:
+  push:
+    tags:
+      - "typescript-v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-typescript-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: typescript
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package version
+        run: test "${GITHUB_REF_NAME#typescript-v}" = "$(node -p 'require("./package.json").version')"
+
+      - name: Run checks
+        run: npm run check
+
+      - name: Pack
+        run: npm pack
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: mcp-sluice-npm
+          path: typescript/mcp-sluice-*.tgz
+          if-no-files-found: error
+
+  install-smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Download tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: mcp-sluice-npm
+          path: pkg
+
+      - name: Install globally from the tarball
+        run: npm install -g ./pkg/mcp-sluice-*.tgz
+
+      - name: Smoke-test the CLI and the DuckDB binding
+        run: |
+          sluice --help
+          cd "$(npm root -g)/mcp-sluice"
+          node --input-type=module -e '
+            const { DuckDBInstance } = await import("@duckdb/node-api");
+            const instance = await DuckDBInstance.create(":memory:");
+            const connection = await instance.connect();
+            const reader = await connection.runAndReadAll("SELECT 42 AS answer");
+            if (String(reader.getRows()[0][0]) !== "42") process.exit(1);
+            console.log("duckdb ok");
+          '
+
+      - name: Record install size
+        run: du -sh "$(npm root -g)/mcp-sluice"
+
+  npm-publish:
+    needs: install-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Use an npm with trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      - name: Download tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: mcp-sluice-npm
+          path: pkg
+
+      - name: Publish
+        run: npm publish ./pkg/mcp-sluice-*.tgz --access public --provenance
+
+  github-release:
+    needs: npm-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: mcp-sluice-npm
+          path: pkg
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" pkg/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
