@@ -601,6 +601,69 @@
           "pagination"
         ]
       }
+    },
+    {
+      "id": "config.env-values-are-stringified-like-python",
+      "spec": "001 §7",
+      "note": "Spec 001 §7 does not say how a non-string env value becomes a string; pinned as observed: Python's str(), including repr() inside arrays and tables. Sub-second datetimes are not covered.",
+      "toml": "[servers.s]\ncommand = \"x\"\n[servers.s.env]\nA = [\"x\", 1, true, 1.0, \"it's\"]\nB = 1979-05-27T07:32:00Z\nC = 1979-05-27T00:32:00-07:00\nD = 1979-05-27\nE = 07:32:00\nF = { k = 2, l = [] }\nG = 1.5\nH = false\nI = 1979-05-27T07:32:00\nJ = [1979-05-27, 07:32:00]\n",
+      "expect": {
+        "ok": true,
+        "server": {
+          "env": {
+            "A": "['x', 1, True, 1.0, \"it's\"]",
+            "B": "1979-05-27 07:32:00+00:00",
+            "C": "1979-05-27 00:32:00-07:00",
+            "D": "1979-05-27",
+            "E": "07:32:00",
+            "F": "{'k': 2, 'l': []}",
+            "G": "1.5",
+            "H": "False",
+            "I": "1979-05-27 07:32:00",
+            "J": "[datetime.date(1979, 5, 27), datetime.time(7, 32)]"
+          }
+        }
+      }
+    },
+    {
+      "id": "config.limits-above-2-53-are-accepted",
+      "spec": "001 §7",
+      "note": "Python keeps the exact integer; TypeScript clamps it to 2^53-1, which no budget reaches. Cross-checks between limits compare the exact values in both.",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_session_bytes = 100000000000000000000\nmax_session_calls = 100000000000000000000\n",
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "id": "config.limit-cross-check-above-2-53-is-exact",
+      "spec": "001 §7",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_payload_bytes = 100000000000000000001\nmax_session_bytes = 100000000000000000000\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_session_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.pagination-max-bytes-above-2-53-is-compared-exactly",
+      "spec": "002 §2",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nmax_session_bytes = 100000000000000000000\n[pagination.list]\nmax_bytes = 100000000000000000001\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "max_session_bytes"
+        ]
+      }
+    },
+    {
+      "id": "config.byte-order-mark-is-refused",
+      "spec": "001 §7",
+      "note": "TOML text has no byte order mark; Python's tomllib refuses one, so both versions do.",
+      "toml": "﻿[servers.gh]\ncommand = \"npx\"\n",
+      "expect": {
+        "error": true
+      }
     }
   ]
 }

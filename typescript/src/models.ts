@@ -96,7 +96,7 @@ export interface PaginationSummary {
   readonly rows: number;
   readonly bytes: number;
   readonly seconds: number;
-  readonly resumeOffset: number | null;
+  readonly resumeOffset: bigint | null;
 }
 
 export interface Handle {

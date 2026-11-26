@@ -1,3 +1,4 @@
+import { longTimeout } from "./timer.ts";
 import type { DuckDBConnection, DuckDBPreparedStatement, DuckDBResult } from "@duckdb/node-api";
 import { QueryRejectedError, check, prepareSelect } from "./gate.ts";
 import { QUERY_OUTPUT_MIN_BYTES, type Limits } from "./limits.ts";
@@ -218,7 +219,7 @@ export class QueryTool {
         retry = setInterval(() => connection?.interrupt(), INTERRUPT_RETRY_MS);
       };
     });
-    const timer = setTimeout(expire, this.#limits.query_timeout_seconds * 1000);
+    const cancelTimer = longTimeout(expire, this.#limits.query_timeout_seconds * 1000);
     const guard = (): void => {
       if (expired) {
         throw new DeadlineExpired();
@@ -279,7 +280,7 @@ export class QueryTool {
       }
       throw engineFailure(error);
     } finally {
-      clearTimeout(timer);
+      cancelTimer();
     }
   }
 }

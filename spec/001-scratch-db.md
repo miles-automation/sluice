@@ -22,25 +22,27 @@ conformance suite (`conformance/`, see its README):
 | Version | Package | Engine | Status |
 |---|---|---|---|
 | Python, `python/` | PyPI `mcp-sluice`, Python >= 3.14, `mcp` >= 2.1.1 | `duckdb>=1.5.5`, a declared range: CI runs the whole suite on 1.5.5 and on the current 2.x release | released |
-| TypeScript, `typescript/` | npm `mcp-sluice` (private until task 1095), Node >= 24, strict TypeScript | DuckDB 2.x through `@duckdb/node-api`, pinned exactly to 2.0.1-r.1 (engine 2.0.1); 2.0.0 was the review baseline (review/duckdb2-node-check.md) | store, gate, query and interception implemented (task 1077); proxy, pagination, server and CLI in task 1078 |
+| TypeScript, `typescript/` | npm `mcp-sluice` (private until task 1095), Node >= 24, strict TypeScript | DuckDB 2.x through `@duckdb/node-api`, pinned exactly to 2.0.1-r.1 (engine 2.0.1); 2.0.0 was the review baseline (review/duckdb2-node-check.md) | complete: store, gate, query and interception (task 1077); proxy, pagination, server and CLI on `@modelcontextprotocol/client` and `/server` 2.4.0, pinned exactly (task 1078) |
 
 A behavior change lands in both versions, with a conformance fixture, or the
 fixture's `note` records it as one-sided. Claims about the MCP SDK name the
-Python SDK unless they say otherwise; the TypeScript SDK has not been checked
-against any of them.
+Python SDK unless they say otherwise. The TypeScript SDK (v2, 2.4.0) was
+checked against FR-1 to FR-7, §8, §10 and §11 by `typescript/test/proxy.test.ts`,
+`pagination.test.ts` and `cli.test.ts`; where its behavior differs the section
+says so.
 
 **Recheck of this revision (2026-11-25).** Normative claims were rechecked on
 Python with DuckDB 1.5.5 and 2.0.1 and `mcp` 2.3.0, by the conformance fixtures
 and the Python suite. The ledger below says what checked each section. A claim
 marked unverified was not rechecked and should be treated as a recorded
 measurement, not a guarantee. On the TypeScript version every fixture kind
-except `paginate` and `config` passes on DuckDB 2.0.1 (task 1077); those two
-stay pending until task 1078, and the claims marked Python only below are not
-verified on TypeScript.
+passes on DuckDB 2.0.1 (`paginate` and `config` since task 1078); the claims
+marked Python only below are not verified on TypeScript unless the row names a
+TypeScript test.
 
 | Section | Rechecked by | Status |
 |---|---|---|
-| FR-1, FR-2, FR-3, FR-5, FR-6, FR-7, §8 classes, §10, §11 | Python suite (`test_proxy.py`, `test_passthrough.py`, `test_engine_contract.py`, `test_cli.py`) on `mcp` 2.3.0 | verified, Python only |
+| FR-1, FR-2, FR-3, FR-5, FR-6, FR-7, §8 classes, §10, §11 | Python suite (`test_proxy.py`, `test_passthrough.py`, `test_engine_contract.py`, `test_cli.py`) on `mcp` 2.3.0; TypeScript suite (`proxy.test.ts`, `cli.test.ts`) on SDK 2.4.0 | verified on both |
 | FR-8 to FR-14, §3.1, §3.3, §4 | fixtures `session.handle.*`, `session.passthrough.*` | verified; the §4.1 and §4.2 examples are illustrative, see there |
 | §3.2 naming | fixtures `naming.*`, `project.*` | verified; renaming beyond reserved names is pinned as observed |
 | §5.1 to §5.3 | fixtures `extract.*`, `project.*`, `session.handle.*` | verified |
@@ -836,7 +838,17 @@ promised verbatim passthrough that is not always achievable.
 
 Verified, SDK 2.1.1: `ClientSession.validate_tool_result` raises `RuntimeError`
 when a tool with a cached output schema returns missing or non-conforming
-structured content.
+structured content. TypeScript SDK 2.4.0: `Client.callTool` with the downstream tool as
+`toolDefinition` raises a `ProtocolError` (`-32602`) whose message names the
+output schema; Sluice classifies it by the same substrings
+(`typescript/test/proxy.test.ts` pins the message). A schema the SDK's validator cannot
+compile (for example `$schema` draft-04) is treated as no schema there, so the
+call is made without output validation rather than failing; Python validates it.
+A downstream line that is not a JSON-RPC message but names an in-flight request
+id fails that call as `protocol` in TypeScript; Python 2.3.0 logs it and the
+call waits indefinitely, since it has no read timeout. Only the first response
+for an in-flight id is accepted; later ones and ones for ids not in flight are
+dropped.
 
 | Situation | Behavior |
 |---|---|
@@ -926,6 +938,22 @@ upstream negotiated version before relaying one upward and, when it is too old,
 returns an error naming the tool, the required version, and the negotiated one.
 Passing it up regardless fails in the serializer with a message that helps
 nobody.
+
+**TypeScript (SDK 2.4.0).** The v2 TypeScript SDK reaches `2026-07-28` through
+`versionNegotiation: { mode: "auto" }`, probing `server/discover` in place on
+Sluice's own stdio transport; if that connect fails Sluice retries once with the
+plain `initialize` handshake, so a downstream on an older protocol still
+starts. On `2026-07-28` a TypeScript-SDK server refuses to return an
+`InputRequiredResult` whose embedded requests the request's declared client
+capabilities do not cover (`-32021`). Sluice still declares no capability of
+its own, but on each relayed `tools/call` it forwards the upstream request's own
+`io.modelcontextprotocol/clientCapabilities` (or, for an upstream client on the
+`initialize` handshake, the capabilities it declared there) so the downstream
+can address the real client. This is a one-sided behavior: the Python version
+sends no per-request capabilities, which the Python SDK servers it was verified
+against do not check. The upstream server runs with the SDK's legacy
+multi-round-trip shim off, so Sluice never fulfils an input request itself on
+either era.
 
 ## 12. Scope isolation
 

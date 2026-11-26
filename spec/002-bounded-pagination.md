@@ -5,12 +5,14 @@ spec 001 changes. Motivated by the 2026-09-13 comparison recorded in the platfor
 `research/sluice-bof-comparison/RESULTS.md`, where an agent fetching 19 pages of one tool spent 19 of
 its 22 turns on the loop and then hand-wrote a 19-table `UNION ALL`.
 
-Versions (spec 001 §0): implemented and verified in the Python version only. The page loop (§4) is
+Versions (spec 001 §0): implemented in both versions. The page loop (§4) is
 pinned by the `paginate` conformance fixtures and the configuration (§2) by the `config` fixtures,
 rechecked 2026-11-25 on Python, and their `collection` expectations drive the collection tool end to
 end for PG-10 to PG-12 (a fetch with no page is a tool error with no table); the `max_seconds` wall clock and everything that needs a live
-downstream (§3, §5) are covered by the Python suite only. The TypeScript version implements this in
-task 1078 and is unverified until then.
+downstream (§3, §5) are covered by each version's own suite (`python/tests/test_pagination.py`,
+`typescript/test/pagination.test.ts`, task 1078). Both versions pass the BullshitOrFit acceptance
+run (`research/sluice-bof-comparison/acceptance_pagination.py` in the platform workspace) with the
+same answer.
 
 ## 1. What it is
 
@@ -89,7 +91,8 @@ above `[limits].max_session_bytes` are configuration errors.
 - **PG-9** Every partial result records the `resume_offset`: the first offset that was **not**
   fetched, when resuming is safe (`max_pages`, `max_bytes`, `max_seconds`, `page_error`,
   `page_failed`, `interactive`, `malformed_page`); `null` when it is not (`missing_next_offset`,
-  `offset_not_advancing`), because the server's own cursor cannot be trusted there.
+  `offset_not_advancing`), because the server's own cursor cannot be trusted there. Offsets are
+  exact integers end to end, including beyond 2^53.
 
 ## 5. Recording and the handle
 
