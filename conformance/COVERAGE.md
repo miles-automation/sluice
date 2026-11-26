@@ -245,14 +245,14 @@ Reasons a test stays Python-only:
 | `test_mounted_name_is_stable` | `naming.mounted-name-vector` |
 | `test_mounted_name_shape` | `naming.mounted-name-hashes-the-unsanitized-name` |
 | `test_long_names_fail_loudly_rather_than_truncating` | `naming.mounted-name-stays-under-the-tool-name-limit` |
-| `test_name_too_long_raises` | Python-only: lowers MAX_MOUNTED_NAME by monkeypatch; with SLUG_MAX 40 and a 12-char tag no real name reaches 128, so no fixture can trigger it. TS: needs the same guard and a unit test. |
+| `test_name_too_long_raises` | Python-only: lowers MAX_MOUNTED_NAME by monkeypatch; with SLUG_MAX 40 and a 12-char tag no real name reaches 128, so no fixture can trigger it. TS: same guard, unit-tested with a lowered limit in typescript/test/naming.test.ts. |
 | `test_table_name_carries_scope_and_sequence` | `naming.table-name-carries-scope-and-sequence` |
 | `test_table_names_from_different_scopes_differ` | `naming.table-names-from-different-scopes-differ` |
 | `test_sequence_widens_past_9999` | `naming.table-sequence-widens-past-9999` |
 | `test_quote_ident` | `naming.quote-*` |
 | `test_the_discovered_collision_pair_no_longer_collides` | `naming.the-discovered-24-bit-collision-no-longer-collides` |
 | `test_injectivity_check_accepts_distinct_names` | `naming.injectivity-check-accepts-distinct-names` |
-| `test_injectivity_check_fails_loudly_on_a_forced_collision` | Python-only: forces a hash collision by monkeypatching `tag`; no real colliding pair is known at 48 bits. TS: needs a unit test with an injected tag function. |
+| `test_injectivity_check_fails_loudly_on_a_forced_collision` | Python-only: forces a hash collision by monkeypatching `tag`; no real colliding pair is known at 48 bits. TS: covered by a unit test with an injected mount function in typescript/test/naming.test.ts. |
 | `test_repeated_identical_pairs_are_not_a_collision` | `naming.repeated-identical-pairs-are-not-a-collision` |
 
 ## tests/test_pagination.py
@@ -411,7 +411,7 @@ Reasons a test stays Python-only:
 |---|---|
 | `test_minted_scopes_are_distinct_and_full_width` | `scope.minted-scopes-are-full-width-and-distinct` |
 | `test_minted_scopes_carry_capability_strength_entropy` | `scope.minted-scopes-are-full-width-and-distinct` |
-| `test_minting_draws_from_secrets_not_random` | Python-only: proves the generator is `secrets` by monkeypatching it. TS: needs a test that minting uses `crypto.randomBytes` or `crypto.getRandomValues`. |
+| `test_minting_draws_from_secrets_not_random` | Python-only: proves the generator is `secrets` by monkeypatching it. TS: typescript/test/scope.test.ts proves minting calls `crypto.getRandomValues`. |
 | `test_conversation_id_gives_a_stable_scope` | `scope.conversation-id-vector` |
 | `test_conversation_scope_matches_a_fixed_digest_vector` | `scope.conversation-id-vector`, `scope.conversation-id-non-ascii` |
 | `test_conversation_scope_is_stable_across_processes` | `scope.conversation-id-vector` |

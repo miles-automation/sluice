@@ -11,3 +11,4 @@ coverage.xml
 htmlcov/
 .hypothesis/
 node_modules/
+dist/
