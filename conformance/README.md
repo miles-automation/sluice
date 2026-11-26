@@ -101,9 +101,11 @@ Rejection categories: `parse_error`, `no_statement`, `multiple_statements`,
 on which layer refuses first, the case lists every acceptable one. That is the
 case for non-SELECT statements and `PRAGMA`: Python on DuckDB 1.5.5 refuses
 PRAGMA as unanalyzable, Python on 2.x refuses it as not SELECT, and Node types it
-as SELECT and must refuse it as unanalyzable (review/duckdb2-node-check.md). The
-review also requires the Node gate to run the AST check before `prepare`, so
-non-SELECT statements may surface as `unanalyzable` there.
+as SELECT through `prepare` (review/duckdb2-node-check.md). The TypeScript gate
+takes the statement type from the parser instead: `json_serialize_sql` refuses
+every statement that is not a query without binding it, PRAGMA included, so the
+TypeScript gate refuses PRAGMA as not SELECT, and it calls `prepare` only after
+the object check, as the review requires.
 
 ### Gate AST mutations
 

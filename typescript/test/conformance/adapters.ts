@@ -14,6 +14,7 @@ import {
 } from "../../src/naming.ts";
 import { derive, fromConversationId, mint } from "../../src/scope.ts";
 import { extract, project } from "../../src/shape.ts";
+import { runCell, runEngine, runGate, runGateAst, runSession } from "./duckdb-adapters.ts";
 
 export type Adapter = (testCase: Case) => void | Promise<void>;
 
@@ -231,11 +232,11 @@ export const adapters: Readonly<Record<Kind, Adapter | Pending>> = {
   infer: runInfer,
   naming: runNaming,
   scope: runScope,
-  cell: { pending: "task 1077 (query rendering)" },
-  gate: { pending: "task 1077 (gate)" },
-  gate_ast: { pending: "task 1077 (gate)" },
-  engine: { pending: "task 1077 (DuckDB binding)" },
-  session: { pending: "task 1077 (store, gate and query)" },
+  cell: runCell,
+  gate: runGate,
+  gate_ast: runGateAst,
+  engine: runEngine,
+  session: runSession,
   paginate: { pending: "task 1078 (pagination)" },
   config: { pending: "task 1078 (CLI and config)" },
 };
