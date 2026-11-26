@@ -581,6 +581,7 @@ means the gate cannot be defeated by comments, casing, or whitespace.
 **Layer 2, engine lockdown.** At session start, before any user SQL:
 
 ```
+SET temp_directory = '';                -- first: no spill files on disk
 SET enable_external_access = false;
 SET autoinstall_known_extensions = false;
 SET autoload_known_extensions = false;
@@ -592,6 +593,18 @@ SET lock_configuration = true;           -- last
 Verified blocked: `read_csv`, `read_json`, `read_parquet`, `glob`, `ATTACH`,
 `COPY ... TO`, `INSTALL`, `LOAD`, and any later `SET` of a locked option.
 Verified **not** blocked: `PRAGMA database_list`, which only layer 1 stops.
+
+`temp_directory` has to come first: DuckDB refuses to change it once external
+access is off. Without it, a large sort spilled agent-driven data into `.tmp/`
+in the working directory, up to 90% of free disk (found in task 1077 review).
+With it, such a query fails with an out-of-memory error, the documented §8
+boundary. Verified on DuckDB 1.5.5 and 2.0.1.
+
+Engine errors returned to the agent never carry DuckDB's `Did you mean ...`
+suggestions, and a missing-table error is reported only as "no longer
+available". The suggestion names the closest table in the whole catalog,
+including other scopes', so a table evicted between the gate and execution
+turned the error into a discovery oracle (task 1077 review).
 
 **This lockdown is why §5.4 cannot use `read_json`.** Do not "fix" a
 materialization failure by relaxing it.

@@ -472,6 +472,52 @@
         "decision": "allow",
         "executes": true
       }
+    },
+    {
+      "id": "gate.cte.unicode-casefold-cannot-shadow-the-envelope",
+      "spec": "001 §3.3, §6.1",
+      "note": "DuckDB 2.0.1 and 1.5.5 resolve the reference to the physical table, not to the CTE, because U+017F only casefolds to 's'. A gate that folds Unicode case admits the statement and reads every scope's envelope.",
+      "sql": "WITH \"ſluice_calls\" AS (SELECT 1 AS a) SELECT * FROM sluice_calls",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.unicode-casefold-cannot-shadow-another-scopes-view",
+      "spec": "001 §3.3, §6.1, §12",
+      "note": "DuckDB 2.0.1 and 1.5.5 resolve the reference to the physical table, not to the CTE, because U+017F only casefolds to 's'. A gate that folds Unicode case admits the statement and reads every scope's envelope.",
+      "sql": "WITH \"ſluice_calls__0123\" AS (SELECT 1 AS a) SELECT * FROM sluice_calls__0123",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.unicode-casefold-cannot-shadow-sqlite-master",
+      "spec": "001 §6.1, §12",
+      "note": "DuckDB 2.0.1 and 1.5.5 resolve the reference to the physical table, not to the CTE, because U+017F only casefolds to 's'. A gate that folds Unicode case admits the statement and reads every scope's envelope.",
+      "sql": "WITH \"ſqlite_master\" AS (SELECT 1 AS a) SELECT * FROM sqlite_master",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.ascii-case-still-shadows",
+      "spec": "001 §6.1",
+      "description": "Control for the casefold cases: a CTE that differs from the reference only in ASCII case still shadows it, as DuckDB binds it.",
+      "sql": "WITH \"SLUICE_CALLS\" AS (SELECT 1 AS a) SELECT * FROM sluice_calls",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
     }
   ]
 }

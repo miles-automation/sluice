@@ -1,6 +1,7 @@
 """The `query` tool: gate, timeout, caps, rendering (spec 6)."""
 
 import logging
+import re
 import threading
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -160,6 +161,18 @@ class _DeadlineExpiredError(Exception):
     """Internal marker for a deadline that fired before a worker started."""
 
 
+_SUGGESTION_RE = re.compile(r"\n?Did you mean [^\n]*")
+
+
+def _engine_failure(exc: duckdb.Error) -> QueryRejectedError:
+    message = str(exc)
+    if isinstance(exc, duckdb.CatalogException) and "Table with name" in message:
+        return QueryRejectedError(
+            "a table this query names is no longer available; it may have been evicted"
+        )
+    return QueryRejectedError(f"{type(exc).__name__}: {_SUGGESTION_RE.sub('', message)}")
+
+
 class QueryTool:
     """Runs agent SQL on a connection of its own."""
 
@@ -239,11 +252,7 @@ class QueryTool:
         except duckdb.Error as exc:
             # Never an empty success: a failing query has to look like a
             # failure, not like a result set with no rows.
-            failure = (
-                self._timeout_failure()
-                if expired.is_set()
-                else QueryRejectedError(f"{type(exc).__name__}: {exc}")
-            )
+            failure = self._timeout_failure() if expired.is_set() else _engine_failure(exc)
         finally:
             timer.cancel()
             timer.join()

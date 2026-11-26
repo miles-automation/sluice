@@ -47,6 +47,7 @@ def retention_budget_reason(prior: str | None) -> str:
 
 
 LOCKDOWN_TEMPLATE: tuple[str, ...] = (
+    "SET temp_directory = ''",
     "SET enable_external_access = false",
     "SET autoinstall_known_extensions = false",
     "SET autoload_known_extensions = false",
