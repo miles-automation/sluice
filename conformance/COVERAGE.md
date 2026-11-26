@@ -11,7 +11,7 @@ The Python tests that became fixtures are kept for now, so the two can be
 compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
-Summary: 304 test functions. 200 are expressed as fixtures, 90 stay
+Summary: 307 test functions. 200 are expressed as fixtures, 93 stay
 Python-only, 14 are the conformance runner itself. 506 fixture cases in
 total; 42 of them cover behavior no existing Python test asserted (listed
 at the end).
@@ -365,6 +365,9 @@ Reasons a test stays Python-only:
 | `test_cancelling_the_caller_still_bounds_the_query` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
 | `test_a_timeout_leaves_the_store_usable` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
 | `test_timeout_expiring_in_worker_queue_prevents_late_execution` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
+| `test_a_vanished_allowed_table_does_not_name_its_nearest_neighbour` | Python-only: reads internals (seeds the allowlist with a table that is not in the catalog, standing in for an eviction race). TS: needs an equivalent unit test. |
+| `test_engine_errors_never_carry_did_you_mean_suggestions` | Python-only: engine error text is binding-specific. TS: needs an equivalent unit test. |
+| `test_the_lockdown_disables_spilling_to_disk` | Python-only: reads a connection setting through the Python binding. TS: needs an equivalent unit test. |
 
 ## tests/test_query_safety.py
 

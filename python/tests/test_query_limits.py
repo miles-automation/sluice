@@ -332,3 +332,25 @@ async def test_timeout_expiring_in_worker_queue_prevents_late_execution(store: S
 
     assert isinstance(result["query"], QueryRejectedError)
     assert "timeout" in str(result["query"])
+
+
+async def test_a_vanished_allowed_table_does_not_name_its_nearest_neighbour(store: Store) -> None:
+    store.connection.execute('CREATE TABLE "srv__rows__other_scope__0002" (a BIGINT)')
+    store._allowed_objects.add("srv__rows__this_scope__0001")
+    with pytest.raises(QueryRejectedError) as raised:
+        await QueryTool(store, Limits()).run('SELECT * FROM "srv__rows__this_scope__0001"')
+    message = str(raised.value)
+    assert "no longer available" in message
+    assert "other_scope" not in message
+    assert "Did you mean" not in message
+
+
+async def test_engine_errors_never_carry_did_you_mean_suggestions(store: Store) -> None:
+    name = _seed(store)
+    with pytest.raises(QueryRejectedError) as raised:
+        await QueryTool(store, Limits()).run(f'SELECT lenght(b) FROM "{name}"')
+    assert "Did you mean" not in str(raised.value)
+
+
+def test_the_lockdown_disables_spilling_to_disk(store: Store) -> None:
+    assert store.connection.execute("SELECT current_setting('temp_directory')").fetchone() == ("",)
