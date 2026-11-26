@@ -52,6 +52,9 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/sluice"]
 
+[tool.hatch.build.targets.sdist.force-include]
+"../sluice.example.toml" = "sluice.example.toml"
+
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]

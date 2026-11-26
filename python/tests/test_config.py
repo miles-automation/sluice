@@ -178,6 +178,8 @@ def test_find_config_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 def test_the_example_config_is_valid() -> None:
     """The file users are told to copy has to actually load."""
-    example = Path(__file__).resolve().parents[1] / "sluice.example.toml"
+    here = Path(__file__).resolve()
+    candidates = (here.parents[1] / "sluice.example.toml", here.parents[2] / "sluice.example.toml")
+    example = next(path for path in candidates if path.is_file())
     config = load_config(example, environ={"GITHUB_TOKEN": "x"})
     assert isinstance(config, Config)

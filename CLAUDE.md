@@ -10,7 +10,16 @@ Read `spec/001-scratch-db.md` before changing behavior; `intent/` records why th
 non-goals are non-goals; `plan/001-notes-m0.md` is the measured evidence behind
 the rules below.
 
+## Layout
+
+The Python package lives in `python/` (PyPI `mcp-sluice`, import and CLI
+`sluice`). `spec/`, `intent/`, `plan/`, `review/` and `sluice.example.toml` stay
+at the repo root, shared by every version. A TypeScript version will live in
+`typescript/`.
+
 ## Commands
+
+Run from `python/`.
 
 ```bash
 uv sync                       # install
