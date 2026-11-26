@@ -151,7 +151,7 @@ Reasons a test stays Python-only:
 | `test_expressions_beside_a_cte_body_are_walked` | `gate_ast.expressions-beside-a-cte-body-are-walked` |
 | `test_a_qualified_path_cannot_hide_behind_an_empty_schema` | `gate_ast.qualified-path-cannot-hide-behind-an-empty-schema` |
 | `test_a_catalog_alone_is_still_qualified` | `gate_ast.catalog-alone-is-still-qualified` |
-| `test_the_canary_passes_on_the_installed_duckdb` | Python-only: runs Python's startup canary. Its probes are gate fixtures (`gate.cte.*`, `gate.function.sleep-ms`, `gate.function.pg-get-viewdef-*`, `gate.function.json-serialize-plan`). TS: needs its own canary (review constraint 3). |
+| `test_the_canary_passes_on_the_installed_duckdb` | Python-only: runs Python's startup canary. Its probes are gate fixtures (`gate.cte.*`, `gate.function.sleep-ms`, `gate.function.pg-get-viewdef-*`, `gate.function.json-serialize-plan`). TS: `verifyParserContract` in `typescript/src/gate.ts` runs the same probes, plus a check of the CTE body path, at `Store.open` (review constraint 3). |
 | `test_a_session_opens_with_the_canary_after_lockdown` | Python-only: Store.open plus canary. TS: needs an equivalent. |
 | `test_the_canary_refuses_when_a_table_goes_unseen` | Python-only: monkeypatches the Python gate to prove the startup canary refuses to run. TS: needs its own canary and an equivalent test (review/duckdb2-node-check.md constraint 3). |
 | `test_the_canary_refuses_a_rejection_for_the_wrong_reason` | Python-only: monkeypatches the Python gate to prove the startup canary refuses to run. TS: needs its own canary and an equivalent test (review/duckdb2-node-check.md constraint 3). |

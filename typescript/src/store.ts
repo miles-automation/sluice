@@ -179,6 +179,15 @@ function appendCell(appender: DuckDBAppender, value: JsonValue, column: ColumnSp
   }
 }
 
+function discard(appender: DuckDBAppender): void {
+  try {
+    appender.clear();
+    appender.closeSync();
+  } catch {
+    return;
+  }
+}
+
 type Waiter = () => void;
 
 export class Store {
@@ -646,12 +655,7 @@ export class Store {
       }
       appender.flushSync();
     } catch (error) {
-      try {
-        appender.clear();
-        appender.closeSync();
-      } catch {
-        void 0;
-      }
+      discard(appender);
       throw error;
     }
     appender.closeSync();

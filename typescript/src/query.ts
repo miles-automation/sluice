@@ -134,7 +134,7 @@ class DeadlineExpired extends Error {
 }
 
 function isInterrupt(error: unknown): boolean {
-  return error instanceof Error && /interrupt/iu.test(error.message);
+  return error instanceof Error && /^INTERRUPT Error:/u.test(error.message);
 }
 
 function errorName(error: unknown): string {

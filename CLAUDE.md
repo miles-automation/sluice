@@ -14,8 +14,9 @@ the rules below.
 
 The Python package lives in `python/` (PyPI `mcp-sluice`, import and CLI
 `sluice`). The TypeScript version lives in `typescript/` (npm `mcp-sluice`,
-private until task 1095; today it holds the pure modules in `src/`, a lossless
-JSON parser, and the conformance harness).
+private until task 1095; today `src/` holds the pure modules, a lossless JSON
+parser, and the store, gate, query tool and interceptor on `@duckdb/node-api`,
+pinned exactly; the MCP proxy, pagination, server and CLI are task 1078).
 `spec/`, `intent/`, `plan/`, `review/`, `conformance/` and `sluice.example.toml`
 stay at the repo root, shared by every version.
 

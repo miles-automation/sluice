@@ -22,7 +22,7 @@ conformance suite (`conformance/`, see its README):
 | Version | Package | Engine | Status |
 |---|---|---|---|
 | Python, `python/` | PyPI `mcp-sluice`, Python >= 3.14, `mcp` >= 2.1.1 | `duckdb>=1.5.5`, a declared range: CI runs the whole suite on 1.5.5 and on the current 2.x release | released |
-| TypeScript, `typescript/` | npm `mcp-sluice` (private until task 1095), Node >= 24, strict TypeScript | DuckDB 2.x through `@duckdb/node-api`; 2.0.0 is the verified baseline (review/duckdb2-node-check.md) and the release will pin the engine exactly | harness only; implementation in tasks 1076-1078 |
+| TypeScript, `typescript/` | npm `mcp-sluice` (private until task 1095), Node >= 24, strict TypeScript | DuckDB 2.x through `@duckdb/node-api`, pinned exactly to 2.0.1-r.1 (engine 2.0.1); 2.0.0 was the review baseline (review/duckdb2-node-check.md) | store, gate, query and interception implemented (task 1077); proxy, pagination, server and CLI in task 1078 |
 
 A behavior change lands in both versions, with a conformance fixture, or the
 fixture's `note` records it as one-sided. Claims about the MCP SDK name the
@@ -33,9 +33,10 @@ against any of them.
 Python with DuckDB 1.5.5 and 2.0.1 and `mcp` 2.3.0, by the conformance fixtures
 and the Python suite. The ledger below says what checked each section. A claim
 marked unverified was not rechecked and should be treated as a recorded
-measurement, not a guarantee. Nothing here is verified on the TypeScript
-version yet: its harness reports every fixture kind as pending until tasks
-1076-1078 land.
+measurement, not a guarantee. On the TypeScript version every fixture kind
+except `paginate` and `config` passes on DuckDB 2.0.1 (task 1077); those two
+stay pending until task 1078, and the claims marked Python only below are not
+verified on TypeScript.
 
 | Section | Rechecked by | Status |
 |---|---|---|
@@ -873,7 +874,9 @@ two boundaries, both named rather than implied:
   calls run on the libuv pool, which `connect()` shares, so deadlines run on
   timers that never await a DuckDB call first and admission keeps in-flight
   queries below `UV_THREADPOOL_SIZE` (review/duckdb2-node-check.md, constraint 4;
-  unverified until task 1077).
+  checked by `typescript/test/query.test.ts` and `threadpool.test.ts`). Closing a
+  streaming result whose query is still running blocks the event loop until the
+  query ends, so an unfinished result is interrupted before it is closed.
 
 ## 10. Control plane
 
