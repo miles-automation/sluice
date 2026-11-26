@@ -85,7 +85,7 @@ and run its test suite against the resolved environment before rollout.
 
 ## Configuring an MCP client
 
-Copy `sluice.example.toml` to `sluice.toml` and point it at the one downstream
+Copy [`sluice.example.toml`](https://github.com/miles-automation/sluice/blob/main/sluice.example.toml) to `sluice.toml` and point it at the one downstream
 server you want to proxy:
 
 ```toml
