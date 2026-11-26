@@ -6,13 +6,23 @@ export const THREADPOOL_RESERVE = 2;
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
+const LONG_MAX = 2n ** 63n - 1n;
+const LONG_MIN = -(2n ** 63n);
+const ATOI_PREFIX = /^[ \t\n\v\f\r]*([+-]?[0-9]+)/u;
+
 export function threadpoolSize(environment: Environment = process.env): number {
   const raw = environment[THREADPOOL_ENV];
-  const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+  if (raw === undefined) {
     return LIBUV_DEFAULT_THREADPOOL_SIZE;
   }
-  return Math.min(parsed, LIBUV_MAX_THREADPOOL_SIZE);
+  const digits = ATOI_PREFIX.exec(raw)?.[1];
+  const parsed = digits === undefined ? 0n : BigInt(digits);
+  const long = parsed > LONG_MAX ? LONG_MAX : parsed < LONG_MIN ? LONG_MIN : parsed;
+  const threads = BigInt.asUintN(32, long);
+  if (threads === 0n) {
+    return 1;
+  }
+  return threads > BigInt(LIBUV_MAX_THREADPOOL_SIZE) ? LIBUV_MAX_THREADPOOL_SIZE : Number(threads);
 }
 
 export function queryConcurrency(poolSize: number = threadpoolSize()): number {

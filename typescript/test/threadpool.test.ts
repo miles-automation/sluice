@@ -16,9 +16,25 @@ const CHILD = new URL("fixtures/threadpool-child.ts", import.meta.url);
 test("threadpool size reads the environment and falls back to the libuv default", () => {
   assert.equal(threadpoolSize({}), LIBUV_DEFAULT_THREADPOOL_SIZE);
   assert.equal(threadpoolSize({ [THREADPOOL_ENV]: "8" }), 8);
-  assert.equal(threadpoolSize({ [THREADPOOL_ENV]: "zero" }), LIBUV_DEFAULT_THREADPOOL_SIZE);
-  assert.equal(threadpoolSize({ [THREADPOOL_ENV]: "0" }), LIBUV_DEFAULT_THREADPOOL_SIZE);
   assert.equal(threadpoolSize({ [THREADPOOL_ENV]: "5000" }), 1024);
+});
+
+test("threadpool size is read the way libuv reads it, with atoi", () => {
+  const cases: readonly (readonly [string, number])[] = [
+    ["0", 1],
+    ["", 1],
+    ["zero", 1],
+    ["0x10", 1],
+    ["  6", 6],
+    ["+6", 6],
+    ["6 threads", 6],
+    ["-1", 1024],
+    ["4294967298", 2],
+    ["99999999999999999999999", 1024],
+  ];
+  for (const [raw, expected] of cases) {
+    assert.equal(threadpoolSize({ [THREADPOOL_ENV]: raw }), expected, JSON.stringify(raw));
+  }
 });
 
 test("query concurrency stays below the pool size", () => {
@@ -41,6 +57,11 @@ test("setting the pool size before the first DuckDB call takes effect in that pr
   delete environment[THREADPOOL_ENV];
   const { stdout } = await run(process.execPath, [CHILD.pathname, "2"], { env: environment });
   assert.deepEqual(JSON.parse(stdout), { size: 2, queued: true });
+});
+
+test("libuv runs one thread for a pool size it cannot read as a number", { timeout: 60_000 }, async () => {
+  const { stdout } = await run(process.execPath, [CHILD.pathname, "1"], { env: { ...process.env, [THREADPOOL_ENV]: "0x10" } });
+  assert.deepEqual(JSON.parse(stdout), { size: 1, queued: true });
 });
 
 test("control: with a larger pool the same two slow queries do not delay a third", { timeout: 60_000 }, async () => {

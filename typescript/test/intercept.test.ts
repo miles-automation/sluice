@@ -125,7 +125,7 @@ test("a failed envelope write returns the downstream result unmodified", async (
     store.commitCall = () => Promise.reject(new Error("synthetic envelope failure"));
     const original: ToolResult = { content: [{ type: "text", text: '[{"id": 1}]' }] };
     assert.equal(await interceptor.intercept(request(original)), original);
-    assert.deepEqual(events, ["commit_failed", "envelope_write_failed"]);
+    assert.deepEqual(events, ["commit_failed", "envelope_payload_failed", "envelope_write_failed"]);
   });
 });
 
@@ -197,5 +197,88 @@ test("admission bounds the whole pipeline, not only the write", async () => {
     release();
     await Promise.all([first, second]);
     assert.equal(admitted, 2);
+  });
+});
+
+test("an envelope that cannot hold its payload is still written as metadata", async () => {
+  await withInterceptor(makeLimits(), async (interceptor, store, events) => {
+    const commit = store.commitCall.bind(store);
+    store.commitCall = async (record, plans) => {
+      if (record.payload.value !== undefined) {
+        throw new Error("synthetic payload failure");
+      }
+      return commit(record, plans);
+    };
+    const result = await interceptor.intercept(request({ content: [{ type: "text", text: '[{"id": 1}]' }] }));
+    const structured = result.structuredContent as { tables: unknown[]; flat_reason: string };
+    assert.deepEqual(structured.tables, []);
+    assert.match(structured.flat_reason, /^load_failed: .*; payload_dropped: Error: synthetic payload failure/u);
+    assert.deepEqual(events, ["commit_failed", "envelope_payload_failed"]);
+    const reader = await store.connection.runAndReadAll(`SELECT result IS NULL, result_text IS NULL, args IS NULL FROM ${ENVELOPE_TABLE}`);
+    assert.deepEqual(reader.getRows(), [[true, true, true]]);
+  });
+});
+
+for (const [label, text] of [
+  ["a lone surrogate key", '[{"\\ud800": 1}]'],
+  ["a lone surrogate value", '[{"a": "\\udc00"}]'],
+  ["a raw lone surrogate in prose", '[{"a": 1}] \ud800 trailing'],
+] as const) {
+  test(`${label} is recorded and materialized`, async () => {
+    await withInterceptor(makeLimits(), async (interceptor, store, events) => {
+      const original: ToolResult = { content: [{ type: "text", text }] };
+      const result = await interceptor.intercept(request(original));
+      assert.notEqual(result, original);
+      assert.deepEqual(events, []);
+      const reader = await store.connection.runAndReadAll(`SELECT count(*) FROM ${ENVELOPE_TABLE}`);
+      assert.deepEqual(reader.getRows(), [[1n]]);
+    });
+  });
+}
+
+test("deeply nested tool arguments never fail the call", async () => {
+  await withInterceptor(makeLimits({ max_session_bytes: 100_000_000 }), async (interceptor, store, events) => {
+    let args: unknown = 1;
+    for (let depth = 0; depth < DEEP; depth += 1) {
+      args = { next: args };
+    }
+    const result = await interceptor.intercept(request({ content: [{ type: "text", text: '[{"id": 1}]' }] }, { arguments: args }));
+    assert.equal(tables(result).length, 1);
+    assert.deepEqual(events, []);
+    const reader = await store.connection.runAndReadAll(`SELECT length(args::VARCHAR) > ${DEEP} FROM ${ENVELOPE_TABLE}`);
+    assert.deepEqual(reader.getRows(), [[true]]);
+  });
+});
+
+test("cyclic tool arguments are left unrecorded rather than failing the call", async () => {
+  await withInterceptor(makeLimits(), async (interceptor, _store, events) => {
+    const args: Record<string, unknown> = {};
+    args["self"] = args;
+    const result = await interceptor.intercept(request({ content: [{ type: "text", text: '[{"id": 1}]' }] }, { arguments: args }));
+    assert.equal(tables(result).length, 1);
+    assert.deepEqual(events, ["arguments_unrecorded"]);
+  });
+});
+
+test("malformed results and metadata never escape interception", async () => {
+  await withInterceptor(makeLimits(), async (interceptor, store, events) => {
+    const hostileMeta = {
+      get conversationId(): string {
+        throw new Error("synthetic meta failure");
+      },
+    };
+    const shapes: ToolResult[] = [
+      { content: null as unknown as ToolResult["content"] },
+      { content: [null, { type: "text", text: "[]" }] as unknown as ToolResult["content"] },
+      { content: [{ type: 7, text: "[]" }] as unknown as ToolResult["content"] },
+    ];
+    for (const original of shapes) {
+      assert.equal(await interceptor.intercept(request(original)), original);
+    }
+    const handled = await interceptor.intercept(request({ content: [{ type: "text", text: '[{"id": 1}]' }] }, { meta: hostileMeta }));
+    assert.equal(tables(handled).length, 1);
+    assert.deepEqual(events, ["scope_unreadable"]);
+    const reader = await store.connection.runAndReadAll(`SELECT content_kinds FROM ${ENVELOPE_TABLE} ORDER BY seq`);
+    assert.deepEqual(reader.getRows().map(([kinds]) => String(kinds)), ["[]", "['unknown', 'text']", "['unknown']", "['text']"]);
   });
 });

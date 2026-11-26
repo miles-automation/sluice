@@ -30,6 +30,7 @@ export const QUERY_SCHEMA = {
 
 export const NOTES_RESERVE = QUERY_OUTPUT_MIN_BYTES;
 export const INTERRUPT_RETRY_MS = 50;
+export const CELL_SLACK_BYTES = 4;
 
 export interface QueryOutcome {
   readonly columns: readonly string[];
@@ -57,6 +58,14 @@ export function escapeCell(value: unknown, maxBytes: number): readonly [string, 
   const markerBytes = byteLength(marker);
   const [rendered] = truncateToBytes(text, Math.max(maxBytes - markerBytes, 0));
   return [rendered + (maxBytes >= markerBytes ? marker : ""), true];
+}
+
+export function cellText(value: unknown, maxBytes: number): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const [text] = truncateToBytes(String(value), maxBytes);
+  return text;
 }
 
 export function render(outcome: QueryOutcome, limits: Limits): string {
@@ -197,8 +206,6 @@ export class QueryTool {
   }
 
   async #execute(sql: string, limit: number): Promise<Execution> {
-    const allowed = this.#store.allowedObjects;
-    const evicted = this.#store.evictedTables;
     let expired = false;
     let connection: DuckDBConnection | undefined;
     let retry: ReturnType<typeof setInterval> | undefined;
@@ -226,11 +233,12 @@ export class QueryTool {
         guard();
         connection = await this.#store.connect();
         guard();
-        await check(sql, connection, allowed, evicted);
+        await check(sql, connection, this.#store.allowedObjects, this.#store.evictedTables);
         guard();
         prepared = await prepareSelect(sql, connection);
         guard();
         result = await prepared.stream();
+        const cellCap = this.#limits.max_cell_bytes + CELL_SLACK_BYTES;
         const columns = result.columnNames();
         const rows: (string | null)[][] = [];
         while (rows.length <= limit) {
@@ -240,11 +248,9 @@ export class QueryTool {
             drained = true;
             break;
           }
-          for (const row of chunk.getRows()) {
-            rows.push(row.map((value) => (value === null ? null : String(value))));
-            if (rows.length > limit) {
-              break;
-            }
+          const vectors = Array.from({ length: chunk.columnCount }, (_, column) => chunk.getColumnVector(column));
+          for (let index = 0; index < chunk.rowCount && rows.length <= limit; index += 1) {
+            rows.push(vectors.map((vector) => cellText(vector.getItem(index), cellCap)));
           }
         }
         guard();
@@ -269,14 +275,30 @@ export class QueryTool {
         throw this.#timeoutFailure();
       }
       if (error instanceof QueryRejectedError) {
-        throw error;
+        throw new QueryRejectedError(withoutSuggestions(error.message));
       }
-      const text = error instanceof Error ? error.message : String(error);
-      throw new QueryRejectedError(`${errorName(error)}: ${text}`);
+      throw engineFailure(error);
     } finally {
       clearTimeout(timer);
     }
   }
+}
+
+const SUGGESTION = /\n?Did you mean [^\n]*/gu;
+const MISSING_TABLE = /^Catalog Error: Table with name /u;
+
+export const VANISHED_TABLE = "a table this query names is no longer available; it may have been evicted";
+
+export function withoutSuggestions(text: string): string {
+  return text.replace(SUGGESTION, "");
+}
+
+export function engineFailure(error: unknown): QueryRejectedError {
+  const text = error instanceof Error ? error.message : String(error);
+  if (MISSING_TABLE.test(text)) {
+    return new QueryRejectedError(VANISHED_TABLE);
+  }
+  return new QueryRejectedError(`${errorName(error)}: ${withoutSuggestions(text)}`);
 }
 
 export interface QueryToolResult {

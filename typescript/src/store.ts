@@ -25,6 +25,7 @@ export const ENVELOPE_TABLE = "sluice_calls";
 
 export function lockdownStatements(maxMemory: string): readonly string[] {
   return [
+    "SET temp_directory = ''",
     "SET enable_external_access = false",
     "SET autoinstall_known_extensions = false",
     "SET autoload_known_extensions = false",
@@ -120,6 +121,14 @@ export function pythonDatetime(date: Date): string {
   const base = `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
   const millis = date.getUTCMilliseconds();
   return millis === 0 ? base : `${base}.${String(millis).padStart(3, "0")}000`;
+}
+
+const JSON_ESCAPE = /\\u(d[89ab][0-9a-f]{2})\\u(d[c-f][0-9a-f]{2})|\\u(d[89a-f][0-9a-f]{2})|\\./gu;
+
+export function wellFormedJson(text: string): string {
+  return text.replace(JSON_ESCAPE, (escape: string, _high?: string, _low?: string, lone?: string) =>
+    lone === undefined ? escape : "\\ufffd",
+  );
 }
 
 function storedBlocks(payload: SelectedPayload): JsonValue | null {
@@ -603,16 +612,18 @@ export class Store {
   async #insertEnvelope(record: CallRecord): Promise<void> {
     const payload = record.payload;
     const json = (value: JsonValue | null | undefined): string | null =>
-      value === null || value === undefined ? null : dumpJson(value);
+      value === null || value === undefined ? null : wellFormedJson(dumpJson(value));
+    const text = (value: string | null): string | null => (value === null ? null : value.toWellFormed());
+    const texts = (values: readonly string[]): DuckDBValue => listValue(values.map((value) => value.toWellFormed()));
     const values: DuckDBValue[] = [
       record.callId,
       record.scopeId,
       BigInt(record.seq),
-      record.server,
-      record.tool,
+      text(record.server),
+      text(record.tool),
       json(record.args),
       json(payload.value),
-      payload.text,
+      text(payload.text),
       json(storedBlocks(payload)),
       json(payload.structured),
       payload.channel,
@@ -620,11 +631,11 @@ export class Store {
       BigInt(payload.byteSize),
       optionalBigInt(payload.wireBytes),
       record.isError,
-      record.failureClass,
-      listValue([...record.contentKinds]),
-      listValue([...record.flatTables]),
-      record.flatReason,
-      listValue([...record.sourcePaths]),
+      text(record.failureClass),
+      texts(record.contentKinds),
+      texts(record.flatTables),
+      text(record.flatReason),
+      texts(record.sourcePaths),
       pythonDatetime(record.startedAt),
       pythonDatetime(record.endedAt),
       BigInt(durationMs(record)),

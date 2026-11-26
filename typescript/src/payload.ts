@@ -22,7 +22,9 @@ export function serializedSize(value: JsonValue): number {
   return byteLength(dumpJson(value));
 }
 
-export function fromPlain(value: unknown): JsonValue {
+type Slot = (value: JsonValue) => void;
+
+function leaf(value: unknown): JsonValue | undefined {
   if (value === null || value === undefined) {
     return null;
   }
@@ -34,51 +36,96 @@ export function fromPlain(value: unknown): JsonValue {
     case "number":
       return Number.isSafeInteger(value) ? BigInt(value) : value;
     case "object":
-      break;
+      return undefined;
     default:
       return String(value);
   }
-  if (value instanceof Map) {
-    const entries = new Map<string, JsonValue>();
-    for (const [key, item] of value as Map<unknown, unknown>) {
-      entries.set(String(key), fromPlain(item));
-    }
-    return entries;
-  }
-  if (Array.isArray(value)) {
-    return value.map(fromPlain);
-  }
-  const entries = new Map<string, JsonValue>();
-  for (const [key, item] of Object.entries(value)) {
-    if (item !== undefined) {
-      entries.set(key, fromPlain(item));
-    }
-  }
-  return entries;
 }
 
-export function isTextBlock(block: ContentBlock): block is ContentBlock & { readonly text: string } {
-  return block.type === TEXT_KIND && typeof block.text === "string";
+function entriesOf(value: object): readonly (readonly [string, unknown])[] {
+  if (value instanceof Map) {
+    return [...(value as Map<unknown, unknown>)].map(([key, item]) => [String(key), item] as const);
+  }
+  return Object.entries(value).filter(([, item]) => item !== undefined);
+}
+
+export function fromPlain(value: unknown): JsonValue {
+  let root: JsonValue = null;
+  const open = new Set<object>();
+  const stack: (readonly [unknown, Slot] | readonly [object])[] = [[value, (converted) => (root = converted)]];
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (frame === undefined) {
+      break;
+    }
+    if (frame.length === 1) {
+      open.delete(frame[0]);
+      continue;
+    }
+    const [item, assign] = frame;
+    const scalar = leaf(item);
+    if (scalar !== undefined) {
+      assign(scalar);
+      continue;
+    }
+    const container = item as object;
+    if (open.has(container)) {
+      throw new TypeError("the value contains a cycle and has no JSON form");
+    }
+    open.add(container);
+    stack.push([container]);
+    if (Array.isArray(container)) {
+      const array: JsonValue[] = new Array<JsonValue>(container.length).fill(null);
+      assign(array);
+      for (let index = container.length - 1; index >= 0; index -= 1) {
+        stack.push([container[index] as unknown, (converted) => (array[index] = converted)]);
+      }
+      continue;
+    }
+    const entries = entriesOf(container);
+    const map = new Map<string, JsonValue>(entries.map(([key]) => [key, null]));
+    assign(map);
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const [key, child] = entries[index] ?? ["", null];
+      stack.push([child, (converted) => map.set(key, converted)]);
+    }
+  }
+  return root;
+}
+
+function blocksOf(result: ToolResult): readonly unknown[] {
+  return Array.isArray(result.content) ? (result.content as readonly unknown[]) : [];
+}
+
+function blockType(block: unknown): string {
+  if (typeof block === "object" && block !== null) {
+    const type = (block as { readonly type?: unknown }).type;
+    if (typeof type === "string") {
+      return type;
+    }
+  }
+  return "unknown";
+}
+
+export function isTextBlock(block: unknown): block is ContentBlock & { readonly text: string } {
+  return blockType(block) === TEXT_KIND && typeof (block as ContentBlock).text === "string";
 }
 
 export function textBlocks(result: ToolResult): readonly string[] {
-  return result.content.filter(isTextBlock).map((block) => block.text);
+  return blocksOf(result).filter(isTextBlock).map((block) => block.text);
 }
 
 export function contentKinds(result: ToolResult): string[] {
-  const kinds = result.content
-    .slice(0, MAX_CONTENT_KINDS)
-    .map((block) => Array.from(typeof block.type === "string" ? block.type : "unknown").slice(0, MAX_CONTENT_KIND_CHARS).join(""));
-  if (result.content.length > MAX_CONTENT_KINDS) {
+  const blocks = blocksOf(result);
+  const kinds = blocks.slice(0, MAX_CONTENT_KINDS).map((block) => Array.from(blockType(block)).slice(0, MAX_CONTENT_KIND_CHARS).join(""));
+  if (blocks.length > MAX_CONTENT_KINDS) {
     kinds.push("truncated");
   }
   return kinds;
 }
 
 export function describeBlocks(result: ToolResult): BlockDescription[] {
-  return result.content.map((block) =>
-    isTextBlock(block) ? { type: block.type, text: block.text } : { type: typeof block.type === "string" ? block.type : "unknown" },
-  );
+  return blocksOf(result).map((block) => (isTextBlock(block) ? { type: block.type, text: block.text } : { type: blockType(block) }));
 }
 
 export function describedValue(blocks: readonly BlockDescription[]): JsonValue {
@@ -126,7 +173,7 @@ export function classifyPassthrough(
   if (result.isError === true) {
     return { reason: Passthrough.ERROR, size: null };
   }
-  if (result.content.some((block) => block.type !== TEXT_KIND)) {
+  if (!Array.isArray(result.content) || blocksOf(result).some((block) => blockType(block) !== TEXT_KIND)) {
     return { reason: Passthrough.NON_TEXT, size: null };
   }
   const size = candidateSize(result, structured);

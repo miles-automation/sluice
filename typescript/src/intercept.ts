@@ -26,7 +26,7 @@ import {
   renderRowPreview,
   select,
 } from "./payload.ts";
-import { derive } from "./scope.ts";
+import { derive, mint } from "./scope.ts";
 import { EXTRA_COLUMN, extract, project } from "./shape.ts";
 import { Store, boundedFlatReason, retentionBudgetReason } from "./store.ts";
 import { Semaphore } from "./sync.ts";
@@ -123,6 +123,9 @@ export class Interceptor {
       const retentionSeq = this.#store.nextRetentionSeq();
       try {
         return await this.#intercept(request, retentionSeq);
+      } catch (error) {
+        this.#log("intercept_failed", error);
+        return request.result;
       } finally {
         this.#store.abandonCommit(retentionSeq);
       }
@@ -135,7 +138,7 @@ export class Interceptor {
     const ceiling = request.payloadCeiling ?? this.#limits.max_payload_bytes;
     const pagination = request.pagination ?? null;
     const endedAt = new Date();
-    const scopeId = derive(request.meta).tag;
+    const scopeId = this.#scope(request.meta);
     const seq = this.#store.nextCallSeq(request.mounted);
     const callId = randomUUID();
 
@@ -166,7 +169,7 @@ export class Interceptor {
       seq,
       server: request.server,
       tool: request.tool,
-      args: argumentsValue(request.arguments),
+      args: this.#arguments(request.arguments),
       payload: selected,
       isError: result.isError === true,
       failureClass: request.failureClass ?? (result.isError === true ? "tool_error" : null),
@@ -198,8 +201,22 @@ export class Interceptor {
         const retained = await this.#store.commitCall(degraded, []);
         record = retained ? degraded : { ...degraded, flatReason: retentionBudgetReason(degraded.flatReason) };
       } catch (envelopeError) {
-        this.#log("envelope_write_failed", envelopeError);
-        return result;
+        this.#log("envelope_payload_failed", envelopeError);
+        this.#store.abandonCommit(retentionSeq);
+        const metadata: CallRecord = {
+          ...degraded,
+          args: null,
+          payload: { ...degraded.payload, value: undefined, text: null, blocks: [], structured: null },
+          flatReason: boundedFlatReason(`load_failed: ${describeError(error)}; payload_dropped: ${describeError(envelopeError)}`),
+          retentionSeq: 0,
+        };
+        try {
+          await this.#store.commitCall(metadata, []);
+          record = metadata;
+        } catch (metadataError) {
+          this.#log("envelope_write_failed", metadataError);
+          return result;
+        }
       }
     }
 
@@ -211,6 +228,24 @@ export class Interceptor {
     } catch (error) {
       this.#log("handle_failed", error);
       return result;
+    }
+  }
+
+  #scope(meta: unknown): string {
+    try {
+      return derive(meta).tag;
+    } catch (error) {
+      this.#log("scope_unreadable", error);
+      return mint();
+    }
+  }
+
+  #arguments(args: unknown): JsonValue | null {
+    try {
+      return argumentsValue(args);
+    } catch (error) {
+      this.#log("arguments_unrecorded", error);
+      return null;
     }
   }
 
@@ -231,7 +266,7 @@ export class Interceptor {
     if (notes.length === 0) {
       return result;
     }
-    return { ...result, content: [...result.content, ...notes] };
+    return { ...result, content: [...(Array.isArray(result.content) ? result.content : []), ...notes] };
   }
 
   #plan(mounted: string, scopeId: string, selected: SelectedPayload): Plans {

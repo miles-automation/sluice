@@ -5,7 +5,8 @@ import { promisify } from "node:util";
 import { QueryRejectedError } from "../src/gate.ts";
 import { Interceptor } from "../src/intercept.ts";
 import { makeLimits, type Limits } from "../src/limits.ts";
-import { QueryTool, runQueryTool } from "../src/query.ts";
+import fc from "fast-check";
+import { CELL_SLACK_BYTES, QueryTool, cellText, engineFailure, escapeCell, runQueryTool } from "../src/query.ts";
 import { ENVELOPE_TABLE, Store } from "../src/store.ts";
 
 const run = promisify(execFile);
@@ -47,6 +48,28 @@ test("the store applies the database-global lockdown", async () => {
       other.closeSync();
     }
     assert.ok(!store.allowedObjects.has(ENVELOPE_TABLE));
+    const [[spill] = []] = (await store.connection.runAndReadAll("SELECT current_setting('temp_directory')")).getRows();
+    assert.equal(spill, "");
+  });
+});
+
+test("cells are cut before rendering without changing what is shown or reported", () => {
+  fc.assert(
+    fc.property(fc.string({ unit: "binary", maxLength: 80 }), fc.integer({ min: 4, max: 40 }), (value, maxBytes) => {
+      assert.deepEqual(escapeCell(cellText(value, maxBytes + CELL_SLACK_BYTES), maxBytes), escapeCell(value, maxBytes));
+    }),
+    { numRuns: 2000 },
+  );
+});
+
+test("wide cells are cut and every truncation is still reported", { timeout: 60_000 }, async () => {
+  const limits = makeLimits({ max_cell_bytes: 16 });
+  await withStore(limits, async (store) => {
+    const text = await new QueryTool(store, limits).run(
+      "WITH RECURSIVE k(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM k WHERE i < 5000) SELECT repeat_text, i FROM (SELECT 'x' || i || lpad_text AS repeat_text, i FROM k, (SELECT 'yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy' AS lpad_text))",
+      2,
+    );
+    assert.match(text, /2 row\(s\) shown\. Additional rows exist beyond max_rows; the exact number is not known\. 2 cell\(s\) truncated/u);
   });
 });
 
@@ -151,4 +174,61 @@ test("an over-subscribed pool still answers at the deadline and frees every slot
   assert.ok(report.responded < 3_000, `responded after ${report.responded} ms`);
   assert.ok(report.released < 10_000, `released after ${report.released} ms`);
   assert.equal(report.answered, true);
+});
+
+function tableOf(result: { structuredContent?: unknown }): string {
+  const [table] = (result.structuredContent as { tables: { name: string }[] }).tables;
+  assert.ok(table !== undefined, "expected a table");
+  return table.name;
+}
+
+test("a query queued behind a slow one cannot learn another scope's table from the engine", { timeout: 30_000 }, async () => {
+  const limits = makeLimits({ max_session_calls: 3, query_timeout_seconds: 1 });
+  await withStore(limits, async (store) => {
+    const interceptor = new Interceptor(store, limits, { queryAvailable: true, logger: () => undefined });
+    const query = new QueryTool(store, limits, { concurrency: 1 });
+    const call = (conversationId: string, id: number) =>
+      interceptor.intercept({
+        server: "srv",
+        tool: "rows",
+        mounted: "srv__rows__000000000000",
+        arguments: null,
+        result: { content: [{ type: "text", text: `[{"id": ${id}}]` }] },
+        meta: { conversationId },
+        startedAt: new Date(),
+      });
+    const mine = tableOf(await call("scope-a", 1));
+    const theirs = [tableOf(await call("scope-b", 2))];
+    const blocker = runQueryTool(query, { sql: UNBOUNDED });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const queued = runQueryTool(query, { sql: `SELECT * FROM "${mine}"` });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    theirs.push(tableOf(await call("scope-b", 3)), tableOf(await call("scope-b", 4)));
+    assert.match(String((await blocker).content[0]?.text), /timeout/u);
+    const result = await queued;
+    const text = String(result.content[0]?.text);
+    assert.equal(result.isError, true, text);
+    assert.doesNotMatch(text, /Did you mean/u);
+    for (const name of theirs) {
+      assert.ok(!text.includes(name), `the error named ${name}: ${text}`);
+    }
+    assert.ok(!text.includes("scope"), text);
+  });
+});
+
+test("engine errors never carry suggestions, and a vanished table is reported as no longer available", () => {
+  const missing = engineFailure(new Error('Catalog Error: Table with name x does not exist!\nDid you mean "other__0002"?\n\nLINE 1: SELECT'));
+  assert.equal(missing.message, "a table this query names is no longer available; it may have been evicted");
+  const binder = engineFailure(new Error('Binder Error: Referenced column "lenght" not found\nDid you mean "length"?\nLINE 1'));
+  assert.doesNotMatch(binder.message, /Did you mean/u);
+  assert.match(binder.message, /^BinderError: Binder Error: Referenced column/u);
+});
+
+test("a misspelt function is reported without a suggestion", async () => {
+  const limits = makeLimits();
+  await withStore(limits, async (store) => {
+    const result = await runQueryTool(new QueryTool(store, limits), { sql: "SELECT lenght('x')" });
+    assert.equal(result.isError, true);
+    assert.doesNotMatch(String(result.content[0]?.text), /Did you mean/u);
+  });
 });
