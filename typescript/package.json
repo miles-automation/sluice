@@ -1,0 +1,21 @@
+{
+  "name": "mcp-sluice",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Passthrough MCP server that materializes tool results into a DuckDB scratch database",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.4",
+    "ajv": "^8.20.0",
+    "typescript": "^7.0.2"
+  }
+}
