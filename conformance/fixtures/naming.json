@@ -1,0 +1,424 @@
+{
+  "kind": "naming",
+  "description": "Injective names for mounted tools, collection tools and tables, and identifier quoting (spec 001 §3.2, spec 002 §3). Digest vectors are literal so a different hash fails here.",
+  "cases": [
+    {
+      "id": "naming.slug-lowercases-and-collapses",
+      "spec": "001 §3.2",
+      "op": "slug",
+      "args": {
+        "value": "List-Issues.v2"
+      },
+      "expect": {
+        "value": "list_issues_v2"
+      }
+    },
+    {
+      "id": "naming.slug-strips-edges",
+      "spec": "001 §3.2",
+      "op": "slug",
+      "args": {
+        "value": "--a--"
+      },
+      "expect": {
+        "value": "a"
+      }
+    },
+    {
+      "id": "naming.slug-of-symbols-is-x",
+      "spec": "001 §3.2",
+      "op": "slug",
+      "args": {
+        "value": "---"
+      },
+      "expect": {
+        "value": "x"
+      }
+    },
+    {
+      "id": "naming.slug-of-non-ascii-is-x",
+      "spec": "001 §3.2",
+      "op": "slug",
+      "args": {
+        "value": "日本"
+      },
+      "expect": {
+        "value": "x"
+      }
+    },
+    {
+      "id": "naming.slug-is-bounded-to-40",
+      "spec": "001 §3.2",
+      "op": "slug",
+      "args": {
+        "value": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+      },
+      "expect": {
+        "value": "tttttttttttttttttttttttttttttttttttttttt"
+      }
+    },
+    {
+      "id": "naming.tag-vector",
+      "spec": "001 §3.2",
+      "op": "tag",
+      "args": {
+        "value": "abc"
+      },
+      "expect": {
+        "value": "d8bb14d833d5"
+      },
+      "description": "First 12 hex chars of BLAKE2b with an 8-byte digest. Not BLAKE2b-512 truncated: the digest size is a BLAKE2 parameter."
+    },
+    {
+      "id": "naming.tag-of-empty",
+      "spec": "001 §3.2",
+      "op": "tag",
+      "args": {
+        "value": ""
+      },
+      "expect": {
+        "value": "e4a6a0577479"
+      }
+    },
+    {
+      "id": "naming.mounted-name-vector",
+      "spec": "001 §3.2",
+      "op": "mounted_name",
+      "args": {
+        "server": "gh",
+        "tool": "list_issues"
+      },
+      "expect": {
+        "value": "gh__list_issues__03a69ea8fa6e"
+      }
+    },
+    {
+      "id": "naming.mounted-name-hashes-the-unsanitized-name",
+      "spec": "001 §3.2",
+      "op": "mounted_name",
+      "args": {
+        "server": "gh",
+        "tool": "list-issues"
+      },
+      "expect": {
+        "value": "gh__list_issues__983368d755ba"
+      }
+    },
+    {
+      "id": "naming.mounted-name-stays-under-the-tool-name-limit",
+      "spec": "001 §3.2",
+      "op": "mounted_name",
+      "args": {
+        "server": "s",
+        "tool": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+      },
+      "expect": {
+        "prefix": "s__tttttttttttttttttttttttttttttttttttttttt__",
+        "max_length": 128
+      }
+    },
+    {
+      "id": "naming.collection-name-vector",
+      "spec": "002 §3",
+      "op": "collection_name",
+      "args": {
+        "server": "fake",
+        "tool": "paged"
+      },
+      "expect": {
+        "value": "fake__paged__all__41baadf9be70"
+      }
+    },
+    {
+      "id": "naming.table-name-carries-scope-and-sequence",
+      "spec": "001 §3.2",
+      "op": "table_name",
+      "args": {
+        "server": "gh",
+        "tool": "list_issues",
+        "scope": "k7d92m",
+        "seq": 1
+      },
+      "expect": {
+        "value": "gh__list_issues__03a69ea8fa6e__k7d92m__0001"
+      }
+    },
+    {
+      "id": "naming.table-sequence-widens-past-9999",
+      "spec": "001 §3.2",
+      "op": "table_name",
+      "args": {
+        "server": "gh",
+        "tool": "t",
+        "scope": "s",
+        "seq": 10000
+      },
+      "expect": {
+        "suffix": "__s__10000"
+      }
+    },
+    {
+      "id": "naming.quote-plain",
+      "spec": "001 §3.2",
+      "op": "quote_ident",
+      "args": {
+        "value": "plain"
+      },
+      "expect": {
+        "value": "\"plain\""
+      }
+    },
+    {
+      "id": "naming.quote-embedded-quote",
+      "spec": "001 §3.2",
+      "op": "quote_ident",
+      "args": {
+        "value": "we\"ird"
+      },
+      "expect": {
+        "value": "\"we\"\"ird\""
+      }
+    },
+    {
+      "id": "naming.quote-space",
+      "spec": "001 §3.2",
+      "op": "quote_ident",
+      "args": {
+        "value": "drop table"
+      },
+      "expect": {
+        "value": "\"drop table\""
+      }
+    },
+    {
+      "id": "naming.hyphen-and-underscore-do-not-collide",
+      "spec": "001 §3.2",
+      "op": "distinct",
+      "args": {
+        "items": [
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "s",
+              "tool": "hyphen-tool"
+            }
+          },
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "s",
+              "tool": "hyphen_tool"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "distinct": true
+      }
+    },
+    {
+      "id": "naming.case-differing-tools-do-not-collide",
+      "spec": "001 §3.2",
+      "op": "distinct",
+      "args": {
+        "items": [
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "s",
+              "tool": "Foo"
+            }
+          },
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "s",
+              "tool": "foo"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "distinct": true
+      }
+    },
+    {
+      "id": "naming.server-tool-boundary-is-unambiguous",
+      "spec": "001 §3.2",
+      "op": "distinct",
+      "args": {
+        "items": [
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "ab",
+              "tool": "c"
+            }
+          },
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "a",
+              "tool": "bc"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "distinct": true
+      }
+    },
+    {
+      "id": "naming.the-discovered-24-bit-collision-no-longer-collides",
+      "spec": "001 §3.2",
+      "op": "distinct",
+      "args": {
+        "items": [
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "s",
+              "tool": "a..---_"
+            }
+          },
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "s",
+              "tool": "a-----_-_"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "distinct": true
+      }
+    },
+    {
+      "id": "naming.table-names-from-different-scopes-differ",
+      "spec": "001 §12",
+      "op": "distinct",
+      "args": {
+        "items": [
+          {
+            "op": "table_name",
+            "args": {
+              "server": "gh",
+              "tool": "list_issues",
+              "scope": "aaaaaa",
+              "seq": 1
+            }
+          },
+          {
+            "op": "table_name",
+            "args": {
+              "server": "gh",
+              "tool": "list_issues",
+              "scope": "bbbbbb",
+              "seq": 1
+            }
+          }
+        ]
+      },
+      "expect": {
+        "distinct": true
+      }
+    },
+    {
+      "id": "naming.collection-differs-from-mounted",
+      "spec": "002 §3",
+      "op": "distinct",
+      "args": {
+        "items": [
+          {
+            "op": "collection_name",
+            "args": {
+              "server": "s",
+              "tool": "t"
+            }
+          },
+          {
+            "op": "mounted_name",
+            "args": {
+              "server": "s",
+              "tool": "t"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "distinct": true
+      }
+    },
+    {
+      "id": "naming.collection-differs-from-dotted-tool",
+      "spec": "002 §3",
+      "op": "distinct",
+      "args": {
+        "items": [
+          {
+            "op": "collection_name",
+            "args": {
+              "server": "s",
+              "tool": "t"
+            }
+          },
+          {
+            "op": "collection_name",
+            "args": {
+              "server": "s",
+              "tool": "t.all"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "distinct": true
+      }
+    },
+    {
+      "id": "naming.injectivity-check-accepts-distinct-names",
+      "spec": "001 §3.2",
+      "op": "assert_injective",
+      "args": {
+        "pairs": [
+          [
+            "s",
+            "a"
+          ],
+          [
+            "s",
+            "b"
+          ],
+          [
+            "t",
+            "a"
+          ]
+        ]
+      },
+      "expect": {
+        "count": 3
+      }
+    },
+    {
+      "id": "naming.repeated-identical-pairs-are-not-a-collision",
+      "spec": "001 §3.2",
+      "op": "assert_injective",
+      "args": {
+        "pairs": [
+          [
+            "s",
+            "a"
+          ],
+          [
+            "s",
+            "a"
+          ]
+        ]
+      },
+      "expect": {
+        "count": 1
+      }
+    }
+  ]
+}

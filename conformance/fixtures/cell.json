@@ -1,0 +1,141 @@
+{
+  "kind": "cell",
+  "description": "Rendering one value as a markdown cell (spec 001 §6.3): defined escaping and byte-bounded truncation on a character boundary with a trailing ellipsis.",
+  "cases": [
+    {
+      "id": "cell.null",
+      "spec": "001 §6.3",
+      "value": null,
+      "max_bytes": 512,
+      "expect": {
+        "text": "NULL",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.empty-string",
+      "spec": "001 §6.3",
+      "value": "",
+      "max_bytes": 512,
+      "expect": {
+        "text": "''",
+        "truncated": false
+      },
+      "description": "Distinguishable from NULL."
+    },
+    {
+      "id": "cell.the-string-null",
+      "spec": "001 §6.3",
+      "value": "NULL",
+      "max_bytes": 512,
+      "expect": {
+        "text": "NULL",
+        "truncated": false
+      },
+      "description": "Indistinguishable from SQL NULL by design; stated in spec 001 §6.3."
+    },
+    {
+      "id": "cell.pipe",
+      "spec": "001 §6.3",
+      "value": "a|b",
+      "max_bytes": 512,
+      "expect": {
+        "text": "a\\|b",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.newline",
+      "spec": "001 §6.3",
+      "value": "a\nb",
+      "max_bytes": 512,
+      "expect": {
+        "text": "a\\nb",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.crlf",
+      "spec": "001 §6.3",
+      "value": "a\r\nb",
+      "max_bytes": 512,
+      "expect": {
+        "text": "a\\nb",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.carriage-return",
+      "spec": "001 §6.3",
+      "value": "a\rb",
+      "max_bytes": 512,
+      "expect": {
+        "text": "a\\nb",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.backslash",
+      "spec": "001 §6.3",
+      "value": "a\\b",
+      "max_bytes": 512,
+      "expect": {
+        "text": "a\\\\b",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.integer",
+      "spec": "001 §6.3",
+      "value": 42,
+      "max_bytes": 512,
+      "expect": {
+        "text": "42",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.truncation-cuts-on-a-character-boundary",
+      "spec": "001 §6.3",
+      "value": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+      "max_bytes": 9,
+      "expect": {
+        "text": "ééé…",
+        "truncated": true
+      },
+      "description": "6 bytes of text plus the 3-byte ellipsis."
+    },
+    {
+      "id": "cell.truncation-ascii",
+      "spec": "001 §6.3",
+      "value": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "max_bytes": 10,
+      "expect": {
+        "text": "yyyyyyy…",
+        "truncated": true
+      }
+    },
+    {
+      "id": "cell.exact-fit-is-not-truncated",
+      "spec": "001 §6.3",
+      "value": "abcd",
+      "max_bytes": 4,
+      "expect": {
+        "text": "abcd",
+        "truncated": false
+      }
+    },
+    {
+      "id": "cell.escaping-counts-toward-the-cap",
+      "spec": "001 §6.3",
+      "value": "||||",
+      "max_bytes": 6,
+      "expect": {
+        "text": "\\|\\…",
+        "truncated": true
+      },
+      "description": "Escape first, then cut: 8 escaped bytes over a 6-byte cap leave 3 bytes plus the ellipsis.",
+      "note": "The cut can split an escape sequence, leaving a lone backslash before the ellipsis. Spec 001 §6.3 does not say whether a cut may split an escape. Pinned as observed."
+    }
+  ]
+}

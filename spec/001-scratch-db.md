@@ -1,7 +1,7 @@
 # Spec 001: Scratch DB for MCP tool results
 
-Status: draft (revision 5, post-M0, post-review, post-M4)
-Date: 2026-08-28
+Status: draft (revision 6: two versions and the conformance suite)
+Date: 2026-08-28, revised 2026-11-25
 Implements: intent/001-scratch-db.md
 Evidence: plan/001-notes-m0.md
 
@@ -10,10 +10,49 @@ folds in what building M1 and M2 proved: the protocol-version finding (§11) and
 the removal of the `__latest` view (§3.2). Sections changed materially across
 both: §1, §2, §3, §4, §5.2, §5.3, §5.5, §5.6, §6, §7, §9, §10, §11, §12.
 
-**Pinned protocol revision: MCP `2026-07-28`. Pinned SDK: `mcp` 2.1.1. Pinned
-engine: DuckDB 1.5.5.** Every normative claim below is against those versions,
-except where a claim names another. Behavior differs across revisions; do not
-generalize. As of 0.2.1 the gate is also verified on DuckDB 2.0.0.
+**Pinned protocol revision: MCP `2026-07-28`.** The original measurements were
+taken on `mcp` 2.1.1 and DuckDB 1.5.5. Behavior differs across revisions; do not
+generalize a claim beyond the versions it was checked on.
+
+## 0. Versions and verification
+
+Sluice has two versions in one repository, measured against one spec and one
+conformance suite (`conformance/`, see its README):
+
+| Version | Package | Engine | Status |
+|---|---|---|---|
+| Python, `python/` | PyPI `mcp-sluice`, Python >= 3.14, `mcp` >= 2.1.1 | `duckdb>=1.5.5`, a declared range: CI runs the whole suite on 1.5.5 and on the current 2.x release | released |
+| TypeScript, `typescript/` | npm `mcp-sluice` (private until task 1095), Node >= 24, strict TypeScript | DuckDB 2.x through `@duckdb/node-api`; 2.0.0 is the verified baseline (review/duckdb2-node-check.md) and the release will pin the engine exactly | harness only; implementation in tasks 1076-1078 |
+
+A behavior change lands in both versions, with a conformance fixture, or the
+fixture's `note` records it as one-sided. Claims about the MCP SDK name the
+Python SDK unless they say otherwise; the TypeScript SDK has not been checked
+against any of them.
+
+**Recheck of this revision (2026-11-25).** Normative claims were rechecked on
+Python with DuckDB 1.5.5 and 2.0.1 and `mcp` 2.3.0, by the conformance fixtures
+and the Python suite. The ledger below says what checked each section. A claim
+marked unverified was not rechecked and should be treated as a recorded
+measurement, not a guarantee. Nothing here is verified on the TypeScript
+version yet: its harness reports every fixture kind as pending until tasks
+1076-1078 land.
+
+| Section | Rechecked by | Status |
+|---|---|---|
+| FR-1, FR-2, FR-3, FR-5, FR-6, FR-7, §8 classes, §10, §11 | Python suite (`test_proxy.py`, `test_passthrough.py`, `test_engine_contract.py`, `test_cli.py`) on `mcp` 2.3.0 | verified, Python only |
+| FR-8 to FR-14, §3.1, §3.3, §4 | fixtures `session.handle.*`, `session.passthrough.*` | verified; the §4.1 and §4.2 examples are illustrative, see there |
+| §3.2 naming | fixtures `naming.*`, `project.*` | verified; renaming beyond reserved names is pinned as observed |
+| §5.1 to §5.3 | fixtures `extract.*`, `project.*`, `session.handle.*` | verified |
+| §5.4 | fixtures `engine.lockdown-*`, `engine.create-and-insert-*` | verified; the `allowed_directories` measurement is **unverified** on 2.x |
+| §5.5 | fixtures `infer.*`, `engine.median-*`, `session.handle.mixed-scalars-*` | verified, with the VARCHAR correction in rule 2 |
+| §5.6 | fixtures `engine.*`, `session.aggregates.*`; Hypothesis properties in Python | verified |
+| §6.1 | fixtures `gate.*`, `gate_ast.*`, `session.query.*`; layer 1 alone by `gate_ast.statement-layer-*`, which hand the object layer the AST of `SELECT 1` | verified on both DuckDB lines; statement typing differs by version, see there |
+| §6.2 timeout and interrupt | Python slow tests | verified, Python only; the 0.2 s and 5.2 s timings are **unverified** as numbers |
+| §6.3 | fixtures `cell.*`, `session.query.*` (notice vocabulary parsed strictly) | verified |
+| §6.4 | fixture `session.query.envelope-view-reaches-the-payload` | verified |
+| §7 limits and retention | fixtures `config.*`, `session.retention.*` (sized to hold for any charge within the bounds) | verified; the memory calibration figures are **unverified** (2026-08-30 run on the reference host only) |
+| §9 | Python suite | verified, Python only |
+| §12 | fixtures `scope.*`, `naming.table-names-from-different-scopes-differ` | verified |
 
 ## 1. Terminology
 
@@ -194,7 +233,7 @@ table     = f"{mounted}__{scope_tag}__{seq:04d}"
 - Mounted names are validated against the 128-character tool-name limit at
   startup; a name that cannot fit fails startup loudly rather than silently
   colliding.
-- `scope_tag` is 8 unguessable characters (§12). It is what stops a stale handle
+- `scope_tag` is 32 unguessable hex characters, 128 bits (§12). It is what stops a stale handle
   from a previous process resolving to live data holding different contents.
   Without it, sequence numbers restart at 1 on every process start and a resumed
   conversation's handle can name a table that exists and is wrong.
@@ -251,7 +290,14 @@ exist. See FR-18.
 
 ### 4.1 Content channel
 
-`content` is replaced with a single `TextContent` block. Format:
+`content` is replaced with a single `TextContent` block. The example below is
+illustrative, not byte-exact: the Python version opens with `sluice: result
+recorded.`, prints one `table:` line per table rather than `also materialized:`,
+lists only projected columns (not `_row` or `_call_id`), marks inexact columns
+`(inexact)`, names the envelope as `envelope: sluice_calls__<scope> WHERE call_id
+= '...'`, and prints `no table: <reason>` when there is none. Wording is not part
+of the conformance contract; the mandatory fields below and the preview line
+are.
 
 ```
 sluice: result materialized.  channel=structured  scope=k7d92m
@@ -279,19 +325,28 @@ When FR-14 applies the preview line reads `preview (complete, 412 B):`.
 ```json
 {
   "call_id": "0c3f8e1a-...",
-  "scope_id": "k7d92m",
+  "scope_id": "<32 hex>",
+  "envelope_table": "sluice_calls__<32 hex>",
   "source_channel": "structured",
   "channel_conflict": false,
   "tables": [
     {"name": "...__0001", "source_path": "$.items", "row_count": 412,
-     "columns": [{"name": "id", "type": "BIGINT", "exact": true}],
-     "renamed": {"_row": "_row__src"}}
+     "columns": [{"name": "id", "type": "BIGINT", "exact": true, "renamed_from": null},
+                 {"name": "_row__src", "type": "VARCHAR", "exact": true, "renamed_from": "_row"}]}
   ],
+  "flat_reason": null,
+  "pagination": null,
   "byte_size": 91432,
   "preview_complete": false,
   "preview": "..."
 }
 ```
+
+Renamed columns carry `renamed_from` per column. `flat_reason` is null when
+tables were made; otherwise its text up to the first `:` or `;` is the reason
+category (`not_json`, `empty`, `mixed_elements`, `scalar`, `load_failed`,
+`retention_budget_exceeded`, `selection_failed`). `pagination` is the spec 002
+summary or null.
 
 `exact` is the §5.6 flag: false means the column falls outside the domain where
 the correctness guarantee holds.
@@ -374,8 +429,10 @@ Given the parsed payload:
   wrong answer already given.
   If no value qualifies, the object itself is one row.
 - **A scalar.** Envelope only, `flat_reason='scalar'`.
-- **An empty list.** Zero-row table if columns are determinable, else envelope
-  only with `flat_reason='empty'`. The handle says `rows=0` rather than nothing.
+- **An empty list.** Envelope only with `flat_reason='empty'`, naming the empty
+  path, and the handle says so (`no table: empty: ...`). Revision 5 allowed a
+  zero-row table when columns were determinable; neither version makes one,
+  because an empty list carries no columns.
 
 ### 5.3 Depth-1 projection
 
@@ -454,7 +511,11 @@ Rules that exist because of measured behavior:
    `sum()` and `avg()` raise a binder error, which is loud and fine, but
    `median()` succeeds and returns a lexicographic result: over integers 0 to 299
    plus one string it returned `'232'`. A number-shaped lie is the exact failure
-   this project exists to prevent.
+   this project exists to prevent. VARCHAR makes `sum()` and `avg()` fail, but
+   **not** `median()`: rechecked on DuckDB 1.5.5 and 2.0.1, `median()` over the
+   same values as VARCHAR returns `'233'`. Earlier text in the Python sources
+   claimed VARCHAR makes the query fail; it does not. The safeguard for a mixed
+   column is that it is marked `exact: false`.
 3. **The aggregate-safe ±2^53 rule for integers.** DuckDB's `median()` returns
    `DOUBLE` even for `BIGINT` and `HUGEINT`, so an integer outside binary64's
    exact range can lose units (`median([0, 2^63-2, 2^63-1])`). Integer columns
@@ -551,7 +612,13 @@ And it would not have been enough, because layer 1 does not catch what revision
 4 assumed. Measured on DuckDB 1.5.5, `extract_statements` types **`SHOW TABLES`,
 `SHOW ALL TABLES`, `DESCRIBE x`, `SUMMARIZE x`, and `PRAGMA show_tables` all as
 `SELECT`**. The claim that the statement gate stops `PRAGMA` was false. Only the
-object check stops any of them.
+object check stops any of them. Statement typing is binding- and
+version-specific: Python on DuckDB 2.x types `PRAGMA` as `PRAGMA` (so layer 1
+refuses it), while Node on 2.0 still reports it as `SELECT`. Node also types a
+statement only through `prepare`, which binds and would make an unknown table a
+different error from a known one, so the TypeScript gate runs the object check
+before `prepare` (review/duckdb2-node-check.md, constraint 1). Every path refuses
+the whole family; the conformance fixtures accept either refusal category.
 
 The object check reads DuckDB's serialized AST, which is not a stable format:
 DuckDB 2.0 moved CTE bodies from `value.query.node` to `value.query_node`, and a
@@ -624,6 +691,26 @@ other.
   a tool that sells determinism. The cap is counted **in bytes over the whole
   output**, header and notices included, and space is reserved so the notices
   cannot themselves be truncated away.
+- **Notices are a fixed vocabulary** (normative for every version, so agents and
+  the conformance suite can rely on them). A successful result is the markdown
+  table (or `(no columns)`, or nothing when the table was omitted), a blank line,
+  then one line holding these sentences in this order, each present only when
+  it applies, separated by single spaces:
+
+  | Kind | Sentence |
+  |---|---|
+  | shown (always) | `N row(s) shown.` |
+  | more rows | `Additional rows exist beyond max_rows; the exact number is not known.` |
+  | rows omitted | `N row(s) omitted to stay under the byte cap.` |
+  | cells truncated | `N cell(s) truncated, marked with a trailing ….` |
+  | headers truncated | `N column header(s) truncated, marked with a trailing ….` |
+  | table omitted | `The table was omitted because its header exceeded the output byte cap.` |
+
+  If even that does not fit, the defensive backstop replaces the notice line with
+  `Output truncated to stay under the configured byte cap.` No other text may
+  appear on the notice line, and no notice states a count of rows beyond
+  `max_rows`. The conformance runners reject a notice line they cannot read
+  completely.
 - The gate runs on the worker thread, under the same deadline as the query.
   `extract_statements` and `json_serialize_sql` are synchronous DuckDB calls, so
   running them on the event loop blocks the whole server on pathological SQL.
@@ -703,6 +790,16 @@ benchmark on the deployment host. Eviction is oldest-first
 by admission order, with call id as a stable tie-breaker, and preserves envelope
 metadata while dropping payload columns and flat tables.
 
+**Charge bounds** (normative, so the conformance suite can test eviction in
+every version). A call that retains its payload is charged C bytes with
+S ≤ C ≤ 1.25·S + 1024, where S is the sum of the UTF-8 byte lengths of the text
+content as received and of the compact JSON serializations (no insignificant
+whitespace) of the selected payload, the content-block descriptions
+(`[{"type": ..., "text": ...}]`), `structuredContent` when present, the arguments
+when present, and every flat-table row as an object including `_row`. Python's
+estimate is inside these bounds (rechecked 2026-11-25: S = 1,772 gives C =
+2,053; S = 4,172 gives C = 4,455).
+
 `max_session_calls` is a separate positive cardinality budget for envelope rows
 and scope views/catalog entries. When it is exceeded, the oldest call row and
 its tables are deleted; a scope view is dropped only when no remaining row uses
@@ -750,16 +847,20 @@ two boundaries, both named rather than implied:
 
 ## 9. Concurrency
 
-- One writer connection. Writes serialized behind an `asyncio.Lock`.
+- One writer connection. Writes serialized behind a lock (`anyio.Lock` in Python).
 - **One dedicated DuckDB connection per in-flight query**, closed when the query
   finishes. The timeout interrupts that exact object (§6.2).
 - Materialization admission gated by `max_concurrent_materializations` (§7),
   covering selection, parse, projection, commit, and handle rendering.
 - Session retention is bounded by `max_session_bytes` (§7); eviction drops flat
   tables and clears payload columns while preserving envelope metadata.
-- All DuckDB calls are blocking and dispatched through `anyio.to_thread.run_sync`
-  with an `anyio.Lock`, matching the SDK's concurrency library rather than
-  assuming an asyncio backend.
+- Python: all DuckDB calls are blocking and dispatched through
+  `anyio.to_thread.run_sync` with an `anyio.Lock`, matching the SDK's concurrency
+  library rather than assuming an asyncio backend. TypeScript: `@duckdb/node-api`
+  calls run on the libuv pool, which `connect()` shares, so deadlines run on
+  timers that never await a DuckDB call first and admission keeps in-flight
+  queries below `UV_THREADPOOL_SIZE` (review/duckdb2-node-check.md, constraint 4;
+  unverified until task 1077).
 
 ## 10. Control plane
 
@@ -903,9 +1004,11 @@ Isolation and discovery are in direct tension and v0 chooses isolation.
 ## 14. Open questions
 
 1. **Python floor 3.14 or 3.15.** 3.15 releases 2026-10-01. Gating factor is a
-   DuckDB cp315 wheel. cp314 confirmed present at DuckDB 1.5.5.
-2. **Repeated calls to the same tool** get their own tables plus a `__latest`
-   view. Whether a union view is wanted is unknown until observed.
+   DuckDB cp315 wheel. cp314 confirmed present at DuckDB 1.5.5. Python version
+   only.
+2. **Repeated calls to the same tool** get their own tables (there is no
+   `__latest` view, §3.2). Whether a union view is wanted is unknown until
+   observed.
 3. **Pagination of downstream results.** A tool that pages produces N tables the
    agent must UNION by hand. Addressed for the offset contract by spec 002
    (bounded pagination); other contracts remain open.

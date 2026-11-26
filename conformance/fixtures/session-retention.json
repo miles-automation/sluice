@@ -1,0 +1,505 @@
+{
+  "kind": "session",
+  "description": "Session retention and truncation reporting (spec 001 §7): oldest calls are evicted deterministically, a handle never advertises a table that is gone, an evicted table is reported as evicted, and envelope metadata survives.",
+  "cases": [
+    {
+      "id": "session.retention.oldest-call-is-evicted-coherently",
+      "spec": "001 §3.1, §7",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
+      "limits": {
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 1
+              }
+            ]
+          }
+        },
+        {
+          "call": "c2",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 2, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 1
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT * FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "evicted_table"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT id FROM \"{{c2.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                2
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT tool, content_kinds[1], len(flat_tables), regexp_extract(flat_reason, '^[^:;]*'), result IS NULL, result_text IS NULL, args IS NULL FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                "tool",
+                "text",
+                0,
+                "retention_evicted",
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT len(flat_tables), flat_reason IS NULL FROM \"{{c2.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                1,
+                {
+                  "bool": true
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.retention.call-larger-than-the-budget-degrades-safely",
+      "spec": "001 §3.1, §7",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
+      "limits": {
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [],
+            "flat_reason": "retention_budget_exceeded"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT len(flat_tables), regexp_extract(flat_reason, '^[^:;]*'), result IS NULL FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                0,
+                "retention_budget_exceeded",
+                {
+                  "bool": true
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.retention.over-budget-call-does-not-evict-healthy-calls",
+      "spec": "001 §7",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
+      "limits": {
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c2",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 2, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c3",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 3, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [],
+            "flat_reason": "retention_budget_exceeded"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT id FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                1
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT id FROM \"{{c2.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                2
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.retention.call-cap-deletes-old-scopes",
+      "spec": "001 §7",
+      "description": "max_session_calls deletes the oldest metadata row; a scope view goes with its last row.",
+      "limits": {
+        "max_payload_bytes": 1000,
+        "max_session_bytes": 100000,
+        "max_session_calls": 2
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 0, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c2",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c3",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 2, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT * FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "evicted_table",
+              "unknown_table"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT * FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "unknown_table",
+              "evicted_table"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT id FROM \"{{c3.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                2
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.retention.call-cap-keeps-a-shared-scope-view",
+      "spec": "001 §7",
+      "limits": {
+        "max_payload_bytes": 1000,
+        "max_session_bytes": 100000,
+        "max_session_calls": 2
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c2",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 2, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c3",
+          "meta": {
+            "sessionId": "same"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 3, \"padding\": \"\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT count(*), min(seq) FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                2,
+                2
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT * FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "evicted_table",
+              "unknown_table"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.retention.evicted-names-stay-rejected-after-new-calls",
+      "spec": "001 §7",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
+      "limits": {
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c2",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 2, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "call": "c3",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 3, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT * FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "evicted_table"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT * FROM \"{{c2.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "evicted_table"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT id FROM \"{{c3.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                3
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

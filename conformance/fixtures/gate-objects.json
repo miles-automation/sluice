@@ -1,0 +1,356 @@
+{
+  "kind": "gate",
+  "description": "The object allowlist (spec 001 §6.1 layer 3): every referenced object must be one Sluice created for this caller; table functions, schema-qualified names and anything else are refused.",
+  "defaults": {
+    "setup": [
+      "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+      "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+      "CREATE TABLE other (a BIGINT)",
+      "INSERT INTO other VALUES (1), (3)",
+      "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+      "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+      "CREATE TABLE gone (a BIGINT)"
+    ],
+    "allowed": [
+      "mine",
+      "other"
+    ],
+    "evicted": [
+      "gone"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gate.object.duckdb-tables",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM duckdb_tables()",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_tables"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.duckdb-columns",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM duckdb_columns()",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_columns"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.duckdb-views",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM duckdb_views()",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_views"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.read-csv",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM read_csv('/etc/hosts')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "read_csv"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.read-json",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM read_json('/etc/hosts')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "read_json"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.glob",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM glob('/etc/*')",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "glob"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.range",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM range(10)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "range"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.information-schema",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM information_schema.tables",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "schema_qualified"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.pg-catalog",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM pg_catalog.pg_tables",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "schema_qualified"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.main-qualified-own-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM main.mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "schema_qualified"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.catalog-qualified-own-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM memory.main.mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "schema_qualified"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.sqlite-master",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM sqlite_master",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sqlite_master"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.physical-envelope",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM sluice_calls",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.another-scopes-view",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM sluice_calls__0123",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls__0123"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.table-function-in-a-join",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM mine JOIN duckdb_tables() ON 1=1",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_tables"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.table-function-in-a-scalar-subquery",
+      "spec": "001 §6.1",
+      "sql": "SELECT (SELECT count(*) FROM duckdb_tables())",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_tables"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.table-function-in-a-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM duckdb_tables()) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_tables"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.catalog-in-a-derived-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (SELECT * FROM sqlite_master)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sqlite_master"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.unknown-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM nope",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "nope"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.unknown-table-names-no-others",
+      "spec": "001 §12",
+      "sql": "SELECT * FROM nope",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "not_mentions": [
+          "mine",
+          "other",
+          "sluice_calls"
+        ]
+      },
+      "description": "A rejection must not become an enumeration oracle."
+    },
+    {
+      "id": "gate.object.evicted-table-says-evicted",
+      "spec": "001 §7",
+      "sql": "SELECT * FROM gone",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "evicted_table"
+        ],
+        "mentions": [
+          "gone"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.evicted-table-is-case-insensitive",
+      "spec": "001 §7",
+      "sql": "SELECT * FROM GONE",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "evicted_table"
+        ]
+      }
+    },
+    {
+      "id": "gate.object.cte-may-shadow-an-evicted-name",
+      "spec": "001 §7",
+      "sql": "WITH gone AS (SELECT 1 AS a) SELECT * FROM gone",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.object.allowlist-is-case-insensitive",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM MINE",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.object.quoted-allowed-name",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM \"mine\"",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.object.unreferenced-catalog-is-fine",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1 AS sluice_calls",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    }
+  ]
+}

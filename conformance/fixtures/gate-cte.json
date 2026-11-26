@@ -1,0 +1,477 @@
+{
+  "kind": "gate",
+  "description": "CTE scoping and the PR #16 fail-closed bypasses (spec 001 §6.1): nothing may hide inside a CTE, a nested query, a set operation, a recursive term or a PIVOT, and CTE names shadow only within their lexical scope.",
+  "defaults": {
+    "setup": [
+      "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+      "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+      "CREATE TABLE other (a BIGINT)",
+      "INSERT INTO other VALUES (1), (3)",
+      "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+      "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+      "CREATE TABLE gone (a BIGINT)"
+    ],
+    "allowed": [
+      "mine",
+      "other"
+    ],
+    "evicted": [
+      "gone"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gate.cte.cte-reads-envelope",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM sluice_calls) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.cte-reads-sqlite-master",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM sqlite_master) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sqlite_master"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.nested-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (WITH y AS (SELECT * FROM sluice_calls) SELECT * FROM y) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.later-cte-joins-envelope",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT 1), y AS (SELECT * FROM x, sluice_calls) SELECT * FROM y",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.cte-in-derived-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (WITH x AS (SELECT * FROM sluice_calls) SELECT * FROM x) s",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.cte-in-exists",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1 WHERE EXISTS (WITH x AS (SELECT * FROM sluice_calls) SELECT * FROM x)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.cte-in-set-operation-member",
+      "spec": "001 §6.1",
+      "sql": "SELECT a FROM mine UNION ALL (WITH x AS (SELECT a FROM sluice_calls) SELECT a FROM x)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.set-operation-in-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT a FROM mine UNION ALL SELECT a FROM sluice_calls) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.recursive-seed",
+      "spec": "001 §6.1",
+      "sql": "WITH RECURSIVE r AS (SELECT a FROM sluice_calls UNION ALL SELECT a FROM r) SELECT * FROM r",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.recursive-term-join",
+      "spec": "001 §6.1",
+      "sql": "WITH RECURSIVE r AS (SELECT a FROM mine UNION ALL SELECT s.a FROM r, sluice_calls s) SELECT * FROM r",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.recursive-with-column-list",
+      "spec": "001 §6.1",
+      "sql": "WITH RECURSIVE r(n) AS (SELECT 1 FROM sluice_calls UNION ALL SELECT n+1 FROM r) SELECT * FROM r",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.pivot-source",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (PIVOT sluice_calls ON a IN (1) USING count(*))",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.join-position",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1 FROM (SELECT 1) a JOIN sluice_calls b ON true",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.set-operation-right",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1 UNION ALL SELECT a FROM sluice_calls",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.derived-table",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM (SELECT * FROM sluice_calls) s",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.exists-subquery",
+      "spec": "001 §6.1",
+      "sql": "SELECT 1 WHERE EXISTS (SELECT * FROM sluice_calls)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.range-in-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM range(100000000000)) SELECT count(*) FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "range"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.duckdb-tables-in-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM duckdb_tables()) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_tables"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.sleep-in-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT sleep_ms(1)) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "sleep_ms"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.schema-qualified-in-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM main.mine) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "schema_qualified"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.self-reference-is-not-a-shadow",
+      "spec": "001 §6.1",
+      "sql": "WITH sluice_calls AS (SELECT * FROM sluice_calls) SELECT * FROM sluice_calls",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      },
+      "description": "CTE names are honoured by lexical scope and declaration order; collecting them globally is a complete bypass."
+    },
+    {
+      "id": "gate.cte.earlier-cte-cannot-see-a-later-one",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM sluice_calls), sluice_calls AS (SELECT 1) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      },
+      "description": "CTE names are honoured by lexical scope and declaration order; collecting them globally is a complete bypass."
+    },
+    {
+      "id": "gate.cte.recursive-seed-cannot-use-its-own-name",
+      "spec": "001 §6.1",
+      "sql": "WITH RECURSIVE sluice_calls AS (SELECT * FROM sluice_calls UNION ALL SELECT * FROM sluice_calls) SELECT * FROM sluice_calls",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      },
+      "description": "CTE names are honoured by lexical scope and declaration order; collecting them globally is a complete bypass."
+    },
+    {
+      "id": "gate.cte.cte-in-exists-does-not-whitelist-outer",
+      "spec": "001 §6.1",
+      "sql": "SELECT scope_id, flat_tables FROM sluice_calls s WHERE EXISTS (WITH sluice_calls AS (SELECT 1) SELECT * FROM sluice_calls)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      },
+      "description": "CTE names are honoured by lexical scope and declaration order; collecting them globally is a complete bypass."
+    },
+    {
+      "id": "gate.cte.cte-in-exists-does-not-whitelist-sqlite-master",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM sqlite_master WHERE EXISTS (WITH sqlite_master AS (SELECT 1) SELECT * FROM sqlite_master)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sqlite_master"
+        ]
+      },
+      "description": "CTE names are honoured by lexical scope and declaration order; collecting them globally is a complete bypass."
+    },
+    {
+      "id": "gate.cte.sibling-subquery-cte-does-not-leak",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT 1) SELECT * FROM (WITH y AS (SELECT 1) SELECT 1) t, sluice_calls",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "unknown_table"
+        ],
+        "mentions": [
+          "sluice_calls"
+        ]
+      },
+      "description": "CTE names are honoured by lexical scope and declaration order; collecting them globally is a complete bypass."
+    },
+    {
+      "id": "gate.cte.cte-in-exists-does-not-whitelist-a-table-function",
+      "spec": "001 §6.1",
+      "sql": "SELECT * FROM duckdb_tables() WHERE EXISTS (WITH duckdb_tables AS (SELECT 1) SELECT * FROM duckdb_tables)",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "table_function"
+        ],
+        "mentions": [
+          "duckdb_tables"
+        ]
+      }
+    },
+    {
+      "id": "gate.cte.legal-1",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT a FROM mine) SELECT sum(a) FROM x",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.cte.legal-2",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT 1 AS n), y AS (SELECT n FROM x) SELECT * FROM y",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.cte.legal-3",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.cte.legal-4",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT a FROM mine), y AS (SELECT * FROM x) SELECT * FROM y",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.cte.legal-5",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (WITH y AS (SELECT a FROM mine) SELECT * FROM y) SELECT * FROM x",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.cte.legal-6",
+      "spec": "001 §6.1",
+      "sql": "WITH X AS (SELECT 1 AS n) SELECT * FROM x",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.cte.legal-7",
+      "spec": "001 §6.1",
+      "sql": "WITH RECURSIVE nums AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM nums WHERE n < 3) SELECT * FROM nums",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    },
+    {
+      "id": "gate.cte.legal-8",
+      "spec": "001 §6.1",
+      "sql": "WITH sluice_calls AS (SELECT 1 AS a) SELECT * FROM sluice_calls",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      }
+    }
+  ]
+}

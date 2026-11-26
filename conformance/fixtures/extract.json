@@ -1,0 +1,84 @@
+{
+  "kind": "extract",
+  "description": "Finding the row sets in a parsed payload (spec 001 §5.2). Input is the payload as JSON text; output is every row set with its source path, or the reason category there is none.",
+  "cases": [
+    {
+      "id": "extract.bare-list-of-objects",
+      "spec": "001 §5.2",
+      "payload_json": "[{\"a\": 1}, {\"a\": 2}]",
+      "expect": { "row_sets": [{ "source_path": "$", "rows": [{ "a": 1 }, { "a": 2 }] }] }
+    },
+    {
+      "id": "extract.bare-list-of-scalars-gets-a-value-column",
+      "spec": "001 §5.2",
+      "payload_json": "[1, 2, 3]",
+      "expect": { "row_sets": [{ "source_path": "$", "rows": [{ "value": 1 }, { "value": 2 }, { "value": 3 }] }] }
+    },
+    {
+      "id": "extract.every-candidate-array-is-materialized",
+      "spec": "001 §5.2",
+      "description": "Picking the longest silently aggregates the wrong entity.",
+      "payload_json": "{\"rows\": [{\"amount\": 1}, {\"amount\": 2}], \"facets\": [{\"count\": 2}, {\"count\": 3}, {\"count\": 4}]}",
+      "expect": {
+        "row_sets": [
+          { "source_path": "$.rows", "rows": [{ "amount": 1 }, { "amount": 2 }] },
+          { "source_path": "$.facets", "rows": [{ "count": 2 }, { "count": 3 }, { "count": 4 }] }
+        ]
+      }
+    },
+    {
+      "id": "extract.envelope-keeps-only-object-arrays",
+      "spec": "001 §5.2",
+      "payload_json": "{\"items\": [{\"id\": 1}], \"next_cursor\": null, \"total\": 1}",
+      "expect": { "row_sets": [{ "source_path": "$.items", "rows": [{ "id": 1 }] }] }
+    },
+    {
+      "id": "extract.mixed-top-level-list-yields-no-table",
+      "spec": "001 §5.2",
+      "payload_json": "[{\"a\": 1}, 42]",
+      "expect": { "reason": "mixed_elements" }
+    },
+    {
+      "id": "extract.mixed-nested-list-yields-no-table",
+      "spec": "001 §5.2",
+      "description": "A nested ambiguous list is reported, not buried in a single JSON row.",
+      "payload_json": "{\"items\": [{\"a\": 1}, 42]}",
+      "expect": { "reason": "mixed_elements", "paths": ["$.items"] }
+    },
+    {
+      "id": "extract.nine-objects-and-a-scalar",
+      "spec": "001 §5.2",
+      "payload_json": "{\"items\": [{\"id\": 0}, {\"id\": 1}, {\"id\": 2}, {\"id\": 3}, {\"id\": 4}, {\"id\": 5}, {\"id\": 6}, {\"id\": 7}, {\"id\": 8}, 42]}",
+      "expect": { "reason": "mixed_elements" }
+    },
+    {
+      "id": "extract.empty-nested-list-is-reported",
+      "spec": "001 §5.2",
+      "payload_json": "{\"items\": []}",
+      "expect": { "reason": "empty", "paths": ["$.items"] }
+    },
+    {
+      "id": "extract.empty-bare-list-is-reported",
+      "spec": "001 §5.2",
+      "payload_json": "[]",
+      "expect": { "reason": "empty" }
+    },
+    {
+      "id": "extract.object-without-candidates-is-one-row",
+      "spec": "001 §5.2",
+      "payload_json": "{\"id\": 1, \"nested\": {\"a\": 1}}",
+      "expect": { "row_sets": [{ "source_path": "$", "rows": [{ "id": 1, "nested": { "a": 1 } }] }] }
+    },
+    {
+      "id": "extract.object-with-scalar-list-is-one-row",
+      "spec": "001 §5.2",
+      "payload_json": "{\"id\": 1, \"tags\": [\"a\", \"b\"]}",
+      "expect": { "row_sets": [{ "source_path": "$", "rows": [{ "id": 1, "tags": ["a", "b"] }] }] }
+    },
+    { "id": "extract.scalar-integer", "spec": "001 §5.2", "payload_json": "42", "expect": { "reason": "scalar" } },
+    { "id": "extract.scalar-string", "spec": "001 §5.2", "payload_json": "\"text\"", "expect": { "reason": "scalar" } },
+    { "id": "extract.scalar-float", "spec": "001 §5.2", "payload_json": "3.5", "expect": { "reason": "scalar" } },
+    { "id": "extract.scalar-boolean", "spec": "001 §5.2", "payload_json": "true", "expect": { "reason": "scalar" } },
+    { "id": "extract.scalar-null", "spec": "001 §5.2", "payload_json": "null", "expect": { "reason": "scalar" } }
+  ]
+}

@@ -59,15 +59,32 @@ file. No deployment, no service, no account.
 
 ## Constraints
 
+These were written for the first version, in Python. Since 2026-11-07 Sluice has
+two versions in one repository (decision 10 below); the constraints apply per
+version.
+
+Python version (`python/`):
+
 - Python 3.14 or newer. `requires-python = ">=3.14"`. No compatibility shims for
   older versions. PEP 604 unions, PEP 585 builtin generics, `type` statements.
   No `typing.Optional`, no `typing.List`, no `TypeAlias`.
 - The official MCP Python SDK. Not a hand-rolled protocol implementation.
-- DuckDB as the engine. In-process, no server, zero-configuration typed columns
-  and good JSON inference.
+- DuckDB as the engine, `duckdb>=1.5.5`. CI runs 1.5.5 and the current 2.x.
 - Type hints throughout, pytest for tests. Idiomatic modern Python of the kind
   written in a FastAPI and Postgres shop.
+
+TypeScript version (`typescript/`):
+
+- Node 24 or newer, ESM, TypeScript with `strict` and `noUncheckedIndexedAccess`;
+  the type checker runs in CI.
+- The official MCP TypeScript SDK.
+- DuckDB 2.x through `@duckdb/node-api`; 2.0.0 is the verified baseline, and the
+  release pins the engine exactly (review/duckdb2-node-check.md).
+
+Both:
+
 - The database is in-memory and dies with the process.
+- Both versions pass the same conformance suite (`conformance/`).
 
 ## Decisions taken during intake
 
@@ -111,6 +128,13 @@ otherwise think they were arbitrary.
    controlled payloads (400 homogeneous rows, heterogeneous rows, deeply nested,
    non-tabular, oversized) so CI is hermetic and the correctness property test
    has ground truth.
+10. **Two versions, one spec**, decided by Rich on 2026-11-07. Sluice keeps a
+   Python version (PyPI `mcp-sluice`) and adds a TypeScript version (npm
+   `mcp-sluice`) in the same repository, with one shared `spec/` and a JSON
+   conformance suite both versions run in CI. A behavior change lands in both
+   versions or is documented as one-sided. DuckDB 2.x is the verified baseline
+   for TypeScript; for Python, `duckdb>=1.5.5` is a declared range and CI checks
+   both ends.
 
 ## Non-goals for v0
 
@@ -161,14 +185,16 @@ best effort within a bounded cache.
    a handle scrolls out of context, is `SELECT * FROM sluice_schema` enough, or
    does discovery need to be more prominent? Deferred until observed in use.
 4. **What happens on repeated calls to the same tool.** v0 gives each call its
-   own table plus a `__latest` view. Whether the agent wants a union across calls
+   own table. (The `__latest` view planned here was removed; spec 001 §3.2.) Whether the agent wants a union across calls
    to the same tool is a real question that only shows up under use.
 
 ## How we will know it worked
 
 The correctness criterion is a property: **an aggregate computed via `query` must
 equal the same aggregate computed directly over the raw source data.** This is
-mechanically checkable and belongs in CI.
+mechanically checkable and belongs in CI, for both versions: fixed cases live in
+the conformance suite (`session.aggregates.*`), and each version keeps its own
+generated property test.
 
 "Equal" is bounded by a domain and splits in two inside it, both measured rather
 than assumed. Integer columns within ±2^53 can claim exactness; larger integer
