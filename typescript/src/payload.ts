@@ -1,4 +1,4 @@
-import { dumpJson, isJsonArray, isJsonObject, parseJson, type JsonObject, type JsonValue } from "./json.ts";
+import { JsonParseError, dumpJson, isJsonArray, isJsonObject, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import {
   Passthrough,
   PayloadChannel,
@@ -145,10 +145,10 @@ function parse(text: string): Parsed {
   try {
     return { ok: true, value: parseJson(text) };
   } catch (error) {
-    if (error instanceof RangeError) {
-      throw error;
+    if (error instanceof JsonParseError) {
+      return { ok: false };
     }
-    return { ok: false };
+    throw error;
   }
 }
 

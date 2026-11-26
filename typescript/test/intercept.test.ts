@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Interceptor, type InterceptRequest } from "../src/intercept.ts";
-import { parseJson } from "../src/json.ts";
 import { makeLimits, type Limits } from "../src/limits.ts";
 import type { ToolResult } from "../src/models.ts";
 import { QueryTool } from "../src/query.ts";
@@ -45,30 +44,54 @@ function tables(result: ToolResult): { name: string }[] {
 }
 
 const nested = `${"[".repeat(DEEP)}${"]".repeat(DEEP)}`;
+const deepObject = `{"deep": ${nested}}`;
 
-test("the lossless parser really overflows the stack on this depth", () => {
-  assert.throws(() => parseJson(nested), RangeError);
-});
+function assertHandle(result: ToolResult, original: ToolResult): { tables: { name: string }[]; flat_reason: string | null } {
+  assert.notEqual(result, original);
+  assert.notEqual(result.isError, true);
+  const structured = result.structuredContent as { tables: { name: string }[]; flat_reason: string | null } | undefined;
+  assert.ok(structured !== undefined, "expected a handle");
+  return structured;
+}
 
-test("a structuredContent too deep to parse passes through and is recorded", async () => {
+test("a deeply nested structuredContent is materialized without failing the call", async () => {
   await withInterceptor(makeLimits(), async (interceptor, store, events) => {
     const original: ToolResult = { content: [{ type: "text", text: "prose" }], structuredContent: { opaque: true } };
-    const result = await interceptor.intercept(request(original, { structured: { json: `{"deep": ${nested}}` } }));
-    assert.equal(result, original);
-    assert.deepEqual(events, ["selection_failed"]);
-    const [reason] = await flatReasons(store);
-    assert.match(String(reason), /^selection_failed: RangeError/u);
-    const next = await interceptor.intercept(request({ content: [{ type: "text", text: '[{"id": 1}]' }] }));
-    assert.equal(tables(next).length, 1);
+    const handle = assertHandle(await interceptor.intercept(request(original, { structured: { json: deepObject } })), original);
+    assert.deepEqual(events, []);
+    assert.equal(handle.flat_reason, null);
+    const [table] = handle.tables;
+    assert.ok(table !== undefined);
+    const query = new QueryTool(store, makeLimits());
+    assert.match(await query.run(`SELECT count(*), max(length(deep::VARCHAR)) FROM "${table.name}"`), new RegExp(`\\| 1 \\| ${DEEP * 2} \\|`, "u"));
   });
 });
 
-test("a text channel too deep to parse passes through and is recorded", async () => {
-  await withInterceptor(makeLimits({ max_payload_bytes: 1_000_000, max_session_bytes: 10_000_000 }), async (interceptor, store) => {
-    const original: ToolResult = { content: [{ type: "text", text: nested }] };
-    const result = await interceptor.intercept(request(original));
-    assert.equal(result, original);
-    assert.match(String((await flatReasons(store))[0]), /^selection_failed: RangeError/u);
+test("a deeply nested text channel is materialized without failing the call", async () => {
+  await withInterceptor(makeLimits(), async (interceptor, store, events) => {
+    const original: ToolResult = { content: [{ type: "text", text: deepObject }] };
+    const handle = assertHandle(await interceptor.intercept(request(original)), original);
+    assert.deepEqual(events, []);
+    assert.equal(handle.tables.length, 1);
+    assert.deepEqual(await flatReasons(store), ["null"]);
+  });
+});
+
+test("a selection failure passes the original result through and is recorded", async () => {
+  await withInterceptor(makeLimits(), async (interceptor, store, events) => {
+    const hostile = {
+      type: "text",
+      get text(): string {
+        throw new Error("synthetic selection failure");
+      },
+    };
+    const original: ToolResult = { content: [hostile] };
+    assert.equal(await interceptor.intercept(request(original)), original);
+    assert.deepEqual(events, ["selection_failed"]);
+    const [reason] = await flatReasons(store);
+    assert.match(String(reason), /^selection_failed: Error: synthetic selection failure/u);
+    const next = await interceptor.intercept(request({ content: [{ type: "text", text: '[{"id": 1}]' }] }));
+    assert.equal(tables(next).length, 1);
   });
 });
 
