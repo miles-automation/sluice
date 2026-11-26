@@ -76,13 +76,11 @@ function pathOf(value: Json | undefined): AstPath {
   return value.map((step) => (typeof step === "number" ? step : String(step)));
 }
 
-export function applyMutations(
-  document: Json,
-  mutations: readonly Json[],
-  serialize: (sql: string) => Json,
-): Json {
-  const mutated = structuredClone(document);
-  for (const mutation of mutations) {
+export function applyMutations(sql: string, mutations: readonly Json[], serialize: (sql: string) => Json): Json {
+  const [first, ...rest] = mutations;
+  const replaces = isObject(first) && first["op"] === "replace_serialized";
+  const mutated = structuredClone(serialize(replaces && isObject(first) ? String(first["sql"]) : sql));
+  for (const mutation of replaces ? rest : mutations) {
     if (!isObject(mutation)) {
       throw new Error("a mutation must be an object");
     }
@@ -130,7 +128,7 @@ export function applyMutations(
         break;
       }
       default:
-        throw new Error(`unknown mutation ${String(mutation["op"])}`);
+        throw new Error(`mutation ${String(mutation["op"])} is unknown or out of place`);
     }
   }
   return mutated;

@@ -46,11 +46,11 @@ version yet: its harness reports every fixture kind as pending until tasks
 | §5.4 | fixtures `engine.lockdown-*`, `engine.create-and-insert-*` | verified; the `allowed_directories` measurement is **unverified** on 2.x |
 | §5.5 | fixtures `infer.*`, `engine.median-*`, `session.handle.mixed-scalars-*` | verified, with the VARCHAR correction in rule 2 |
 | §5.6 | fixtures `engine.*`, `session.aggregates.*`; Hypothesis properties in Python | verified |
-| §6.1 | fixtures `gate.*`, `gate_ast.*`, `session.query.*` | verified on both DuckDB lines; statement typing differs by version, see there |
+| §6.1 | fixtures `gate.*`, `gate_ast.*`, `session.query.*`; layer 1 alone by `gate_ast.statement-layer-*`, which hand the object layer the AST of `SELECT 1` | verified on both DuckDB lines; statement typing differs by version, see there |
 | §6.2 timeout and interrupt | Python slow tests | verified, Python only; the 0.2 s and 5.2 s timings are **unverified** as numbers |
-| §6.3 | fixtures `cell.*`, `session.query.*` | verified |
+| §6.3 | fixtures `cell.*`, `session.query.*` (notice vocabulary parsed strictly) | verified |
 | §6.4 | fixture `session.query.envelope-view-reaches-the-payload` | verified |
-| §7 limits and retention | fixtures `config.*`, `session.retention.*` | verified; the memory calibration figures are **unverified** (2026-08-30 run on the reference host only) |
+| §7 limits and retention | fixtures `config.*`, `session.retention.*` (sized to hold for any charge within the bounds) | verified; the memory calibration figures are **unverified** (2026-08-30 run on the reference host only) |
 | §9 | Python suite | verified, Python only |
 | §12 | fixtures `scope.*`, `naming.table-names-from-different-scopes-differ` | verified |
 
@@ -691,6 +691,26 @@ other.
   a tool that sells determinism. The cap is counted **in bytes over the whole
   output**, header and notices included, and space is reserved so the notices
   cannot themselves be truncated away.
+- **Notices are a fixed vocabulary** (normative for every version, so agents and
+  the conformance suite can rely on them). A successful result is the markdown
+  table (or `(no columns)`, or nothing when the table was omitted), a blank line,
+  then one line holding these sentences in this order, each present only when
+  it applies, separated by single spaces:
+
+  | Kind | Sentence |
+  |---|---|
+  | shown (always) | `N row(s) shown.` |
+  | more rows | `Additional rows exist beyond max_rows; the exact number is not known.` |
+  | rows omitted | `N row(s) omitted to stay under the byte cap.` |
+  | cells truncated | `N cell(s) truncated, marked with a trailing ….` |
+  | headers truncated | `N column header(s) truncated, marked with a trailing ….` |
+  | table omitted | `The table was omitted because its header exceeded the output byte cap.` |
+
+  If even that does not fit, the defensive backstop replaces the notice line with
+  `Output truncated to stay under the configured byte cap.` No other text may
+  appear on the notice line, and no notice states a count of rows beyond
+  `max_rows`. The conformance runners reject a notice line they cannot read
+  completely.
 - The gate runs on the worker thread, under the same deadline as the query.
   `extract_statements` and `json_serialize_sql` are synchronous DuckDB calls, so
   running them on the event loop blocks the whole server on pathological SQL.
@@ -769,6 +789,16 @@ explicitly provisional and untrusted for a 1 GiB RSS target until a post-fix
 benchmark on the deployment host. Eviction is oldest-first
 by admission order, with call id as a stable tie-breaker, and preserves envelope
 metadata while dropping payload columns and flat tables.
+
+**Charge bounds** (normative, so the conformance suite can test eviction in
+every version). A call that retains its payload is charged C bytes with
+S ≤ C ≤ 1.25·S + 1024, where S is the sum of the UTF-8 byte lengths of the text
+content as received and of the compact JSON serializations (no insignificant
+whitespace) of the selected payload, the content-block descriptions
+(`[{"type": ..., "text": ...}]`), `structuredContent` when present, the arguments
+when present, and every flat-table row as an object including `_row`. Python's
+estimate is inside these bounds (rechecked 2026-11-25: S = 1,772 gives C =
+2,053; S = 4,172 gives C = 4,455).
 
 `max_session_calls` is a separate positive cardinality budget for envelope rows
 and scope views/catalog entries. When it is exceeded, the oldest call row and

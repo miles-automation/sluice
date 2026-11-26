@@ -3,7 +3,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import anyio
 import duckdb
@@ -15,9 +15,10 @@ from sluice.config import ConfigError, Limits, PaginationConfig, load_config
 from sluice.errors import DownstreamError, FailureClass
 from sluice.gate import QueryRejectedError
 from sluice.intercept import Interceptor
-from sluice.paginate import PaginationArgumentError, fetch_all
+from sluice.paginate import FetchOutcome, PageCall, PaginationArgumentError, fetch_all
+from sluice.proxy import MountedCollection, Proxy, expose_collection
 from sluice.query import QueryTool, escape_cell
-from sluice.server import _run_query
+from sluice.server import _run_collection, _run_query
 from sluice.store import Store, scope_view_name
 from tests.conformance_support import (
     CONFORMANCE_ROOT,
@@ -201,9 +202,7 @@ def test_gate_ast(case: Case, monkeypatch: pytest.MonkeyPatch) -> None:
     real = gate._serialize
 
     def mutated(sql: str, con: duckdb.DuckDBPyConnection) -> dict[str, Any]:
-        return apply_mutations(
-            real(sql, con), case["mutations"], lambda other: real(other, connection)
-        )
+        return apply_mutations(sql, case["mutations"], lambda other: real(other, connection))
 
     monkeypatch.setattr(gate, "_serialize", mutated)
     try:
@@ -221,6 +220,8 @@ def test_engine(case: Case) -> None:
         if case.get("lockdown"):
             for statement in LOCKDOWN:
                 connection.execute(statement)
+        for statement in case.get("locked_setup", []):
+            connection.execute(statement)
         expect = case["expect"]
         if "error" in expect:
             error_type = (
@@ -402,7 +403,6 @@ class _Session:
         assert result.is_error is not True, text
         assert len(text.encode("utf-8")) <= self.limits.query_max_bytes
         view = parse_query_output(text)
-        assert view.shown is not None, text
         assert view.shown == len(view.rows)
         assert_query_view(expect, view)
         for fragment in expect.get("text_excludes", []):
@@ -484,6 +484,68 @@ def test_paginate(case: Case) -> None:
             assert (outcome.first_page_error is not None) is expect["first_page_error"]
 
     anyio.run(run)
+    if "collection" in case:
+        seen.clear()
+        anyio.run(_assert_collection, case, config, call)
+
+
+class _ScriptedProxy:
+    def __init__(self, call: PageCall) -> None:
+        self._call = call
+
+    async def fetch_collection(
+        self, entry: MountedCollection, arguments: dict[str, Any] | None
+    ) -> FetchOutcome:
+        return await fetch_all(self._call, entry.config, arguments)
+
+
+async def _assert_collection(case: Case, config: PaginationConfig, call: PageCall) -> None:
+    expect = case["collection"]
+    tool = types.Tool(
+        name="t",
+        input_schema={"type": "object", "properties": {}},
+        annotations=types.ToolAnnotations(read_only_hint=True),
+    )
+    entry = expose_collection("conformance", tool, config)
+    params = types.CallToolRequestParams(name=entry.mounted, arguments=case.get("arguments"))
+    limits = Limits()
+    with Store.open(limits) as store:
+        result = await _run_collection(
+            cast(Proxy, _ScriptedProxy(call)),
+            Interceptor(store, limits, query_available=True),
+            entry,
+            params,
+            datetime.now(UTC).replace(tzinfo=None),
+        )
+        tables = store.allowed_objects - {
+            name for name in store.allowed_objects if name.startswith("sluice_calls__")
+        }
+    structured = result.structured_content
+    if expect["outcome"] == "error":
+        assert result.is_error is True
+        assert structured is None or structured.get("tables") == []
+        assert tables == set(), "a fetch with no rows must not leave a table"
+        texts = [block.text for block in result.content if isinstance(block, types.TextContent)]
+        assert texts
+        if "keeps_downstream_error" in expect:
+            first = case["pages"]["0"]
+            kept = bool(texts) and texts[0] == first.get("text") and len(texts) >= 2
+            assert kept is expect["keeps_downstream_error"]
+        return
+    assert result.is_error is not True
+    assert structured is not None
+    if expect["outcome"] == "envelope_only":
+        assert structured["tables"] == []
+        assert tables == set()
+    else:
+        assert len(structured["tables"]) == 1
+        assert len(tables) == 1
+        if "table_rows" in expect:
+            assert structured["tables"][0]["row_count"] == expect["table_rows"]
+    pagination = structured["pagination"]
+    for key in ("status", "reason", "resume_offset"):
+        if key in expect:
+            assert pagination[key] == expect[key], key
 
 
 @pytest.mark.parametrize("case", params("config"))
@@ -541,8 +603,21 @@ def test_coverage_map_lists_every_python_test() -> None:
     }
     assert listed == actual
     ids = {case["id"] for fixture in FIXTURE_SET for case in fixture.cases}
-    for pattern in re.findall(r"`([a-z0-9_]+\.[a-z0-9.*_-]+)`", coverage):
+    mapped_section, _, unmapped_section = coverage.partition(
+        "\n## Fixtures with no prior Python test\n"
+    )
+    mapped = "\n".join(line for line in mapped_section.splitlines() if re.match(r"\| `test_", line))
+    covered: set[str] = set()
+    for pattern in re.findall(r"`([a-z0-9_]+\.[a-z0-9.*_-]+)`", mapped):
         if not pattern.startswith(_ID_PREFIXES):
             continue
         matcher = re.compile(re.escape(pattern).replace(r"\*", ".*"))
-        assert any(matcher.fullmatch(case_id) for case_id in ids), pattern
+        matched = {case_id for case_id in ids if matcher.fullmatch(case_id)}
+        assert matched, pattern
+        covered |= matched
+    unmapped = set(re.findall(r"^- `([^`]+)`$", unmapped_section, re.MULTILINE))
+    assert unmapped == ids - covered
+    for pattern in re.findall(r"`([a-z0-9_]+\.[a-z0-9.*_-]+)`", coverage):
+        if pattern.startswith(_ID_PREFIXES):
+            matcher = re.compile(re.escape(pattern).replace(r"\*", ".*"))
+            assert any(matcher.fullmatch(case_id) for case_id in ids), pattern

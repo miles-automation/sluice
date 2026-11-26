@@ -1,6 +1,28 @@
 import type { Json } from "./fixtures.ts";
 
 const INTEGER = /^-?[0-9]+$/;
+const NUMBER = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?$/;
+const DECIMAL = /^-?[0-9]+(?:\.[0-9]+)?$/;
+const BOOLEAN_TEXT = new Set(["true", "false", "True", "False"]);
+
+function parseNumber(text: string): number | undefined {
+  return NUMBER.test(text) ? Number(text) : undefined;
+}
+
+function expectedDouble(value: Json | undefined): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  const parsed = typeof value === "string" ? parseNumber(value) : undefined;
+  if (parsed === undefined) {
+    throw new TypeError(`not a numeric literal: ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
+function isDecimalValue(value: unknown): value is { readonly scale: number; readonly width: number } {
+  return typeof value === "object" && value !== null && "scale" in value && "width" in value;
+}
 
 function field(matcher: { [key: string]: Json }, name: string): Json | undefined {
   return Object.hasOwn(matcher, name) ? matcher[name] : undefined;
@@ -44,16 +66,21 @@ export function matchCell(expected: Json, text: string): boolean {
   }
   const bool = field(expected, "bool");
   if (typeof bool === "boolean") {
-    return text.toLowerCase() === String(bool);
+    return BOOLEAN_TEXT.has(text) && text.toLowerCase() === String(bool);
   }
-  if (text.trim() === "" || Number.isNaN(Number(text))) {
+  const decimal = field(expected, "decimal");
+  if (typeof decimal === "string") {
+    return DECIMAL.test(text) && text === decimal;
+  }
+  const actual = parseNumber(text);
+  if (actual === undefined) {
     return false;
   }
   const double = field(expected, "double");
   if (double !== undefined) {
-    return Number(text) === Number(double);
+    return actual === expectedDouble(double);
   }
-  return approx(expected, Number(text));
+  return approx(expected, actual);
 }
 
 export function matchValue(expected: Json, value: unknown): boolean {
@@ -77,12 +104,16 @@ export function matchValue(expected: Json, value: unknown): boolean {
   if (typeof bool === "boolean") {
     return value === bool;
   }
+  const decimal = field(expected, "decimal");
+  if (typeof decimal === "string") {
+    return isDecimalValue(value) && String(value) === decimal;
+  }
   if (typeof value !== "number") {
     return false;
   }
   const double = field(expected, "double");
   if (double !== undefined) {
-    return value === Number(double);
+    return value === expectedDouble(double);
   }
   return approx(expected, value);
 }

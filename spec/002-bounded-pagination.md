@@ -7,7 +7,8 @@ its 22 turns on the loop and then hand-wrote a 19-table `UNION ALL`.
 
 Versions (spec 001 §0): implemented and verified in the Python version only. The page loop (§4) is
 pinned by the `paginate` conformance fixtures and the configuration (§2) by the `config` fixtures,
-rechecked 2026-11-25 on Python; the `max_seconds` wall clock and everything that needs a live
+rechecked 2026-11-25 on Python, and their `collection` expectations drive the collection tool end to
+end for PG-10 to PG-12 (a fetch with no page is a tool error with no table); the `max_seconds` wall clock and everything that needs a live
 downstream (§3, §5) are covered by the Python suite only. The TypeScript version implements this in
 task 1078 and is unverified until then.
 

@@ -2,10 +2,11 @@ import copy
 import json
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -74,9 +75,16 @@ def load_fixtures() -> list[Fixture]:
 FIXTURE_SET = load_fixtures()
 
 
+def _marks(case: Case) -> list[Any]:
+    only = case.get("only")
+    if only is None or only["version"] == "python":
+        return []
+    return [pytest.mark.skip(reason=f"one-sided, {only['version']} only: {only['reason']}")]
+
+
 def params(kind: str) -> list[Any]:
     return [
-        pytest.param({**fixture.defaults, **case}, id=case["id"])
+        pytest.param({**fixture.defaults, **case}, id=case["id"], marks=_marks(case))
         for fixture in FIXTURE_SET
         if fixture.kind == kind
         for case in fixture.cases
@@ -118,16 +126,29 @@ def assert_rejection(expect: dict[str, Any], message: str) -> None:
         assert fragment.casefold() not in folded, f"{fragment!r} leaked in {message!r}"
 
 
-def _as_double(value: object) -> float:
-    return float(cast(str | float | int, value))
+NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?")
+INTEGER = re.compile(r"-?[0-9]+")
+DECIMAL = re.compile(r"-?[0-9]+(?:\.[0-9]+)?")
+
+
+def _number(text: str) -> float | None:
+    return float(text) if NUMBER.fullmatch(text) else None
+
+
+def _expected_double(expected: dict[str, Any]) -> float:
+    value = expected["double"]
+    if isinstance(value, str):
+        parsed = _number(value)
+        assert parsed is not None, f"not a numeric literal: {value!r}"
+        return parsed
+    return float(value)
 
 
 def _approx(expected: dict[str, Any], actual: float) -> bool:
     target = float(expected["approx"])
-    close = math.isclose(actual, target, rel_tol=expected["rel"], abs_tol=expected["abs"])
     if expected.get("exact") is False and actual == target:
         return False
-    return close
+    return math.isclose(actual, target, rel_tol=expected["rel"], abs_tol=expected["abs"])
 
 
 def match_cell(expected: Any, text: str) -> bool:
@@ -138,19 +159,21 @@ def match_cell(expected: Any, text: str) -> bool:
     if isinstance(expected, str):
         return text == expected
     if isinstance(expected, int):
-        return re.fullmatch(r"-?[0-9]+", text) is not None and int(text) == expected
+        return INTEGER.fullmatch(text) is not None and int(text) == expected
     if "int" in expected:
-        return re.fullmatch(r"-?[0-9]+", text) is not None and int(text) == int(expected["int"])
+        return INTEGER.fullmatch(text) is not None and int(text) == int(expected["int"])
     if "bool" in expected:
-        return text.casefold() == str(expected["bool"]).casefold()
-    try:
-        actual = float(text)
-    except ValueError:
+        return (
+            text in ("true", "false", "True", "False")
+            and text.lower() == str(expected["bool"]).lower()
+        )
+    if "decimal" in expected:
+        return DECIMAL.fullmatch(text) is not None and text == expected["decimal"]
+    actual = _number(text)
+    if actual is None:
         return False
     if "double" in expected:
-        return actual == _as_double(expected["double"]) or (
-            math.isnan(actual) and math.isnan(_as_double(expected["double"]))
-        )
+        return actual == _expected_double(expected)
     return _approx(expected, actual)
 
 
@@ -167,12 +190,12 @@ def match_value(expected: Any, value: object) -> bool:
         )
     if "bool" in expected:
         return isinstance(value, bool) and value is expected["bool"]
-    if isinstance(value, Decimal):
-        value = float(value)
+    if "decimal" in expected:
+        return isinstance(value, Decimal) and str(value) == expected["decimal"]
     if not isinstance(value, float):
         return False
     if "double" in expected:
-        return value == _as_double(expected["double"])
+        return value == _expected_double(expected)
     return _approx(expected, value)
 
 
@@ -180,13 +203,33 @@ def match_value(expected: Any, value: object) -> bool:
 class QueryView:
     columns: list[str] = field(default_factory=list)
     rows: list[list[str]] = field(default_factory=list)
-    shown: int | None = None
+    notices: list[str] = field(default_factory=list)
+    shown: int = 0
     more_rows: bool = False
     rows_omitted: int = 0
     cells_truncated: int = 0
     headers_truncated: int = 0
     table_omitted: bool = False
-    fallback: bool = False
+
+
+NOTICES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("shown", re.compile(r"([0-9]+) row\(s\) shown\.")),
+    (
+        "more_rows",
+        re.compile(r"Additional rows exist beyond max_rows; the exact number is not known\."),
+    ),
+    ("rows_omitted", re.compile(r"([0-9]+) row\(s\) omitted to stay under the byte cap\.")),
+    ("cells_truncated", re.compile(r"([0-9]+) cell\(s\) truncated, marked with a trailing …\.")),
+    (
+        "headers_truncated",
+        re.compile(r"([0-9]+) column header\(s\) truncated, marked with a trailing …\."),
+    ),
+    (
+        "table_omitted",
+        re.compile(r"The table was omitted because its header exceeded the output byte cap\."),
+    ),
+    ("fallback", re.compile(r"Output truncated to stay under the configured byte cap\.")),
+)
 
 
 def _split_row(line: str) -> list[str]:
@@ -194,27 +237,42 @@ def _split_row(line: str) -> list[str]:
     return line[2:-2].split(" | ")
 
 
-def _count(pattern: str, text: str) -> int:
-    found = re.search(pattern, text)
-    return int(found.group(1)) if found else 0
+def parse_notices(line: str) -> list[tuple[str, int]]:
+    found: list[tuple[str, int]] = []
+    rest = line
+    for kind, pattern in NOTICES:
+        match = pattern.match(rest)
+        if match is None:
+            continue
+        found.append((kind, int(match.group(1)) if match.groups() else 1))
+        rest = rest[match.end() :]
+        if rest.startswith(" "):
+            rest = rest[1:]
+    assert rest == "", f"unrecognized notice text {rest!r} in {line!r}"
+    assert found and (found[0][0] == "shown" or found == [("fallback", 1)]), line
+    return found
 
 
 def parse_query_output(text: str) -> QueryView:
     view = QueryView()
-    lines = text.split("\n")
+    body, separator, notice = text.rpartition("\n\n")
+    lines = body.split("\n") if separator else []
+    if not separator:
+        notice = text
     table = [line for line in lines if line.startswith("| ")]
+    assert len(table) == len(lines) or lines == ["(no columns)"], f"unexpected body {body!r}"
     if table:
+        assert len(table) >= 2, table
         view.columns = _split_row(table[0])
         view.rows = [_split_row(line) for line in table[2:]]
-    notice = lines[-1]
-    shown = re.search(r"([0-9]+) row\(s\) shown\.", notice)
-    view.shown = int(shown.group(1)) if shown else None
-    view.more_rows = "Additional rows exist beyond max_rows" in notice
-    view.rows_omitted = _count(r"([0-9]+) row\(s\) omitted to stay under the byte cap", notice)
-    view.cells_truncated = _count(r"([0-9]+) cell\(s\) truncated", notice)
-    view.headers_truncated = _count(r"([0-9]+) column header\(s\) truncated", notice)
-    view.table_omitted = "The table was omitted" in notice
-    view.fallback = "Output truncated to stay under the configured byte cap" in notice
+    for kind, count in parse_notices(notice):
+        view.notices.append(kind)
+        if kind == "fallback":
+            continue
+        if kind in ("more_rows", "table_omitted"):
+            setattr(view, kind, True)
+        else:
+            setattr(view, kind, count)
     return view
 
 
@@ -232,8 +290,10 @@ def assert_query_view(expect: dict[str, Any], view: QueryView) -> None:
     for key in ("shown", "more_rows", "rows_omitted", "cells_truncated", "headers_truncated"):
         if key in expect:
             assert getattr(view, key) == expect[key], f"{key}: {getattr(view, key)}"
+    if "notices" in expect:
+        assert view.notices == expect["notices"]
     if "accounted_rows" in expect:
-        assert (view.shown or 0) + view.rows_omitted == expect["accounted_rows"]
+        assert view.shown + view.rows_omitted == expect["accounted_rows"]
     if "rows_omitted_min" in expect:
         assert view.rows_omitted >= expect["rows_omitted_min"]
     if "table_omitted" in expect:
@@ -280,12 +340,18 @@ def _substitute(template: Any, node: Any) -> Any:
 
 
 def apply_mutations(
-    document: dict[str, Any],
+    sql: str,
     mutations: list[dict[str, Any]],
-    serialize: Any,
+    serialize: Callable[[str], dict[str, Any]],
 ) -> dict[str, Any]:
-    mutated: dict[str, Any] = json.loads(json.dumps(document))
-    for mutation in mutations:
+    first, *rest = mutations
+    if first["op"] == "replace_serialized":
+        mutated = serialize(first["sql"])
+    else:
+        mutated = serialize(sql)
+        rest = mutations
+    mutated = copy.deepcopy(mutated)
+    for mutation in rest:
         op = mutation["op"]
         if op == "update":
             scope = _resolve(mutated, mutation.get("within", []))
@@ -305,5 +371,5 @@ def apply_mutations(
             *parent, last = mutation["path"]
             _resolve(mutated, parent)[last] = _substitute(mutation["value"], source)
         else:
-            raise ValueError(f"unknown mutation {op!r}")
+            raise ValueError(f"mutation {op!r} is unknown or out of place")
     return mutated

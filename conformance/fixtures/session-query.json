@@ -5,7 +5,7 @@
     {
       "id": "session.query.row-cap-is-applied-and-reported",
       "spec": "001 §6.3",
-      "description": "max_rows+1 proves more rows exist; the result must not claim how many.",
+      "description": "max_rows+1 proves more rows exist; the result says so and must not claim how many: its notices are exactly rows shown and more rows exist.",
       "steps": [
         {
           "call": "c1",
@@ -39,7 +39,60 @@
               ]
             ],
             "shown": 3,
-            "more_rows": true
+            "more_rows": true,
+            "notices": [
+              "shown",
+              "more_rows"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.query.every-kind-of-truncation-is-reported",
+      "spec": "001 §6.3",
+      "limits": {
+        "max_cell_bytes": 10
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"a\": \"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}, {\"a\": \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT a AS \"hhhhhhhhhhhhhhhhhhhh\" FROM \"{{c1.table}}\" ORDER BY _row",
+            "max_rows": 1
+          },
+          "expect": {
+            "rows": [
+              [
+                "yyyyyyy…"
+              ]
+            ],
+            "columns": [
+              "hhhhhhh…"
+            ],
+            "shown": 1,
+            "more_rows": true,
+            "cells_truncated": 1,
+            "headers_truncated": 1,
+            "notices": [
+              "shown",
+              "more_rows",
+              "cells_truncated",
+              "headers_truncated"
+            ]
           }
         }
       ]
@@ -69,7 +122,10 @@
           },
           "expect": {
             "shown": 3,
-            "more_rows": false
+            "more_rows": false,
+            "notices": [
+              "shown"
+            ]
           }
         }
       ]
@@ -99,7 +155,10 @@
           },
           "expect": {
             "shown": 3,
-            "more_rows": false
+            "more_rows": false,
+            "notices": [
+              "shown"
+            ]
           }
         }
       ]
@@ -132,7 +191,11 @@
           },
           "expect": {
             "shown": 5,
-            "more_rows": true
+            "more_rows": true,
+            "notices": [
+              "shown",
+              "more_rows"
+            ]
           }
         }
       ]
@@ -399,7 +462,12 @@
           "expect": {
             "table_omitted": true,
             "shown": 0,
-            "rows_omitted": 2
+            "rows_omitted": 2,
+            "notices": [
+              "shown",
+              "rows_omitted",
+              "table_omitted"
+            ]
           }
         }
       ]
@@ -467,7 +535,11 @@
                 "yyyyyyy…"
               ]
             ],
-            "cells_truncated": 1
+            "cells_truncated": 1,
+            "notices": [
+              "shown",
+              "cells_truncated"
+            ]
           }
         }
       ]
@@ -575,7 +647,10 @@
             "sql": "SELECT a FROM \"{{c1.table}}\" ORDER BY a;"
           },
           "expect": {
-            "shown": 3
+            "shown": 3,
+            "notices": [
+              "shown"
+            ]
           }
         }
       ]
@@ -669,6 +744,10 @@
             "more_rows": true,
             "text_excludes": [
               "row-0399"
+            ],
+            "notices": [
+              "shown",
+              "more_rows"
             ]
           }
         }

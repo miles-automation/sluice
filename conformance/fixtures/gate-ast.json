@@ -1,6 +1,6 @@
 {
   "kind": "gate_ast",
-  "description": "The gate's walker over DuckDB's serialized AST fails closed (spec 001 \u00a76.1). Each case serializes `sql` with the engine under test, applies `mutations` to the parsed document, and hands the mutated document to the walker in place of the real one. The statement layer still sees the original SQL. See conformance/README.md for the mutation operations.",
+  "description": "The gate's walker over DuckDB's serialized AST fails closed (spec 001 §6.1). Each case serializes `sql` with the engine under test, applies `mutations` to the parsed document, and hands the mutated document to the walker in place of the real one. The statement layer still sees the original SQL. See conformance/README.md for the mutation operations. Cases whose first mutation is `replace_serialized` never serialize their own SQL, which isolates the statement layer (layer 1).",
   "defaults": {
     "setup": [
       "CREATE TABLE mine (a BIGINT, b VARCHAR)",
@@ -22,7 +22,7 @@
   "cases": [
     {
       "id": "gate_ast.renamed-cte-body",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -53,7 +53,7 @@
     },
     {
       "id": "gate_ast.cte-map-without-a-list",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -78,7 +78,7 @@
     },
     {
       "id": "gate_ast.cte-map-not-an-object",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -103,7 +103,7 @@
     },
     {
       "id": "gate_ast.malformed-cte-entry",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -130,7 +130,7 @@
     },
     {
       "id": "gate_ast.unknown-cte-body-type",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -159,7 +159,7 @@
     },
     {
       "id": "gate_ast.empty-statements",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -179,7 +179,7 @@
     },
     {
       "id": "gate_ast.no-statements-key",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -198,7 +198,7 @@
     },
     {
       "id": "gate_ast.unknown-statement-node",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -221,7 +221,7 @@
     },
     {
       "id": "gate_ast.unknown-from-table-type",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM mine",
       "mutations": [
         {
@@ -243,7 +243,7 @@
     },
     {
       "id": "gate_ast.from-table-not-an-object",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM mine",
       "mutations": [
         {
@@ -263,7 +263,7 @@
     },
     {
       "id": "gate_ast.join-without-left",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM mine m JOIN other o USING (a)",
       "mutations": [
         {
@@ -283,7 +283,7 @@
     },
     {
       "id": "gate_ast.base-table-without-name",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM mine",
       "mutations": [
         {
@@ -303,7 +303,7 @@
     },
     {
       "id": "gate_ast.function-without-name",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT abs(1)",
       "mutations": [
         {
@@ -323,7 +323,7 @@
     },
     {
       "id": "gate_ast.set-operation-without-members",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT 1 UNION ALL SELECT 2",
       "mutations": [
         {
@@ -344,7 +344,7 @@
     },
     {
       "id": "gate_ast.recursive-cte-without-right",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n FROM r) SELECT * FROM r",
       "mutations": [
         {
@@ -364,7 +364,7 @@
     },
     {
       "id": "gate_ast.subquery-without-node",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM (SELECT 1) s",
       "mutations": [
         {
@@ -386,7 +386,7 @@
     },
     {
       "id": "gate_ast.expressions-beside-a-cte-body-are-walked",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "WITH x AS (SELECT * FROM mine) SELECT * FROM x",
       "mutations": [
         {
@@ -424,7 +424,7 @@
     },
     {
       "id": "gate_ast.qualified-path-cannot-hide-behind-an-empty-schema",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM mine",
       "mutations": [
         {
@@ -449,7 +449,7 @@
     },
     {
       "id": "gate_ast.catalog-alone-is-still-qualified",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM mine",
       "mutations": [
         {
@@ -469,7 +469,7 @@
     },
     {
       "id": "gate_ast.unknown-scalar-field-is-tolerated",
-      "spec": "001 \u00a76.1",
+      "spec": "001 §6.1",
       "sql": "SELECT * FROM mine",
       "mutations": [
         {
@@ -484,6 +484,290 @@
         "decision": "allow"
       },
       "description": "Control: the walker refuses unknown shapes in positions that can hold a query or table, not every unknown key."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-insert",
+      "spec": "001 §6.1 layer 1",
+      "sql": "INSERT INTO mine VALUES (3, 'z')",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-update",
+      "spec": "001 §6.1 layer 1",
+      "sql": "UPDATE mine SET a = 9",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-delete",
+      "spec": "001 §6.1 layer 1",
+      "sql": "DELETE FROM mine",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-create-as",
+      "spec": "001 §6.1 layer 1",
+      "sql": "CREATE TABLE evil AS SELECT 1",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-drop",
+      "spec": "001 §6.1 layer 1",
+      "sql": "DROP TABLE mine",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-drop-envelope",
+      "spec": "001 §6.1 layer 1",
+      "sql": "DROP TABLE sluice_calls",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-attach",
+      "spec": "001 §6.1 layer 1",
+      "sql": "ATTACH '/tmp/x.db' AS x",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-copy",
+      "spec": "001 §6.1 layer 1",
+      "sql": "COPY (SELECT 1) TO '/tmp/out.csv'",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-set",
+      "spec": "001 §6.1 layer 1",
+      "sql": "SET enable_external_access = true",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-call",
+      "spec": "001 §6.1 layer 1",
+      "sql": "CALL duckdb_tables()",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-checkpoint",
+      "spec": "001 §6.1 layer 1",
+      "sql": "CHECKPOINT",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-export",
+      "spec": "001 §6.1 layer 1",
+      "sql": "EXPORT DATABASE '/tmp/sluice-export'",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-create-macro",
+      "spec": "001 §6.1 layer 1",
+      "sql": "CREATE MACRO m(x) AS x",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-refuses-begin",
+      "spec": "001 §6.1 layer 1",
+      "sql": "BEGIN TRANSACTION",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "not_select"
+        ]
+      },
+      "description": "The object layer sees the AST of SELECT 1, so only the statement layer can refuse this. It must refuse it as not a read."
+    },
+    {
+      "id": "gate_ast.statement-layer-counts-statements",
+      "spec": "001 §6.1 layer 1",
+      "sql": "SELECT 1; SELECT 2",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "multiple_statements"
+        ]
+      }
+    },
+    {
+      "id": "gate_ast.statement-layer-admits-a-select",
+      "spec": "001 §6.1 layer 1",
+      "sql": "SELECT a FROM mine",
+      "mutations": [
+        {
+          "op": "replace_serialized",
+          "sql": "SELECT 1"
+        }
+      ],
+      "expect": {
+        "decision": "allow"
+      },
+      "description": "Control: with the object layer neutralized, a real SELECT passes the statement layer."
     }
   ]
 }

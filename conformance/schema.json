@@ -295,6 +295,27 @@
         },
         "note": {
           "type": "string"
+        },
+        "only": {
+          "type": "object",
+          "required": [
+            "version",
+            "reason"
+          ],
+          "additionalProperties": false,
+          "description": "A one-sided case: only the named version runs it; the other reports it skipped with the reason.",
+          "properties": {
+            "version": {
+              "enum": [
+                "python",
+                "typescript"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },
@@ -424,6 +445,19 @@
           "properties": {
             "bool": {
               "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "decimal"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "decimal": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           }
         }
@@ -979,6 +1013,23 @@
             },
             "value": {}
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "sql"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "replace_serialized"
+            },
+            "sql": {
+              "type": "string"
+            }
+          },
+          "description": "Replace the whole document with the serialization of `sql`. Must be the first mutation; the case's own SQL is then never serialized, so only the statement layer sees it."
         }
       ]
     },
@@ -1091,6 +1142,13 @@
               }
             }
           ]
+        },
+        "locked_setup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Statements run after the lockdown."
         }
       }
     },
@@ -1357,7 +1415,8 @@
         {
           "type": "object",
           "required": [
-            "error"
+            "error",
+            "categories"
           ],
           "additionalProperties": false,
           "properties": {
@@ -1435,8 +1494,24 @@
             },
             "rows_omitted_min": {
               "type": "integer"
+            },
+            "notices": {
+              "type": "array",
+              "description": "The notice kinds the result carries, in order.",
+              "items": {
+                "enum": [
+                  "shown",
+                  "more_rows",
+                  "rows_omitted",
+                  "cells_truncated",
+                  "headers_truncated",
+                  "table_omitted",
+                  "fallback"
+                ]
+              }
             }
-          }
+          },
+          "minProperties": 1
         }
       ]
     },
@@ -1675,6 +1750,44 @@
               }
             }
           ]
+        },
+        "collection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome"
+          ],
+          "description": "What the collection tool returns to the agent for this fetch (spec 002 PG-10 to PG-12).",
+          "properties": {
+            "outcome": {
+              "enum": [
+                "error",
+                "handle",
+                "envelope_only"
+              ]
+            },
+            "keeps_downstream_error": {
+              "type": "boolean"
+            },
+            "table_rows": {
+              "type": "integer"
+            },
+            "status": {
+              "enum": [
+                "complete",
+                "partial"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "resume_offset": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
         }
       }
     },

@@ -11,9 +11,9 @@ The Python tests that became fixtures are kept for now, so the two can be
 compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
-Summary: 304 test functions. 199 are expressed as fixtures, 91 stay
-Python-only, 14 are the conformance runner itself. 488 fixture cases in
-total; 58 of them cover behavior no existing Python test asserted (listed
+Summary: 304 test functions. 200 are expressed as fixtures, 90 stay
+Python-only, 14 are the conformance runner itself. 506 fixture cases in
+total; 42 of them cover behavior no existing Python test asserted (listed
 at the end).
 
 Reasons a test stays Python-only:
@@ -175,7 +175,7 @@ Reasons a test stays Python-only:
 | `test_large_integer_columns_are_inexact_for_median` | `infer.large-integers-inexact-for-median` |
 | `test_large_finite_float_columns_are_inexact_for_tolerance_aggregates` | `infer.large-finite-floats-are-inexact` |
 | `test_mixed_numeric_columns_are_never_claimed_exact` | `infer.mixed-2-53-and-float` |
-| `test_non_finite_floats_are_marked_inexact` | `infer.non-finite-*` |
+| `test_non_finite_floats_are_marked_inexact` | `infer.non-finite-*` (one-sided, Python: non-standard JSON literals) |
 | `test_booleans_are_not_treated_as_integers` | `infer.booleans-are-not-integers`, `infer.boolean-and-integer-is-varchar` |
 | `test_coerce` | `session.handle.mixed-scalars-are-stored-as-text`, `session.handle.json-columns-store-the-value` |
 
@@ -207,7 +207,7 @@ Reasons a test stays Python-only:
 | `test_nested_values_become_json_columns` | `session.handle.nested-values-become-json-columns` |
 | `test_json_columns_are_queryable` | `session.handle.nested-values-become-json-columns` |
 | `test_wide_payloads_are_capped_with_an_extra_column` | `session.handle.wide-payloads-spill-to-extra` |
-| `test_edge_numbers_are_flagged_inexact` | `session.handle.edge-numbers-are-flagged-inexact` |
+| `test_edge_numbers_are_flagged_inexact` | `session.handle.edge-numbers-are-flagged-inexact`, `session.handle.non-finite-float-literals` (one-sided, Python) |
 | `test_scalar_arrays_get_a_value_column` | `session.handle.scalar-arrays-get-a-value-column` |
 | `test_colliding_tool_names_get_separate_tables` | `session.handle.colliding-tool-names-get-separate-tables` |
 | `test_flat_table_rows_are_traceable_to_the_call` | `session.handle.rows-are-traceable-to-the-call` |
@@ -265,26 +265,26 @@ Reasons a test stays Python-only:
 | `test_startup_refuses_unknown_tool` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
 | `test_startup_refuses_tool_without_read_only_annotation` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
 | `test_collection_is_listed_next_to_the_original` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_complete_fetch_lands_every_row_in_one_table` | `paginate.forwards-filters-and-managed-arguments` |
-| `test_a_single_page_is_still_a_collection` | `paginate.a-single-page-is-complete` |
+| `test_complete_fetch_lands_every_row_in_one_table` | `paginate.forwards-filters-and-managed-arguments` (loop and `collection` result) |
+| `test_a_single_page_is_still_a_collection` | `paginate.a-single-page-is-complete` (loop and `collection` result) |
 | `test_resume_from_an_offset` | `paginate.resume-from-an-offset` |
 | `test_envelope_records_the_collection_call` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_max_pages_yields_a_partial_result_with_a_resume_offset` | `paginate.max-pages-is-partial-with-a-resume-offset` |
+| `test_max_pages_yields_a_partial_result_with_a_resume_offset` | `paginate.max-pages-is-partial-with-a-resume-offset` (loop and `collection` result) |
 | `test_max_bytes_never_keeps_the_page_that_would_cross_it` | `paginate.max-bytes-never-keeps-the-crossing-page`, `paginate.max-bytes-exact-fit-is-kept` |
-| `test_a_first_page_over_max_bytes_is_an_error_with_status` | `paginate.first-page-over-max-bytes-yields-nothing` |
-| `test_a_page_without_has_more_is_malformed_not_final` | `paginate.page-without-has-more-is-malformed-not-final` |
+| `test_a_first_page_over_max_bytes_is_an_error_with_status` | `paginate.first-page-over-max-bytes-yields-nothing` (loop and `collection` result) |
+| `test_a_page_without_has_more_is_malformed_not_final` | `paginate.page-without-has-more-is-malformed-not-final` (loop and `collection` result) |
 | `test_max_seconds_stops_the_fetch_and_leaves_the_proxy_usable` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
 | `test_non_advancing_offset_is_a_partial_result` | `paginate.next-offset-behind-is-not-advancing` |
 | `test_missing_next_offset_is_a_partial_result` | `paginate.missing-next-offset` |
-| `test_a_failed_later_page_keeps_the_pages_before_it` | `paginate.error-on-a-later-page-keeps-earlier-pages` |
-| `test_a_failed_first_page_is_an_error_not_an_empty_table` | `paginate.error-on-the-first-page-is-kept-for-the-caller` |
-| `test_malformed_page_is_a_partial_result` | `paginate.items-not-an-array-is-malformed` |
+| `test_a_failed_later_page_keeps_the_pages_before_it` | `paginate.error-on-a-later-page-keeps-earlier-pages` (loop and `collection` result) |
+| `test_a_failed_first_page_is_an_error_not_an_empty_table` | `paginate.error-on-the-first-page-is-kept-for-the-caller` (loop and `collection` result) |
+| `test_malformed_page_is_a_partial_result` | `paginate.items-not-an-array-is-malformed` (loop and `collection` result) |
 | `test_interactive_page_stops_the_fetch` | `paginate.interactive-page-stops-the-fetch` |
 | `test_agent_supplied_limit_is_rejected` | `paginate.agent-supplied-limit-is-rejected` |
 | `test_original_tool_still_returns_one_page` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
 | `test_oversize_passthrough_still_carries_the_pagination_status` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_collection_result_turns_a_raw_passthrough_into_an_error_with_status` | Python-only: unit test of `server.collection_result` over SDK result objects. TS: needs an equivalent in task 1078. |
-| `test_collection_result_keeps_a_recorded_handle` | Python-only: as above. |
+| `test_collection_result_turns_a_raw_passthrough_into_an_error_with_status` | Python-only: unit test of `server.collection_result` for a collection whose combined payload could not be materialized, which no scripted page sequence reaches without fault injection. The zero-page error path is fixtured through the collection tool (`paginate.*` with `collection`). TS: needs an equivalent unit test in task 1078. |
+| `test_collection_result_keeps_a_recorded_handle` | `paginate.forwards-filters-and-managed-arguments`, `paginate.max-pages-is-partial-with-a-resume-offset` (collection handle carries the pagination status) |
 | `test_concurrent_collections_respect_admission` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
 | `test_loop_forwards_filters_and_managed_arguments` | `paginate.forwards-filters-and-managed-arguments` |
 | `test_loop_reports_a_transport_failure_as_partial` | `paginate.transport-failure-is-partial` |
@@ -344,8 +344,8 @@ Reasons a test stays Python-only:
 | `test_cell_escaping` | `cell.*` |
 | `test_null_and_the_string_null_are_deliberately_ambiguous` | `cell.null`, `cell.the-string-null`, `cell.empty-string` |
 | `test_cell_truncation_cuts_on_a_character_boundary` | `cell.truncation-cuts-on-a-character-boundary` |
-| `test_render_reports_every_kind_of_truncation` | `session.query.cells-are-truncated-and-reported`, `session.query.row-cap-is-applied-and-reported` |
-| `test_render_never_claims_a_row_count_it_cannot_know` | `session.query.row-cap-is-applied-and-reported` |
+| `test_render_reports_every_kind_of_truncation` | `session.query.every-kind-of-truncation-is-reported`, `session.query.long-alias-omits-the-table-and-says-so` |
+| `test_render_never_claims_a_row_count_it_cannot_know` | `session.query.row-cap-is-applied-and-reported`, `session.query.every-kind-of-truncation-is-reported` |
 | `test_row_cap_is_applied_and_reported` | `session.query.row-cap-is-applied-and-reported` |
 | `test_no_more_rows_notice_when_everything_fits` | `session.query.no-more-rows-notice-when-everything-fits`, `session.query.exactly-max-rows-is-not-more` |
 | `test_max_rows_cannot_exceed_the_configured_cap` | `session.query.max-rows-cannot-exceed-the-configured-cap` |
@@ -370,10 +370,10 @@ Reasons a test stays Python-only:
 
 | Test | Covered by |
 |---|---|
-| `test_non_select_statements_are_rejected` | `gate.statement.*-is-rejected` |
-| `test_multiple_statements_are_rejected_by_count` | `gate.statement.two-statements-are-counted-not-split` |
+| `test_non_select_statements_are_rejected` | `gate.statement.*-is-rejected`, `gate_ast.statement-layer-refuses-*` |
+| `test_multiple_statements_are_rejected_by_count` | `gate.statement.two-statements-are-counted-not-split`, `gate_ast.statement-layer-counts-statements` |
 | `test_a_semicolon_inside_a_string_is_not_two_statements` | `gate.statement.semicolon-inside-a-string-is-one-statement` |
-| `test_enumeration_and_filesystem_vectors_are_rejected` | `gate.object.*` |
+| `test_enumeration_and_filesystem_vectors_are_rejected` | `gate.object.*`, `gate.function.unnest-range`, `gate.function.write-log`, `gate.function.lpad`, `gate.function.list-resize`, `gate.function.bitstring` |
 | `test_show_and_describe_are_rejected` | `gate.statement.show-tables-is-rejected`, `gate.statement.show-all-tables-is-rejected`, `gate.statement.describe-mine-is-rejected`, `gate.statement.summarize-mine-is-rejected` |
 | `test_pragmas_are_rejected` | `gate.statement.pragma-*` |
 | `test_the_statement_gate_alone_would_pass_these` | Python-only: pins how the Python binding types SHOW, DESCRIBE and PRAGMA, which differs in Node (review constraint 1). The refusals are `gate.statement.*`. TS: needs its own binding contract test. |
@@ -468,27 +468,20 @@ Reasons a test stays Python-only:
 - `engine.median-of-large-bigints-loses-units`
 - `engine.median-on-varchar-is-lexicographic-too`
 - `engine.sum-on-varchar-fails`
-- `engine.unlocked-glob-is-not-a-permission-error`
 - `extract.empty-bare-list-is-reported`
 - `extract.envelope-keeps-only-object-arrays`
 - `extract.nine-objects-and-a-scalar`
 - `extract.object-with-scalar-list-is-one-row`
 - `gate.function.array-resize`
-- `gate.function.bitstring`
 - `gate.function.format`
 - `gate.function.harmless-user-macro-is-allowed`
-- `gate.function.list-resize`
-- `gate.function.lpad`
 - `gate.function.nextval`
 - `gate.function.printf`
 - `gate.function.rpad`
 - `gate.function.setseed`
-- `gate.function.sleep-ms`
-- `gate.function.unnest-range`
 - `gate.function.user-macro-running-a-query`
 - `gate.function.user-table-macro`
-- `gate.function.write-log`
-- `gate.statement.two-selects-are-rejected`
+- `gate_ast.statement-layer-admits-a-select`
 - `gate_ast.unknown-scalar-field-is-tolerated`
 - `naming.collection-name-vector`
 - `naming.slug-is-bounded-to-40`
@@ -498,13 +491,6 @@ Reasons a test stays Python-only:
 - `naming.slug-strips-edges`
 - `naming.tag-of-empty`
 - `naming.tag-vector`
-- `paginate.boolean-next-offset-is-missing`
-- `paginate.custom-key-names`
-- `paginate.default-page-size-is-200`
-- `paginate.has-more-not-a-boolean-is-malformed`
-- `paginate.page-not-an-object-is-malformed`
-- `paginate.page-not-json-is-malformed`
-- `paginate.protocol-failure-is-partial`
 - `project.column-cap-restores-payload-order`
 - `project.column-names-are-source-keys-verbatim`
 - `project.every-reserved-name-is-renamed`
@@ -512,8 +498,6 @@ Reasons a test stays Python-only:
 - `project.nested-values-stay-whole`
 - `scope.derive-reads-session-id`
 - `scope.derive-snake-case-thread-id`
-- `session.aggregates.bounded-dyadic-floats-within-tolerance`
 - `session.aggregates.median-odd-row-count`
-- `session.aggregates.missing-and-null-are-both-sql-null`
-- `session.passthrough.text-beside-an-image-is-not-materialized`
+- `session.query.cells-are-truncated-and-reported`
 - `session.query.default-max-rows-is-the-configured-cap`

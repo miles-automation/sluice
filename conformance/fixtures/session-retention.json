@@ -5,10 +5,10 @@
     {
       "id": "session.retention.oldest-call-is-evicted-coherently",
       "spec": "001 §3.1, §7",
-      "note": "Retention sizes are a logical estimate and implementation-defined (spec 001 §7). Each call here retains about 1,260 bytes in Python; the budget sits at 1.5 times that, so any estimate between 0.75 and 1.5 times Python's gives the same outcome.",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
       "limits": {
-        "max_payload_bytes": 1800,
-        "max_session_bytes": 1900
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
       },
       "steps": [
         {
@@ -17,7 +17,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "{\"items\": [{\"id\": 1, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
               }
             ]
           },
@@ -37,7 +37,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "{\"items\": [{\"id\": 2, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+                "text": "{\"items\": [{\"id\": 2, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
               }
             ]
           },
@@ -118,10 +118,10 @@
     {
       "id": "session.retention.call-larger-than-the-budget-degrades-safely",
       "spec": "001 §3.1, §7",
-      "note": "This call retains about 4,470 bytes in Python against a 1,900-byte budget.",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
       "limits": {
-        "max_payload_bytes": 1800,
-        "max_session_bytes": 1900
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
       },
       "steps": [
         {
@@ -161,10 +161,10 @@
     {
       "id": "session.retention.over-budget-call-does-not-evict-healthy-calls",
       "spec": "001 §7",
-      "note": "The small calls retain about 460 bytes each in Python.",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
       "limits": {
-        "max_payload_bytes": 1800,
-        "max_session_bytes": 1900
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
       },
       "steps": [
         {
@@ -417,10 +417,10 @@
     {
       "id": "session.retention.evicted-names-stay-rejected-after-new-calls",
       "spec": "001 §7",
-      "note": "Retention sizes are a logical estimate and implementation-defined (spec 001 §7). Each call here retains about 1,260 bytes in Python; the budget sits at 1.5 times that, so any estimate between 0.75 and 1.5 times Python's gives the same outcome.",
+      "note": "Holds for any charge within the spec 001 §7 bounds S <= C <= 1.25 S + 1024: a padding-400 call has S = 1,772 (C <= 3,239 fits the 3,500 budget alone; two always exceed it), a padding-1000 call has S = 4,172 (always over budget), a padding-0 call has S = 172 (two fit). Python charges 2,053, 4,455 and 452.",
       "limits": {
-        "max_payload_bytes": 1800,
-        "max_session_bytes": 1900
+        "max_payload_bytes": 3000,
+        "max_session_bytes": 3500
       },
       "steps": [
         {
@@ -429,7 +429,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "{\"items\": [{\"id\": 1, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+                "text": "{\"items\": [{\"id\": 1, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
               }
             ]
           },
@@ -443,7 +443,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "{\"items\": [{\"id\": 2, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+                "text": "{\"items\": [{\"id\": 2, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
               }
             ]
           },
@@ -457,7 +457,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "{\"items\": [{\"id\": 3, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
+                "text": "{\"items\": [{\"id\": 3, \"padding\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}"
               }
             ]
           },

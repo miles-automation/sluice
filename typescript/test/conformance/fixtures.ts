@@ -93,3 +93,11 @@ export function loadFixtures(): Fixture[] {
   }
   return fixtures;
 }
+
+export function oneSided(testCase: Case): string | undefined {
+  const only = testCase["only"];
+  if (typeof only !== "object" || only === null || Array.isArray(only) || only["version"] === "typescript") {
+    return undefined;
+  }
+  return `one-sided, ${String(only["version"])} only: ${String(only["reason"])}`;
+}

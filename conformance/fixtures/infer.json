@@ -149,7 +149,10 @@
         "type": "DOUBLE",
         "exact": false
       },
-      "note": "Non-standard JSON. Python's json module accepts Infinity, -Infinity and NaN on the text channel; see conformance/README.md."
+      "only": {
+        "version": "python",
+        "reason": "Python's json module accepts the non-standard Infinity, -Infinity and NaN literals on the text channel. Spec 001 §5.1 does not decide whether such text is JSON; a strict-JSON port treats it as not_json."
+      }
     },
     {
       "id": "infer.non-finite-negative-infinity",
@@ -159,7 +162,10 @@
         "type": "DOUBLE",
         "exact": false
       },
-      "note": "Non-standard JSON, as above."
+      "only": {
+        "version": "python",
+        "reason": "Python's json module accepts the non-standard Infinity, -Infinity and NaN literals on the text channel. Spec 001 §5.1 does not decide whether such text is JSON; a strict-JSON port treats it as not_json."
+      }
     },
     {
       "id": "infer.non-finite-nan",
@@ -169,7 +175,10 @@
         "type": "DOUBLE",
         "exact": false
       },
-      "note": "Non-standard JSON, as above."
+      "only": {
+        "version": "python",
+        "reason": "Python's json module accepts the non-standard Infinity, -Infinity and NaN literals on the text channel. Spec 001 §5.1 does not decide whether such text is JSON; a strict-JSON port treats it as not_json."
+      }
     },
     {
       "id": "infer.all-strings",
@@ -224,7 +233,7 @@
         "type": "VARCHAR",
         "exact": false
       },
-      "note": "On a JSON column median() succeeds lexicographically; VARCHAR makes it fail."
+      "note": "Never JSON: on a JSON column sum() and avg() fail but median() returns a lexicographic answer. VARCHAR makes sum() and avg() fail too, but median() over VARCHAR is also lexicographic (engine.median-on-varchar-is-lexicographic-too); the column is marked inexact for that reason."
     },
     {
       "id": "infer.all-null",

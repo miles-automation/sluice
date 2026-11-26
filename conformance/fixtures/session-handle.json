@@ -784,7 +784,7 @@
     {
       "id": "session.handle.edge-numbers-are-flagged-inexact",
       "spec": "001 §5.5, §5.6",
-      "note": "The text uses the non-standard Infinity literal that Python's json module accepts; see conformance/README.md. Values survive materialization exactly even where aggregates are inexact.",
+      "note": "Strict JSON only. Values survive materialization exactly even where aggregates are inexact.",
       "steps": [
         {
           "call": "c1",
@@ -792,7 +792,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "{\"items\": [{\"big\": 9223372036854775807, \"huge\": 18446744073709551617, \"mid\": 9007199254740993, \"f\": 0.5}, {\"big\": 0, \"huge\": 0, \"mid\": 1, \"f\": Infinity}]}"
+                "text": "{\"items\": [{\"big\": 9223372036854775807, \"huge\": 18446744073709551617, \"mid\": 9007199254740993, \"f\": 0.5}, {\"big\": 0, \"huge\": 0, \"mid\": 1, \"f\": 2.5}]}"
               }
             ]
           },
@@ -844,6 +844,57 @@
                 {
                   "int": "9007199254740993"
                 }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.handle.non-finite-float-literals",
+      "spec": "001 §5.1, §5.5",
+      "only": {
+        "version": "python",
+        "reason": "Python's json module accepts the non-standard Infinity, -Infinity and NaN literals on the text channel. Spec 001 §5.1 does not decide whether such text is JSON; a strict-JSON port treats it as not_json."
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"f\": 1.0}, {\"f\": Infinity}, {\"f\": -Infinity}, {\"f\": NaN}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "source_channel": "text",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 4,
+                "columns": [
+                  {
+                    "name": "f",
+                    "type": "DOUBLE",
+                    "exact": false
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT count(*) FILTER (WHERE isinf(f)), count(*) FILTER (WHERE isnan(f)) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                2,
+                1
               ]
             ]
           }

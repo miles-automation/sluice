@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import { adapters } from "./conformance/adapters.ts";
-import { KINDS, loadFixtures } from "./conformance/fixtures.ts";
+import { KINDS, loadFixtures, oneSided } from "./conformance/fixtures.ts";
 
 const fixtures = loadFixtures();
 
@@ -17,7 +17,12 @@ for (const kind of KINDS) {
       return;
     }
     for (const testCase of cases) {
-      test(testCase.id, () => entry(testCase));
+      const skip = oneSided(testCase);
+      if (skip === undefined) {
+        test(testCase.id, () => entry(testCase));
+      } else {
+        test(testCase.id, { skip }, () => {});
+      }
     }
   });
 }
