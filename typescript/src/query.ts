@@ -221,6 +221,7 @@ export class QueryTool {
       const release = await this.#admission.acquire();
       let prepared: DuckDBPreparedStatement | undefined;
       let result: DuckDBResult | undefined;
+      let drained = false;
       try {
         guard();
         connection = await this.#store.connect();
@@ -236,6 +237,7 @@ export class QueryTool {
           guard();
           const chunk = await result.fetchChunk();
           if (chunk === null || chunk.rowCount === 0) {
+            drained = true;
             break;
           }
           for (const row of chunk.getRows()) {
@@ -249,6 +251,9 @@ export class QueryTool {
         return { columns, rows };
       } finally {
         clearInterval(retry);
+        if (!drained) {
+          connection?.interrupt();
+        }
         result?.closeSync();
         prepared?.destroySync();
         connection?.closeSync();
