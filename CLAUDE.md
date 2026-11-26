@@ -14,9 +14,11 @@ the rules below.
 
 The Python package lives in `python/` (PyPI `mcp-sluice`, import and CLI
 `sluice`). The TypeScript version lives in `typescript/` (npm `mcp-sluice`,
-private until task 1095; today `src/` holds the pure modules, a lossless JSON
-parser, and the store, gate, query tool and interceptor on `@duckdb/node-api`,
-pinned exactly; the MCP proxy, pagination, server and CLI are task 1078).
+private until task 1095, CLI `sluice` from `dist/cli.js`). It is a complete
+port: the pure modules, a lossless JSON parser, the store, gate, query tool and
+interceptor on `@duckdb/node-api`, and the MCP proxy, pagination, server and
+CLI on the v2 TypeScript SDK (`@modelcontextprotocol/client` and `/server`),
+all pinned exactly. Both versions read the same `sluice.toml`.
 `spec/`, `intent/`, `plan/`, `review/`, `conformance/` and `sluice.example.toml`
 stay at the repo root, shared by every version.
 
@@ -41,7 +43,11 @@ uv run mypy src tests
 Run from `typescript/`: `npm ci && npm run check` (typecheck, unit and
 fast-check property tests, and every conformance fixture; kinds with no
 TypeScript implementation are reported as skipped by kind). `npm run build`
-emits `dist/` (JavaScript plus declarations, gitignored). Wire JSON goes
+emits `dist/` (JavaScript plus declarations, gitignored); `node dist/cli.js
+--config sluice.toml` runs it as an MCP stdio server, with the same flags and
+config discovery as Python. The stdio transports in `src/transport.ts` keep the
+raw JSON of `tools/call` traffic so `structuredContent`, arguments and
+`inputResponses` stay lossless past the SDK's `JSON.parse`. Wire JSON goes
 through `src/json.ts`, never `JSON.parse`: integers are `bigint`, floats are
 `number`, objects are `Map`s in payload order, and the text channel accepts
 `NaN` and `Infinity` the way Python's `json` does. Parsing and dumping are

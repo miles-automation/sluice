@@ -92,7 +92,7 @@ function argumentsValue(args: unknown): JsonValue | null {
   if (args === null || args === undefined) {
     return null;
   }
-  const value = fromPlain(args);
+  const value = args instanceof Map ? (args as JsonValue) : fromPlain(args);
   if (value instanceof Map && value.size === 0) {
     return null;
   }

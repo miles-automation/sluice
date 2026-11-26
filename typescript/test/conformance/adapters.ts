@@ -15,6 +15,7 @@ import {
 import { derive, fromConversationId, mint } from "../../src/scope.ts";
 import { extract, project } from "../../src/shape.ts";
 import { runCell, runEngine, runGate, runGateAst, runSession } from "./duckdb-adapters.ts";
+import { runConfig, runPaginate } from "./proxy-adapters.ts";
 
 export type Adapter = (testCase: Case) => void | Promise<void>;
 
@@ -237,6 +238,6 @@ export const adapters: Readonly<Record<Kind, Adapter | Pending>> = {
   gate_ast: runGateAst,
   engine: runEngine,
   session: runSession,
-  paginate: { pending: "task 1078 (pagination)" },
-  config: { pending: "task 1078 (CLI and config)" },
+  paginate: runPaginate,
+  config: runConfig,
 };

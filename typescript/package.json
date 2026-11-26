@@ -10,6 +10,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "sluice": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -28,7 +31,10 @@
   },
   "dependencies": {
     "@duckdb/node-api": "2.0.1-r.1",
-    "@noble/hashes": "^2.4.0"
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "smol-toml": "1.9.1"
   },
   "devDependencies": {
     "@types/node": "^24.19.4",

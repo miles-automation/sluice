@@ -19,7 +19,9 @@ at the end).
 Reasons a test stays Python-only:
 
 - It drives the MCP Python SDK end to end (proxying, tool listing, round trips,
-  result metadata). The TypeScript SDK needs its own tests in task 1078.
+  result metadata). The TypeScript version has its own tests against the
+  TypeScript SDK and a fake downstream (`typescript/test/proxy.test.ts`,
+  `pagination.test.ts`, `cli.test.ts`; task 1078).
 - It injects faults or reads internals by monkeypatching Python code
   (atomicity under a failed insert, the startup canary refusing to run, internal
   counters). The TypeScript version needs equivalent unit tests of its own
@@ -52,10 +54,10 @@ Reasons a test stays Python-only:
 
 | Test | Covered by |
 |---|---|
-| `test_sluice_runs_as_a_real_stdio_server` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_missing_config_exits_with_a_diagnostic` | Python-only: CLI process exit code and stderr. Config error itself is `config.missing-file-is-an-error`. TS: needs a CLI test in task 1078. |
-| `test_invalid_limits_exit_with_a_diagnostic` | Python-only: CLI process exit code and stderr. The validation is `config.*-must-be-positive`. TS: needs a CLI test in task 1078. |
-| `test_unreachable_downstream_fails_to_start` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
+| `test_sluice_runs_as_a_real_stdio_server` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/cli.test.ts` "Sluice runs as a real stdio server and writes only MCP to stdout". |
+| `test_missing_config_exits_with_a_diagnostic` | Python-only: CLI process exit code and stderr. Config error itself is `config.missing-file-is-an-error`. TS: `typescript/test/cli.test.ts` "a missing config exits with a diagnostic". |
+| `test_invalid_limits_exit_with_a_diagnostic` | Python-only: CLI process exit code and stderr. The validation is `config.*-must-be-positive`. TS: `typescript/test/cli.test.ts` "invalid limits exit with a diagnostic". |
+| `test_unreachable_downstream_fails_to_start` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/cli.test.ts` "an unreachable downstream fails to start". |
 | `test_startup_errors_are_unwrapped_from_exception_groups` | Python-only: anyio ExceptionGroup unwrapping is a Python runtime detail. TS: not needed. |
 
 ## tests/test_concurrency.py
@@ -87,7 +89,7 @@ Reasons a test stays Python-only:
 | `test_load_config_reads_a_file` | `config.minimal-config-parses` |
 | `test_load_config_reports_a_missing_file` | `config.missing-file-is-an-error` |
 | `test_load_config_reports_bad_toml` | `config.bad-toml-is-an-error` |
-| `test_find_config_precedence` | Python-only: `--config`, then $SLUICE_CONFIG, then ./sluice.toml is CLI discovery, not parsing. TS: needs an equivalent in task 1078. |
+| `test_find_config_precedence` | Python-only: `--config`, then $SLUICE_CONFIG, then ./sluice.toml is CLI discovery, not parsing. TS: `typescript/test/cli.test.ts` "config discovery: --config, then SLUICE_CONFIG, then ./sluice.toml". |
 | `test_the_example_config_is_valid` | `config.example-config-is-valid` |
 
 ## tests/test_conformance.py
@@ -136,9 +138,9 @@ Reasons a test stays Python-only:
 | `test_median_on_a_json_column_returns_a_lexicographic_answer` | `engine.median-on-json-is-lexicographic`, `engine.sum-on-json-fails`, `engine.avg-on-json-fails` |
 | `test_interrupt_reaches_the_executing_connection` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
 | `test_interrupt_on_the_parent_does_not_reach_a_cursor` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
-| `test_round_trips_require_the_modern_protocol_version` | Python-only: pins the MCP Python SDK's result unions. TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_client_discover_negotiates_the_modern_version` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_output_schema_violation_raises_with_a_classifiable_message` | Python-only: pins the Python SDK's error text that proxy.py classifies. TS: needs an equivalent in task 1078. |
+| `test_round_trips_require_the_modern_protocol_version` | Python-only: pins the MCP Python SDK's result unions. TS: `typescript/test/proxy.test.ts` "the initialize handshake tops out below the round-trip version" and "an input request is refused with the versions named when the upstream client is too old". |
+| `test_client_discover_negotiates_the_modern_version` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "discover negotiates the modern version with a modern downstream". |
+| `test_output_schema_violation_raises_with_a_classifiable_message` | Python-only: pins the Python SDK's error text that proxy.py classifies. TS: `typescript/test/proxy.test.ts` "the SDK's output-schema error carries a classifiable message". |
 
 ## tests/test_gate_fail_closed.py
 
@@ -198,7 +200,7 @@ Reasons a test stays Python-only:
 | `test_non_text_metadata_path_does_not_serialize_the_result` | Python-only: fault injection by monkeypatching Python internals. TS: needs an equivalent unit test of its own internals. (It proves a 1 MB image is never serialized, an allocation property.) |
 | `test_no_query_hint_until_the_query_tool_exists` | Python-only: the `query_available` flag was a staging step from plan M2-M4; every session in the suite mounts `query`. TS: not needed unless it stages the same way. |
 | `test_envelope_write_failure_does_not_fail_the_call` | Python-only: fault injection by monkeypatching Python internals. TS: needs an equivalent unit test of its own internals. |
-| `test_full_loop_returns_a_handle_not_a_payload` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
+| `test_full_loop_returns_a_handle_not_a_payload` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "the full loop returns a handle, not a payload". |
 | `test_rows_are_materialized_with_real_types` | `session.handle.rows-are-replaced-by-a-handle` |
 | `test_aggregates_match_the_source_data` | `session.aggregates.median-a-model-would-get-wrong` |
 | `test_every_candidate_array_becomes_its_own_table` | `session.handle.every-candidate-array-becomes-a-table` |
@@ -262,18 +264,18 @@ Reasons a test stays Python-only:
 | `test_pagination_config_defaults` | `config.pagination-defaults` |
 | `test_pagination_config_rejects` | `config.pagination-rejects-*` |
 | `test_pagination_must_be_a_table` | `config.pagination-must-be-tables` |
-| `test_startup_refuses_unknown_tool` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_startup_refuses_tool_without_read_only_annotation` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_collection_is_listed_next_to_the_original` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
+| `test_startup_refuses_unknown_tool` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/pagination.test.ts` "startup refuses a tool the downstream did not list". |
+| `test_startup_refuses_tool_without_read_only_annotation` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/pagination.test.ts` "startup refuses a tool without a read-only annotation". |
+| `test_collection_is_listed_next_to_the_original` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/pagination.test.ts` "the collection is listed next to the original". |
 | `test_complete_fetch_lands_every_row_in_one_table` | `paginate.forwards-filters-and-managed-arguments` (loop and `collection` result) |
 | `test_a_single_page_is_still_a_collection` | `paginate.a-single-page-is-complete` (loop and `collection` result) |
 | `test_resume_from_an_offset` | `paginate.resume-from-an-offset` |
-| `test_envelope_records_the_collection_call` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
+| `test_envelope_records_the_collection_call` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/pagination.test.ts` "the envelope records the collection call". |
 | `test_max_pages_yields_a_partial_result_with_a_resume_offset` | `paginate.max-pages-is-partial-with-a-resume-offset` (loop and `collection` result) |
 | `test_max_bytes_never_keeps_the_page_that_would_cross_it` | `paginate.max-bytes-never-keeps-the-crossing-page`, `paginate.max-bytes-exact-fit-is-kept` |
 | `test_a_first_page_over_max_bytes_is_an_error_with_status` | `paginate.first-page-over-max-bytes-yields-nothing` (loop and `collection` result) |
 | `test_a_page_without_has_more_is_malformed_not_final` | `paginate.page-without-has-more-is-malformed-not-final` (loop and `collection` result) |
-| `test_max_seconds_stops_the_fetch_and_leaves_the_proxy_usable` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
+| `test_max_seconds_stops_the_fetch_and_leaves_the_proxy_usable` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: `typescript/test/pagination.test.ts` "max_seconds stops the fetch and leaves the proxy usable". |
 | `test_non_advancing_offset_is_a_partial_result` | `paginate.next-offset-behind-is-not-advancing` |
 | `test_missing_next_offset_is_a_partial_result` | `paginate.missing-next-offset` |
 | `test_a_failed_later_page_keeps_the_pages_before_it` | `paginate.error-on-a-later-page-keeps-earlier-pages` (loop and `collection` result) |
@@ -281,11 +283,11 @@ Reasons a test stays Python-only:
 | `test_malformed_page_is_a_partial_result` | `paginate.items-not-an-array-is-malformed` (loop and `collection` result) |
 | `test_interactive_page_stops_the_fetch` | `paginate.interactive-page-stops-the-fetch` |
 | `test_agent_supplied_limit_is_rejected` | `paginate.agent-supplied-limit-is-rejected` |
-| `test_original_tool_still_returns_one_page` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_oversize_passthrough_still_carries_the_pagination_status` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_collection_result_turns_a_raw_passthrough_into_an_error_with_status` | Python-only: unit test of `server.collection_result` for a collection whose combined payload could not be materialized, which no scripted page sequence reaches without fault injection. The zero-page error path is fixtured through the collection tool (`paginate.*` with `collection`). TS: needs an equivalent unit test in task 1078. |
+| `test_original_tool_still_returns_one_page` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/pagination.test.ts` "the original tool still returns one page". |
+| `test_oversize_passthrough_still_carries_the_pagination_status` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/pagination.test.ts` "an oversize passthrough still carries the pagination status". |
+| `test_collection_result_turns_a_raw_passthrough_into_an_error_with_status` | Python-only: unit test of `server.collection_result` for a collection whose combined payload could not be materialized, which no scripted page sequence reaches without fault injection. The zero-page error path is fixtured through the collection tool (`paginate.*` with `collection`). TS: `typescript/test/pagination.test.ts` "collectionResult turns a raw passthrough into an error with status". |
 | `test_collection_result_keeps_a_recorded_handle` | `paginate.forwards-filters-and-managed-arguments`, `paginate.max-pages-is-partial-with-a-resume-offset` (collection handle carries the pagination status) |
-| `test_concurrent_collections_respect_admission` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
+| `test_concurrent_collections_respect_admission` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: `typescript/test/pagination.test.ts` "concurrent collections respect admission". |
 | `test_loop_forwards_filters_and_managed_arguments` | `paginate.forwards-filters-and-managed-arguments` |
 | `test_loop_reports_a_transport_failure_as_partial` | `paginate.transport-failure-is-partial` |
 | `test_loop_treats_a_repeated_offset_as_not_advancing` | `paginate.repeated-offset-is-not-advancing` |
@@ -298,15 +300,15 @@ Reasons a test stays Python-only:
 
 | Test | Covered by |
 |---|---|
-| `test_result_matches_a_direct_call` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_result_metadata_and_annotations_survive_the_hop` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_errors_are_forwarded_verbatim` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_image_content_is_not_materialized` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_full_loop_through_the_sluice_server` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_error_metadata_survives_the_whole_product_path` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_image_metadata_survives_the_whole_product_path` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_rich_text_metadata_survives_the_whole_product_path` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_nonforwardable_failures_are_recorded_with_their_class` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
+| `test_result_matches_a_direct_call` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "a result through the proxy matches a direct call". |
+| `test_result_metadata_and_annotations_survive_the_hop` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "result metadata and content annotations survive the hop". |
+| `test_errors_are_forwarded_verbatim` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "errors are forwarded verbatim". |
+| `test_image_content_is_not_materialized` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "image content is not materialized". |
+| `test_full_loop_through_the_sluice_server` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "the full loop through the Sluice server". |
+| `test_error_metadata_survives_the_whole_product_path` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "error metadata survives the whole product path". |
+| `test_image_metadata_survives_the_whole_product_path` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "image metadata survives the whole product path". |
+| `test_rich_text_metadata_survives_the_whole_product_path` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "non-JSON rich text is recorded as an envelope-only handle". |
+| `test_nonforwardable_failures_are_recorded_with_their_class` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "non-forwardable failures are recorded with their class". |
 
 ## tests/test_property_aggregates.py
 
@@ -322,20 +324,20 @@ Reasons a test stays Python-only:
 
 | Test | Covered by |
 |---|---|
-| `test_page_two_tool_is_mounted` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_sdk_list_tools_really_does_return_one_page` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_colliding_tool_names_are_both_mounted` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_annotations_survive_cloning` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_output_schema_is_removed` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_description_keeps_upstream_text_and_appends_the_note` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_input_schema_is_passed_through` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_call_forwards_and_returns_the_payload` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_unknown_tool_is_a_protocol_failure` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_output_schema_violation_is_classified` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_transport_failure_marks_the_session_unhealthy` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_round_trips_are_relayed_not_answered` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_sluice_advertises_no_sampling_or_elicitation` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
-| `test_startup_fails_loudly_on_a_mounted_name_collision` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
+| `test_page_two_tool_is_mounted` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "a tool reachable only on page two is mounted". |
+| `test_sdk_list_tools_really_does_return_one_page` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "the SDK's per-page tools/list returns one page". |
+| `test_colliding_tool_names_are_both_mounted` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "colliding tool names are both mounted". |
+| `test_annotations_survive_cloning` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "annotations, title and _meta survive cloning". |
+| `test_output_schema_is_removed` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "the output schema is removed". |
+| `test_description_keeps_upstream_text_and_appends_the_note` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "the description keeps the upstream text and appends the note". |
+| `test_input_schema_is_passed_through` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "the input schema is passed through". |
+| `test_call_forwards_and_returns_the_payload` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "a call is forwarded and returns the payload". |
+| `test_unknown_tool_is_a_protocol_failure` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "an unknown tool is a protocol failure". |
+| `test_output_schema_violation_is_classified` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "an output-schema violation is classified". |
+| `test_transport_failure_marks_the_session_unhealthy` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "a transport failure marks the session unhealthy". |
+| `test_round_trips_are_relayed_not_answered` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "round trips are relayed, not answered". |
+| `test_sluice_advertises_no_sampling_or_elicitation` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "Sluice advertises no sampling or elicitation of its own". |
+| `test_startup_fails_loudly_on_a_mounted_name_collision` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "startup fails loudly on a mounted-name collision". |
 
 ## tests/test_query_limits.py
 
@@ -391,7 +393,7 @@ Reasons a test stays Python-only:
 
 | Test | Covered by |
 |---|---|
-| `test_query_is_mounted_and_marked_read_only` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: needs an equivalent against the TypeScript SDK in task 1078. |
+| `test_query_is_mounted_and_marked_read_only` | Python-only: drives the MCP Python SDK end to end (stdio transport, `Client`, server wiring). TS: `typescript/test/proxy.test.ts` "the query tool is mounted and marked read-only". |
 | `test_the_handle_points_at_a_table_the_query_can_reach` | `session.handle.rows-are-replaced-by-a-handle` |
 | `test_the_median_a_model_would_get_wrong` | `session.aggregates.median-a-model-would-get-wrong` |
 | `test_group_by_matches_the_source` | `session.aggregates.median-a-model-would-get-wrong` |
