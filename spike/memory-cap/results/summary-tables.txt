@@ -1,0 +1,60 @@
+
+### macos arm64, Python
+
+| probe | baseline | threads1 | watchdog512 | watchdog1024 | watchdog512+flush |
+|---|---|---|---|---|---|
+| nested_replace | 1540 done | 1517 done | 1487 irq @656 | 1522 irq @1155 | 1443 irq @712 |
+| nested_replace_tiny_literals | 1800 done | 1899 done | 1897 irq @519 | 1899 irq @1062 | 1895 irq @518 |
+| concat_chain | 774 OOM | 774 OOM | 774 OOM @689 | 774 OOM | 774 OOM @695 |
+| recursive_doubling | 1105 done | 1105 done | 534 irq @533 | 1109 irq @1025 | 538 irq @537 |
+| damerau_levenshtein | 1698 done | 1838 done | 1597 irq @827 | 1597 irq @1324 | 1597 irq @809 |
+| regexp_replace_g | 1223 done | 1224 done | 1223 irq @521 | 1223 irq @1028 | 1225 irq @522 |
+| truncated_wrapper | 325 OOM | 325 OOM | 325 OOM | 329 OOM | 325 OOM |
+| string_agg | 188 OOM | 188 OOM | 188 OOM | 188 OOM | 188 OOM |
+| list_agg | 299 OOM | 298 OOM | 299 OOM | 299 OOM | 299 OOM |
+| control_group | 303 OOM | 308 OOM | 303 OOM | 303 OOM | 303 OOM |
+
+### macos arm64, Node
+
+| probe | baseline | watchdog512 | watchdog1024 | watchdog512+flush |
+|---|---|---|---|---|
+| nested_replace | 1540 done | 1502 irq @616 | 1587 irq @1153 | 1515 irq @616 |
+| nested_replace_tiny_literals | 1920 done | 1900 irq @513 | 1915 irq @1025 | 1919 irq @513 |
+| concat_chain | 797 OOM | 798 OOM @613 | 797 OOM | 798 OOM @607 |
+| recursive_doubling | 1131 done | 558 irq @557 | 1131 irq @1131 | 560 irq @559 |
+| damerau_levenshtein | 1648 done | 1621 irq @795 | 1621 irq @1162 | 1621 irq @795 |
+| regexp_replace_g | 1246 done | 1246 irq @522 | 1246 irq @1028 | 1257 irq @522 |
+| truncated_wrapper | 349 OOM | 352 OOM | 349 OOM | 349 OOM |
+| string_agg | 211 OOM | 211 OOM | 211 OOM | 211 OOM |
+| list_agg | 322 OOM | 322 OOM | 322 OOM | 322 OOM |
+| control_group | 326 OOM | 326 OOM | 326 OOM | 326 OOM |
+
+### linux arm64, Python
+
+| probe | baseline | threads1 | watchdog512 | watchdog1024 | watchdog512+flush | rlimit_data1024 | rlimit_data1536 | rlimit_as1024 | rlimit_as1536 |
+|---|---|---|---|---|---|---|---|---|---|
+| nested_replace | 1545 done | 1460 done | 1501 irq @608 | 1422 irq @1106 | 1479 irq @692 | 497 OOM | 978 OOM | 72 exit1 | 71 exit1 |
+| nested_replace_tiny_literals | 1816 done | 1865 done | 1809 irq @515 | 1879 irq @1048 | 1818 irq @549 |  |  |  |  |
+| concat_chain | 793 OOM | 791 OOM | 794 OOM @782 | 793 OOM | 794 irq @682 | 491 OOM | 794 OOM | 63 exit1 | 71 exit1 |
+| recursive_doubling | 1103 done | 1102 done | 547 irq @541 | 1103 irq @1102 | 547 irq @541 | 474 OOM UNUSABLE | 761 OOM | 71 exit1 | 71 exit1 |
+| damerau_levenshtein | 1573 done | 1572 done | 1430 irq @846 | 1408 irq @1092 | 1398 irq @917 | 521 OOM | 1084 OOM | 71 exit1 | 71 exit1 |
+| regexp_replace_g | 1239 done | 1241 done | 1239 irq @523 | 1266 irq @1033 | 1263 irq @523 | 402 OOM | 749 OOM | 70 exit1 | 70 exit1 |
+| truncated_wrapper | 369 OOM | 318 OOM | 369 OOM | 348 OOM | 354 OOM |  |  |  |  |
+| string_agg | 206 OOM | 207 OOM | 206 OOM | 205 OOM | 205 OOM |  |  |  |  |
+| list_agg | 320 OOM | 269 OOM | 317 OOM | 320 OOM | 320 OOM |  |  |  |  |
+| control_group | 316 OOM | 312 OOM | 260 OOM | 272 OOM | 285 OOM | 315 OOM | 269 OOM | 71 exit1 | 71 exit1 |
+
+### linux arm64, Node
+
+| probe | baseline | watchdog512 | watchdog1024 | watchdog512+flush | rlimit_data1024 | rlimit_data1536 | rlimit_as1024 | rlimit_as1536 |
+|---|---|---|---|---|---|---|---|---|
+| nested_replace | 1594 done | 1655 irq @517 | 1584 irq @1070 | 1437 irq @575 | 239 OOM | 702 OOM | 48 exit1 | 97 exit1 |
+| nested_replace_tiny_literals | 1900 KILLED(sup) | 1915 KILLED(sup) | 1857 irq @1087 | 1855 irq @514 |  |  |  |  |
+| concat_chain | 831 OOM | 830 OOM | 831 OOM | 834 OOM | 229 OOM | 687 OOM | 0 exit1 | 87 exit127 |
+| recursive_doubling | 1143 done | 586 irq @579 | 1143 irq @1106 | 587 irq @579 | 248 OOM | 634 ABORT | 1 exit1 | 98 exit1 |
+| damerau_levenshtein | 1612 done | 1364 irq @679 | 1517 irq @1067 | 1357 irq @682 | 154 ABORT | 707 OOM | 0 exit1 | 92 exit1 |
+| regexp_replace_g | 1278 done | 1278 irq @516 | 1291 irq @1037 | 1291 irq @528 | 226 OOM | 571 OOM | 0 exit1 | 98 exit1 |
+| truncated_wrapper | 389 OOM | 389 OOM | 390 OOM | 382 OOM |  |  |  |  |
+| string_agg | 248 OOM | 248 OOM | 248 OOM | 245 OOM |  |  |  |  |
+| list_agg | 359 OOM | 359 OOM | 359 OOM | 359 OOM |  |  |  |  |
+| control_group | 342 OOM | 309 OOM | 312 OOM | 312 OOM | 268 ABORT | 344 OOM | 0 exit1 | 100 exit1 |

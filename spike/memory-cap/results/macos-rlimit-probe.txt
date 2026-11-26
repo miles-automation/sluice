@@ -1,0 +1,7 @@
+vsz_kb 435269056
+smallest accepted RLIMIT_DATA soft ~ 415 GiB
+# earlier run (python 3.14, macOS 26 / Darwin 25.6, arm64):
+# setrlimit(RLIMIT_AS|RLIMIT_DATA, (soft, RLIM_INFINITY)) -> ValueError for soft = 256 MiB and 8 GiB, ok for 1 TiB
+# resource.RLIMIT_AS == resource.RLIMIT_RSS on macOS (alias); after setting soft=1 TiB a touched 1 GiB bytearray succeeded
+# zsh `ulimit -v 1000000` -> "setrlimit failed: invalid argument"
+# worker_py.py --rlimit-as-mb 1024 / --rlimit-data-mb 1024: ValueError at setrlimit (see macos-arm64-rlimit.jsonl)
