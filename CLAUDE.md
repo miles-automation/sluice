@@ -14,7 +14,8 @@ the rules below.
 
 The Python package lives in `python/` (PyPI `mcp-sluice`, import and CLI
 `sluice`). The TypeScript version lives in `typescript/` (npm `mcp-sluice`,
-private until task 1095; today it holds only the conformance harness).
+private until task 1095; today it holds the pure modules in `src/`, a lossless
+JSON parser, and the conformance harness).
 `spec/`, `intent/`, `plan/`, `review/`, `conformance/` and `sluice.example.toml`
 stay at the repo root, shared by every version.
 
@@ -36,9 +37,13 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy src tests
 ```
 
-Run from `typescript/`: `npm ci && npm run check` (typecheck plus every
-conformance fixture; kinds with no TypeScript implementation are reported as
-skipped by kind).
+Run from `typescript/`: `npm ci && npm run check` (typecheck, unit and
+fast-check property tests, and every conformance fixture; kinds with no
+TypeScript implementation are reported as skipped by kind). `npm run build`
+emits `dist/` (JavaScript plus declarations, gitignored). Wire JSON goes
+through `src/json.ts`, never `JSON.parse`: integers are `bigint`, floats are
+`number`, objects are `Map`s in payload order, and the text channel accepts
+`NaN` and `Infinity` the way Python's `json` does.
 
 The M5 Hypothesis correctness property is `tests/test_property_aggregates.py`.
 The non-deterministic model-eval harness is `uv run python -m demo.median`; use

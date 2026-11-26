@@ -8,14 +8,22 @@
   "engines": {
     "node": ">=24"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
     "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.4",
     "ajv": "^8.20.0",
+    "fast-check": "^4.11.0",
     "typescript": "^7.0.2"
   }
 }
