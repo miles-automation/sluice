@@ -27,7 +27,8 @@
           "max_cell_bytes": 512,
           "duckdb_max_memory": "1GB",
           "max_session_bytes": 268435456,
-          "max_session_calls": 1000
+          "max_session_calls": 1000,
+          "store_max_memory": 2147483648
         }
       }
     },
@@ -663,6 +664,88 @@
       "toml": "﻿[servers.gh]\ncommand = \"npx\"\n",
       "expect": {
         "error": true
+      }
+    },
+    {
+      "id": "config.store-max-memory-must-exceed-duckdb-max-memory",
+      "spec": "001 §7",
+      "note": "duckdb_max_memory '1GB' is 1,000,000,000 bytes, so an equal store_max_memory is refused.",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nstore_max_memory = 1000000000\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "store_max_memory",
+          "duckdb_max_memory"
+        ]
+      }
+    },
+    {
+      "id": "config.store-max-memory-binary-units-compare-exactly",
+      "spec": "001 §7",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nstore_max_memory = 536870912\nduckdb_max_memory = \"512MiB\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "store_max_memory"
+        ]
+      }
+    },
+    {
+      "id": "config.store-max-memory-above-decimal-duckdb-limit-is-allowed",
+      "spec": "001 §7",
+      "note": "512MB is 512,000,000 bytes, below 512 MiB.",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nstore_max_memory = 536870912\nduckdb_max_memory = \"512MB\"\n",
+      "expect": {
+        "ok": true,
+        "limits": {
+          "store_max_memory": 536870912,
+          "duckdb_max_memory": "512MB"
+        }
+      }
+    },
+    {
+      "id": "config.store-max-memory-below-the-floor-is-refused",
+      "spec": "001 §7",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nstore_max_memory = 100000000\nduckdb_max_memory = \"64MB\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "store_max_memory"
+        ]
+      }
+    },
+    {
+      "id": "config.store-max-memory-as-string-is-refused",
+      "spec": "001 §7",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nstore_max_memory = \"4GB\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "store_max_memory"
+        ]
+      }
+    },
+    {
+      "id": "config.duckdb-max-memory-must-be-an-absolute-size",
+      "spec": "001 §7",
+      "note": "DuckDB accepts a percentage of system memory, but a percentage cannot be checked against store_max_memory, so Sluice refuses it.",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nduckdb_max_memory = \"80%\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "duckdb_max_memory"
+        ]
+      }
+    },
+    {
+      "id": "config.duckdb-max-memory-needs-a-unit",
+      "spec": "001 §7",
+      "toml": "[servers.gh]\ncommand = \"npx\"\n[limits]\nduckdb_max_memory = \"1000\"\n",
+      "expect": {
+        "error": true,
+        "mentions": [
+          "duckdb_max_memory"
+        ]
       }
     }
   ]

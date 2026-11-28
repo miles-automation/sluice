@@ -40,6 +40,8 @@ _POSITIVE = (
 _NON_NEGATIVE = ("preview_bytes", "preview_rows")
 
 SESSION_RETENTION_DEFAULT = 256 * 1024 * 1024
+STORE_MEMORY_DEFAULT = 2 * 1024 * 1024 * 1024
+STORE_MEMORY_MIN = 128 * 1024 * 1024
 SESSION_CALLS_DEFAULT = 1000
 QUERY_OUTPUT_MIN_BYTES = 384
 CELL_OUTPUT_MIN_BYTES = 4
@@ -66,6 +68,7 @@ class Limits:
     # without bound; it is calibrated independently from per-call admission.
     max_session_bytes: int = SESSION_RETENTION_DEFAULT
     max_session_calls: int = SESSION_CALLS_DEFAULT
+    store_max_memory: int = STORE_MEMORY_DEFAULT
 
     def __post_init__(self) -> None:
         # Validated here rather than at parse time so a Limits built in code is
@@ -77,7 +80,13 @@ class Limits:
         # and booleans that reach here happily: `max_payload_bytes = "100"` used
         # to raise an uncaught TypeError from the comparison below, and
         # `max_columns = true` was accepted because bool subclasses int.
-        for name in (*_POSITIVE, "max_session_bytes", "max_session_calls", *_NON_NEGATIVE):
+        for name in (
+            *_POSITIVE,
+            "max_session_bytes",
+            "max_session_calls",
+            "store_max_memory",
+            *_NON_NEGATIVE,
+        ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ConfigError(
@@ -126,6 +135,62 @@ class Limits:
             )
         if not self.duckdb_max_memory.strip():
             raise ConfigError("[limits].duckdb_max_memory must not be empty")
+        engine_bytes = parse_memory_size(self.duckdb_max_memory)
+        if engine_bytes is None:
+            raise ConfigError(
+                f"[limits].duckdb_max_memory must be a size such as '1GB' or '512MiB' so it "
+                f"can be compared with store_max_memory, got {self.duckdb_max_memory!r}"
+            )
+        if self.store_max_memory < STORE_MEMORY_MIN:
+            raise ConfigError(
+                f"[limits].store_max_memory must be at least {STORE_MEMORY_MIN} bytes "
+                f"(128 MiB), got {self.store_max_memory}"
+            )
+        if self.store_max_memory <= engine_bytes:
+            raise ConfigError(
+                f"[limits].store_max_memory ({self.store_max_memory} bytes) must be greater "
+                f"than duckdb_max_memory ({self.duckdb_max_memory!r} = {engine_bytes} bytes)"
+            )
+
+
+_MEMORY_SIZE = re.compile(r"\A\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)\s*\Z")
+_MEMORY_UNITS: dict[str, int] = {
+    "b": 1,
+    "byte": 1,
+    "bytes": 1,
+    "k": 1000,
+    "kb": 1000,
+    "kilobyte": 1000,
+    "kilobytes": 1000,
+    "m": 1000**2,
+    "mb": 1000**2,
+    "megabyte": 1000**2,
+    "megabytes": 1000**2,
+    "g": 1000**3,
+    "gb": 1000**3,
+    "gigabyte": 1000**3,
+    "gigabytes": 1000**3,
+    "t": 1000**4,
+    "tb": 1000**4,
+    "terabyte": 1000**4,
+    "terabytes": 1000**4,
+    "kib": 1024,
+    "mib": 1024**2,
+    "gib": 1024**3,
+    "tib": 1024**4,
+}
+
+
+def parse_memory_size(text: str) -> int | None:
+    match = _MEMORY_SIZE.match(text)
+    if match is None:
+        return None
+    multiplier: int | None = _MEMORY_UNITS.get(match.group(2).lower())
+    if multiplier is None:
+        return None
+    whole, _, fraction = match.group(1).partition(".")
+    scale: int = 10 ** len(fraction)
+    return (int(whole) * scale + int(fraction or "0")) * multiplier // scale
 
 
 PAGINATION_DEFAULT_MAX_BYTES = 8 * 1024 * 1024

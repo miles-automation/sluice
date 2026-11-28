@@ -20,6 +20,7 @@ from sluice.proxy import MountedCollection, Proxy, expose_collection
 from sluice.query import QueryTool, escape_cell
 from sluice.server import _run_collection, _run_query
 from sluice.store import Store, scope_view_name
+from sluice.supervisor import SupervisedStore
 from tests.conformance_support import (
     CONFORMANCE_ROOT,
     FIXTURE_SET,
@@ -272,7 +273,7 @@ def _assert_handle(expect: dict[str, Any], result: types.CallToolResult) -> dict
     block = result.content[0]
     assert isinstance(block, types.TextContent)
     text = block.text
-    assert structured["envelope_table"] == scope_view_name(structured["scope_id"])
+    assert str(structured["envelope_table"]).startswith(scope_view_name(structured["scope_id"]))
     assert structured["envelope_table"] in text
     for key in ("source_channel", "channel_conflict", "preview_complete", "scope_id"):
         if key in expect:
@@ -336,8 +337,9 @@ def _assert_passthrough(
 
 
 class _Session:
-    def __init__(self, limits: Limits, store: Store) -> None:
+    def __init__(self, limits: Limits, store: SupervisedStore) -> None:
         self.limits = limits
+        self.store = store
         self.interceptor = Interceptor(store, limits, query_available=True)
         self.query = QueryTool(store, limits)
         self.calls: dict[str, dict[str, Any]] = {}
@@ -353,7 +355,7 @@ class _Session:
         if field_name == "table":
             return str(call["tables"][int(match.group(3) or 0)]["name"])
         if field_name == "envelope":
-            return scope_view_name(call["scope_id"])
+            return str(call["envelope"])
         if field_name == "call_id":
             return str(call["call_id"])
         if field_name == "scope":
@@ -380,9 +382,17 @@ class _Session:
             self.calls[step["call"]] = {
                 "tables": [],
                 "scope_id": derived if from_client else None,
+                "envelope": scope_view_name(derived, self.store.generation)
+                if from_client
+                else None,
             }
             return
-        self.calls[step["call"]] = _assert_handle(expect, result)
+        self.calls[step["call"]] = {
+            **_assert_handle(expect, result),
+            "envelope": result.structured_content["envelope_table"]
+            if result.structured_content
+            else None,
+        }
 
     async def run_query(self, step: dict[str, Any]) -> None:
         arguments = {key: self.substitute(value) for key, value in step["query"].items()}
@@ -414,7 +424,7 @@ def test_session(case: Case) -> None:
     limits = Limits(**case.get("limits", {}))
 
     async def run() -> None:
-        with Store.open(limits) as store:
+        with SupervisedStore.open(limits) as store:
             session = _Session(limits, store)
             for step in case["steps"]:
                 if "call" in step:

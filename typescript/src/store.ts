@@ -19,6 +19,8 @@ import { CALL_COLUMN, ROW_COLUMN } from "./shape.ts";
 import { SCOPE_PATTERN, verifyParserContract } from "./gate.ts";
 import type { Limits } from "./limits.ts";
 import { Mutex } from "./sync.ts";
+import { INTERRUPT_GRACE_MS, QueryInterrupted, executeOnConnection, timeoutFailure, type QueryRows } from "./execute.ts";
+import { longTimeout } from "./timer.ts";
 
 export const MAX_FLAT_REASON_BYTES = 512;
 export const ENVELOPE_TABLE = "sluice_calls";
@@ -35,8 +37,8 @@ export function lockdownStatements(maxMemory: string): readonly string[] {
   ];
 }
 
-export function scopeViewName(scopeId: string): string {
-  return `${ENVELOPE_TABLE}__${scopeId}`;
+export function scopeViewName(scopeId: string, generation = 0): string {
+  return generation === 0 ? `${ENVELOPE_TABLE}__${scopeId}` : `${ENVELOPE_TABLE}__${scopeId}__r${generation}`;
 }
 
 export function boundedFlatReason(reason: string | null): string | null {
@@ -199,11 +201,13 @@ function discard(appender: DuckDBAppender): void {
 
 type Waiter = () => void;
 
-export class Store {
-  readonly #instance: DuckDBInstance;
-  readonly #connection: DuckDBConnection;
-  readonly #maxSessionBytes: number;
-  readonly #maxSessionCalls: number;
+export interface CommitOutcome {
+  readonly retained: boolean;
+  readonly envelope: string;
+  readonly evicted?: readonly string[];
+}
+
+export abstract class CommitSequencer {
   readonly #writeLock = new Mutex();
   #waiters: Waiter[] = [];
   #nextCommitSeq = 1;
@@ -212,6 +216,119 @@ export class Store {
   readonly #callSequences = new Map<string, number>();
   readonly #tableSequences = new Map<string, number>();
   #retentionSequence = 0;
+
+  protected abstract write(record: CallRecord, plans: readonly TablePlan[]): Promise<CommitOutcome>;
+
+  abstract runQuery(sql: string, limit: number, limits: Limits, deadline: number): Promise<QueryRows>;
+
+  protected get retentionSequence(): number {
+    return this.#retentionSequence;
+  }
+
+  nextCallSeq(mounted: string): number {
+    return CommitSequencer.#bump(this.#callSequences, mounted);
+  }
+
+  nextTableSeq(mounted: string): number {
+    return CommitSequencer.#bump(this.#tableSequences, mounted);
+  }
+
+  nextRetentionSeq(): number {
+    this.#retentionSequence += 1;
+    return this.#retentionSequence;
+  }
+
+  static #bump(counters: Map<string, number>, key: string): number {
+    const next = (counters.get(key) ?? 0) + 1;
+    counters.set(key, next);
+    return next;
+  }
+
+  #notifyAll(): void {
+    const waiters = this.#waiters;
+    this.#waiters = [];
+    for (const wake of waiters) {
+      wake();
+    }
+  }
+
+  #changed(): Promise<void> {
+    return new Promise((resolve) => {
+      this.#waiters.push(resolve);
+    });
+  }
+
+  async commitCall(record: CallRecord, plans: readonly TablePlan[]): Promise<boolean> {
+    return (await this.commit(record, plans)).retained;
+  }
+
+  async commit(record: CallRecord, plans: readonly TablePlan[]): Promise<CommitOutcome> {
+    const directTicket = record.retentionSeq <= 0;
+    const ticketed = directTicket ? { ...record, retentionSeq: this.nextRetentionSeq() } : record;
+    const sequence = ticketed.retentionSeq;
+    let ready = false;
+    let retry = false;
+    let outcome: CommitOutcome;
+    try {
+      while (sequence !== this.#nextCommitSeq && sequence !== this.#retrySeq) {
+        if (sequence < this.#nextCommitSeq) {
+          throw new Error(`retention ticket ${sequence} is no longer active`);
+        }
+        await this.#changed();
+      }
+      retry = sequence === this.#retrySeq;
+      ready = true;
+      outcome = await this.#writeLock.run(() => this.write(ticketed, plans));
+    } catch (error) {
+      if (!ready) {
+        this.abandonCommit(sequence);
+      } else if (directTicket || retry) {
+        this.#finishCommit(sequence);
+      } else {
+        this.#retrySeq = sequence;
+        this.#notifyAll();
+      }
+      throw error;
+    }
+    this.#finishCommit(sequence);
+    return outcome;
+  }
+
+  #finishCommit(sequence: number): void {
+    if (this.#retrySeq === sequence) {
+      this.#retrySeq = null;
+    }
+    this.#nextCommitSeq = Math.max(this.#nextCommitSeq, sequence + 1);
+    this.#drainAbandoned();
+    this.#notifyAll();
+  }
+
+  abandonCommit(sequence: number): void {
+    if (sequence < this.#nextCommitSeq) {
+      return;
+    }
+    this.#abandoned.add(sequence);
+    if (this.#retrySeq === sequence) {
+      this.#retrySeq = null;
+    }
+    this.#drainAbandoned();
+    this.#notifyAll();
+  }
+
+  #drainAbandoned(): void {
+    while (this.#abandoned.has(this.#nextCommitSeq)) {
+      this.#abandoned.delete(this.#nextCommitSeq);
+      this.#nextCommitSeq += 1;
+    }
+  }
+}
+
+export class Store extends CommitSequencer {
+  readonly #instance: DuckDBInstance;
+  readonly #connection: DuckDBConnection;
+  readonly #maxSessionBytes: number;
+  readonly #maxSessionCalls: number;
+  readonly #generation: number;
   #retained = new Map<string, RetainedCall>();
   #metadata = new Map<string, CallMetadata>();
   #retainedBytes = 0;
@@ -220,15 +337,17 @@ export class Store {
   readonly #allowedObjects = new Set<string>();
   #closed = false;
 
-  private constructor(instance: DuckDBInstance, connection: DuckDBConnection, limits: Limits) {
+  private constructor(instance: DuckDBInstance, connection: DuckDBConnection, limits: Limits, generation: number) {
+    super();
     this.#instance = instance;
     this.#connection = connection;
     this.#maxSessionBytes = limits.max_session_bytes;
     this.#maxSessionCalls = limits.max_session_calls;
     this.#evictedTableLimit = limits.max_session_calls * 64;
+    this.#generation = generation;
   }
 
-  static async open(limits: Limits): Promise<Store> {
+  static async open(limits: Limits, generation = 0): Promise<Store> {
     const instance = await DuckDBInstance.create(":memory:");
     let connection: DuckDBConnection | undefined;
     try {
@@ -238,7 +357,7 @@ export class Store {
       }
       await verifyParserContract(connection);
       await connection.run(ENVELOPE_DDL);
-      return new Store(instance, connection, limits);
+      return new Store(instance, connection, limits, generation);
     } catch (error) {
       connection?.closeSync();
       instance.closeSync();
@@ -287,103 +406,37 @@ export class Store {
     this.#instance.closeSync();
   }
 
-  nextCallSeq(mounted: string): number {
-    return Store.#bump(this.#callSequences, mounted);
+  protected write(record: CallRecord, plans: readonly TablePlan[]): Promise<CommitOutcome> {
+    return this.commitNow(record, plans);
   }
 
-  nextTableSeq(mounted: string): number {
-    return Store.#bump(this.#tableSequences, mounted);
-  }
-
-  nextRetentionSeq(): number {
-    this.#retentionSequence += 1;
-    return this.#retentionSequence;
-  }
-
-  static #bump(counters: Map<string, number>, key: string): number {
-    const next = (counters.get(key) ?? 0) + 1;
-    counters.set(key, next);
-    return next;
-  }
-
-  #notifyAll(): void {
-    const waiters = this.#waiters;
-    this.#waiters = [];
-    for (const wake of waiters) {
-      wake();
-    }
-  }
-
-  #changed(): Promise<void> {
-    return new Promise((resolve) => {
-      this.#waiters.push(resolve);
-    });
-  }
-
-  async commitCall(record: CallRecord, plans: readonly TablePlan[]): Promise<boolean> {
-    const directTicket = record.retentionSeq <= 0;
-    const ticketed = directTicket ? { ...record, retentionSeq: this.nextRetentionSeq() } : record;
-    const sequence = ticketed.retentionSeq;
-    let ready = false;
-    let retry = false;
-    let outcome: boolean;
+  async runQuery(sql: string, limit: number, limits: Limits, deadline: number): Promise<QueryRows> {
+    const control = new AbortController();
+    const cancelTimer = longTimeout(() => control.abort(), Math.max(0, deadline - performance.now()));
     try {
-      while (sequence !== this.#nextCommitSeq && sequence !== this.#retrySeq) {
-        if (sequence < this.#nextCommitSeq) {
-          throw new Error(`retention ticket ${sequence} is no longer active`);
-        }
-        await this.#changed();
-      }
-      retry = sequence === this.#retrySeq;
-      ready = true;
-      outcome = await this.#writeLock.run(() => this.#commit(ticketed, plans));
+      return await executeOnConnection(
+        this,
+        sql,
+        limit,
+        limits.max_cell_bytes,
+        limits.query_max_bytes,
+        control.signal,
+        INTERRUPT_GRACE_MS,
+      );
     } catch (error) {
-      if (!ready) {
-        this.abandonCommit(sequence);
-      } else if (directTicket || retry) {
-        this.#finishCommit(sequence);
-      } else {
-        this.#retrySeq = sequence;
-        this.#notifyAll();
+      if (error instanceof QueryInterrupted) {
+        throw timeoutFailure(limits.query_timeout_seconds);
       }
       throw error;
-    }
-    this.#finishCommit(sequence);
-    return outcome;
-  }
-
-  #finishCommit(sequence: number): void {
-    if (this.#retrySeq === sequence) {
-      this.#retrySeq = null;
-    }
-    this.#nextCommitSeq = Math.max(this.#nextCommitSeq, sequence + 1);
-    this.#drainAbandoned();
-    this.#notifyAll();
-  }
-
-  abandonCommit(sequence: number): void {
-    if (sequence < this.#nextCommitSeq) {
-      return;
-    }
-    this.#abandoned.add(sequence);
-    if (this.#retrySeq === sequence) {
-      this.#retrySeq = null;
-    }
-    this.#drainAbandoned();
-    this.#notifyAll();
-  }
-
-  #drainAbandoned(): void {
-    while (this.#abandoned.has(this.#nextCommitSeq)) {
-      this.#abandoned.delete(this.#nextCommitSeq);
-      this.#nextCommitSeq += 1;
+    } finally {
+      cancelTimer();
     }
   }
 
-  async #commit(original: CallRecord, plans: readonly TablePlan[]): Promise<boolean> {
+  async commitNow(original: CallRecord, plans: readonly TablePlan[]): Promise<CommitOutcome> {
     const record: CallRecord = { ...original, flatReason: boundedFlatReason(original.flatReason) };
     const size = this.retentionSize(record, plans);
-    const order = record.retentionSeq || this.#retentionSequence + 1;
+    const order = record.retentionSeq || this.retentionSequence + 1;
     const fitsBudget = size <= this.#maxSessionBytes;
     const storedRecord: CallRecord = fitsBudget
       ? record
@@ -447,6 +500,7 @@ export class Store {
       await connection.run("ROLLBACK").catch(() => undefined);
       throw error;
     }
+    const newlyEvicted: string[] = [];
     const allEntries = new Map(this.#retained);
     allEntries.set(record.callId, newEntry);
     for (const [callId, entry] of allEntries) {
@@ -457,6 +511,7 @@ export class Store {
         this.#allowedObjects.delete(table);
       }
       this.#rememberEvicted(entry.tables);
+      newlyEvicted.push(...entry.tables);
       const meta = metadata.get(callId);
       if (meta !== undefined) {
         metadata.set(callId, { ...meta, tables: [] });
@@ -472,13 +527,14 @@ export class Store {
           this.#allowedObjects.delete(table);
         }
         this.#rememberEvicted(entry.tables);
+        newlyEvicted.push(...entry.tables);
       }
     }
     const remainingScopes = new Set([...metadata.values()].map((entry) => entry.scopeId));
     for (const callId of removed) {
       const entry = this.#metadata.get(callId);
       if (entry !== undefined && !remainingScopes.has(entry.scopeId)) {
-        this.#allowedObjects.delete(scopeViewName(entry.scopeId));
+        this.#allowedObjects.delete(scopeViewName(entry.scopeId, this.#generation));
       }
     }
     this.#metadata = metadata;
@@ -488,7 +544,7 @@ export class Store {
       }
     }
     this.#allowedObjects.add(view);
-    return fitsBudget;
+    return { retained: fitsBudget, envelope: view, evicted: newlyEvicted };
   }
 
   static #total(retained: ReadonlyMap<string, RetainedCall>): number {
@@ -594,7 +650,7 @@ export class Store {
       [VARCHAR],
     );
     if (remaining.currentRowCount === 0) {
-      await this.#connection.run(`DROP VIEW IF EXISTS ${quoteIdent(scopeViewName(entry.scopeId))}`);
+      await this.#connection.run(`DROP VIEW IF EXISTS ${quoteIdent(scopeViewName(entry.scopeId, this.#generation))}`);
     }
   }
 
@@ -602,7 +658,7 @@ export class Store {
     if (!SCOPE_PATTERN.test(scopeId)) {
       throw new RangeError(`scope id is not 32 hex characters: ${JSON.stringify(scopeId)}`);
     }
-    const name = scopeViewName(scopeId);
+    const name = scopeViewName(scopeId, this.#generation);
     await this.#connection.run(
       `CREATE OR REPLACE VIEW ${quoteIdent(name)} AS SELECT * FROM ${quoteIdent(ENVELOPE_TABLE)} WHERE scope_id = '${scopeId}'`,
     );

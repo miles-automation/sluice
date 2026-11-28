@@ -12,6 +12,23 @@ This tracks what has landed against the milestones in
   14,000-character string reached 1.6 to 1.7 GB under a 256 MB limit. They are refused by name,
   in any query position and through a macro. `hamming`, `mismatches` and `jaccard`
   are linear and stay allowed. The TypeScript gate refuses the same names.
+- **The DuckDB store has a real memory cap.** Some string expressions
+  (nested `replace()`, `regexp_replace`, edit distance, recursive doubling) grow
+  outside DuckDB's `max_memory`; 327 bytes of SQL reached 1.9 GB, and earlier
+  probes 11 to 13 GiB (review/memory-cap.md). DuckDB now runs in a child process,
+  sampled every 20 ms and killed at the new `[limits].store_max_memory` (default
+  2 GiB, must be greater than `duckdb_max_memory`, which must now be an absolute
+  size such as `1GB`); on Linux the child also runs under `RLIMIT_DATA`. The
+  query that crossed the cap fails with a `store reset` error naming the cap,
+  the store restarts empty, and every earlier table and envelope view fails with
+  a stale-handle error rather than reading as empty. A tool call being stored
+  during a reset still returns its result, recorded envelope-only. After a reset
+  a conversation's envelope view is `sluice_calls__<scope>__r<n>`. Storing a
+  4.5 MB, 3,800-row result takes about 60 ms longer (0.85 s to 0.91 s on an M-series
+  Mac). On platforms other than macOS and Linux, Windows included, the store
+  stays in the Sluice process and a startup warning says the cap is not
+  enforced. Query replies from the store are cut to what the 64 KiB output can
+  show, with the same truncation notices.
 
 ## 0.2.2 — 2026-11-25
 

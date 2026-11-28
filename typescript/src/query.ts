@@ -1,11 +1,20 @@
-import { longTimeout } from "./timer.ts";
-import type { DuckDBConnection, DuckDBPreparedStatement, DuckDBResult } from "@duckdb/node-api";
-import { QueryRejectedError, check, prepareSelect } from "./gate.ts";
+import { escapeCell } from "./execute.ts";
+import { QueryRejectedError } from "./gate.ts";
 import { QUERY_OUTPUT_MIN_BYTES, type Limits } from "./limits.ts";
 import { byteLength, truncateToBytes } from "./payload.ts";
-import type { Store } from "./store.ts";
+import type { CommitSequencer } from "./store.ts";
 import { Semaphore } from "./sync.ts";
 import { queryConcurrency } from "./threadpool.ts";
+
+export {
+  CELL_SLACK_BYTES,
+  escapeCell,
+  INTERRUPT_RETRY_MS,
+  VANISHED_TABLE,
+  cellText,
+  engineFailure,
+  withoutSuggestions,
+} from "./execute.ts";
 
 export const QUERY_TOOL_NAME = "query";
 
@@ -30,8 +39,6 @@ export const QUERY_SCHEMA = {
 } as const;
 
 export const NOTES_RESERVE = QUERY_OUTPUT_MIN_BYTES;
-export const INTERRUPT_RETRY_MS = 50;
-export const CELL_SLACK_BYTES = 4;
 
 export interface QueryOutcome {
   readonly columns: readonly string[];
@@ -40,33 +47,6 @@ export interface QueryOutcome {
   readonly truncatedCells?: number;
   readonly truncatedHeaders?: number;
   readonly droppedRows?: number;
-}
-
-export function escapeCell(value: unknown, maxBytes: number): readonly [string, boolean] {
-  if (value === null || value === undefined) {
-    return ["NULL", false];
-  }
-  let text = String(value);
-  if (text === "") {
-    return ["''", false];
-  }
-  text = text.replaceAll("\\", "\\\\").replaceAll("|", "\\|");
-  text = text.replaceAll("\r\n", "\\n").replaceAll("\n", "\\n").replaceAll("\r", "\\n");
-  if (byteLength(text) <= maxBytes) {
-    return [text, false];
-  }
-  const marker = "…";
-  const markerBytes = byteLength(marker);
-  const [rendered] = truncateToBytes(text, Math.max(maxBytes - markerBytes, 0));
-  return [rendered + (maxBytes >= markerBytes ? marker : ""), true];
-}
-
-export function cellText(value: unknown, maxBytes: number): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  const [text] = truncateToBytes(String(value), maxBytes);
-  return text;
 }
 
 export function render(outcome: QueryOutcome, limits: Limits): string {
@@ -139,34 +119,13 @@ export interface QueryToolOptions {
   readonly concurrency?: number;
 }
 
-class DeadlineExpired extends Error {
-  override readonly name = "DeadlineExpired";
-}
-
-function isInterrupt(error: unknown): boolean {
-  return error instanceof Error && /^INTERRUPT Error:/u.test(error.message);
-}
-
-function errorName(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Error";
-  }
-  const match = /^([A-Za-z ]+) Error:/u.exec(error.message);
-  return match?.[1] === undefined ? error.name : `${match[1].replaceAll(" ", "")}Error`;
-}
-
-interface Execution {
-  readonly columns: string[];
-  readonly rows: (string | null)[][];
-}
-
 export class QueryTool {
-  readonly #store: Store;
+  readonly #store: CommitSequencer;
   readonly #limits: Limits;
   readonly #admission: Semaphore;
   readonly #capacity: number;
 
-  constructor(store: Store, limits: Limits, options: QueryToolOptions = {}) {
+  constructor(store: CommitSequencer, limits: Limits, options: QueryToolOptions = {}) {
     this.#store = store;
     this.#limits = limits;
     this.#capacity = options.concurrency ?? queryConcurrency();
@@ -183,9 +142,10 @@ export class QueryTool {
 
   async run(sql: string, maxRows?: number | null): Promise<string> {
     const limit = this.#resolveLimit(maxRows);
-    const execution = await this.#execute(sql, limit);
+    const deadline = performance.now() + this.#limits.query_timeout_seconds * 1000;
+    const execution = await this.#admission.run(() => this.#store.runQuery(sql, limit, this.#limits, deadline));
     return render(
-      { columns: execution.columns, rows: execution.rows.slice(0, limit), moreRows: execution.rows.length > limit },
+      { columns: execution.columns, rows: execution.rows, moreRows: execution.moreRows, droppedRows: execution.omitted },
       this.#limits,
     );
   }
@@ -199,107 +159,6 @@ export class QueryTool {
     }
     return Math.min(maxRows, this.#limits.query_max_rows);
   }
-
-  #timeoutFailure(): QueryRejectedError {
-    return new QueryRejectedError(
-      `query exceeded the ${this.#limits.query_timeout_seconds}s timeout and was interrupted`,
-    );
-  }
-
-  async #execute(sql: string, limit: number): Promise<Execution> {
-    let expired = false;
-    let connection: DuckDBConnection | undefined;
-    let retry: ReturnType<typeof setInterval> | undefined;
-    let expire!: () => void;
-    const deadline = new Promise<never>((_, reject) => {
-      expire = () => {
-        expired = true;
-        reject(new DeadlineExpired());
-        connection?.interrupt();
-        retry = setInterval(() => connection?.interrupt(), INTERRUPT_RETRY_MS);
-      };
-    });
-    const cancelTimer = longTimeout(expire, this.#limits.query_timeout_seconds * 1000);
-    const guard = (): void => {
-      if (expired) {
-        throw new DeadlineExpired();
-      }
-    };
-    const work = (async (): Promise<Execution> => {
-      const release = await this.#admission.acquire();
-      let prepared: DuckDBPreparedStatement | undefined;
-      let result: DuckDBResult | undefined;
-      let drained = false;
-      try {
-        guard();
-        connection = await this.#store.connect();
-        guard();
-        await check(sql, connection, this.#store.allowedObjects, this.#store.evictedTables);
-        guard();
-        prepared = await prepareSelect(sql, connection);
-        guard();
-        result = await prepared.stream();
-        const cellCap = this.#limits.max_cell_bytes + CELL_SLACK_BYTES;
-        const columns = result.columnNames();
-        const rows: (string | null)[][] = [];
-        while (rows.length <= limit) {
-          guard();
-          const chunk = await result.fetchChunk();
-          if (chunk === null || chunk.rowCount === 0) {
-            drained = true;
-            break;
-          }
-          const vectors = Array.from({ length: chunk.columnCount }, (_, column) => chunk.getColumnVector(column));
-          for (let index = 0; index < chunk.rowCount && rows.length <= limit; index += 1) {
-            rows.push(vectors.map((vector) => cellText(vector.getItem(index), cellCap)));
-          }
-        }
-        guard();
-        return { columns, rows };
-      } finally {
-        clearInterval(retry);
-        if (!drained) {
-          connection?.interrupt();
-        }
-        result?.closeSync();
-        prepared?.destroySync();
-        connection?.closeSync();
-        release();
-      }
-    })();
-    work.catch(() => undefined);
-    deadline.catch(() => undefined);
-    try {
-      return await Promise.race([work, deadline]);
-    } catch (error) {
-      if (error instanceof DeadlineExpired || expired || isInterrupt(error)) {
-        throw this.#timeoutFailure();
-      }
-      if (error instanceof QueryRejectedError) {
-        throw new QueryRejectedError(withoutSuggestions(error.message));
-      }
-      throw engineFailure(error);
-    } finally {
-      cancelTimer();
-    }
-  }
-}
-
-const SUGGESTION = /\n?Did you mean [^\n]*/gu;
-const MISSING_TABLE = /^Catalog Error: Table with name /u;
-
-export const VANISHED_TABLE = "a table this query names is no longer available; it may have been evicted";
-
-export function withoutSuggestions(text: string): string {
-  return text.replace(SUGGESTION, "");
-}
-
-export function engineFailure(error: unknown): QueryRejectedError {
-  const text = error instanceof Error ? error.message : String(error);
-  if (MISSING_TABLE.test(text)) {
-    return new QueryRejectedError(VANISHED_TABLE);
-  }
-  return new QueryRejectedError(`${errorName(error)}: ${withoutSuggestions(text)}`);
 }
 
 export interface QueryToolResult {

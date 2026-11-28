@@ -8,7 +8,8 @@ import { NameCollisionError } from "./naming.ts";
 import { Proxy } from "./proxy.ts";
 import { QueryTool } from "./query.ts";
 import { buildServer } from "./server.ts";
-import { Store } from "./store.ts";
+import type { Store } from "./store.ts";
+import { openStore, type SupervisedStore } from "./supervisor.ts";
 import { UpstreamTransport, safeDescription } from "./transport.ts";
 
 const log = logger("sluice");
@@ -51,9 +52,9 @@ export function parseArguments(argv: readonly string[]): Arguments {
 
 export async function serve(config: Config, signal: AbortSignal): Promise<void> {
   const proxy = await Proxy.start(config, { signal });
-  let store: Store | undefined;
+  let store: SupervisedStore | Store | undefined;
   try {
-    store = await Store.open(config.limits);
+    store = await openStore(config.limits);
     const interceptor = new Interceptor(store, config.limits, { queryAvailable: true });
     const query = new QueryTool(store, config.limits);
     const transport = new UpstreamTransport();
@@ -70,7 +71,7 @@ export async function serve(config: Config, signal: AbortSignal): Promise<void> 
     await Promise.race([transport.closed, interrupted]);
     await handle.close();
   } finally {
-    store?.close();
+    await store?.close();
     await proxy.close();
   }
 }

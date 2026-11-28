@@ -28,7 +28,7 @@ import {
 } from "./payload.ts";
 import { derive, mint } from "./scope.ts";
 import { EXTRA_COLUMN, extract, project } from "./shape.ts";
-import { Store, boundedFlatReason, retentionBudgetReason } from "./store.ts";
+import { boundedFlatReason, retentionBudgetReason, type CommitSequencer } from "./store.ts";
 import { Semaphore } from "./sync.ts";
 
 export type StructuredInput =
@@ -100,13 +100,13 @@ function argumentsValue(args: unknown): JsonValue | null {
 }
 
 export class Interceptor {
-  readonly #store: Store;
+  readonly #store: CommitSequencer;
   readonly #limits: Limits;
   readonly #queryAvailable: boolean;
   readonly #admission: Semaphore;
   readonly #log: InterceptLogger;
 
-  constructor(store: Store, limits: Limits, options: InterceptorOptions = {}) {
+  constructor(store: CommitSequencer, limits: Limits, options: InterceptorOptions = {}) {
     this.#store = store;
     this.#limits = limits;
     this.#queryAvailable = options.queryAvailable ?? false;
@@ -182,9 +182,11 @@ export class Interceptor {
       retentionSeq,
     };
 
+    let envelope = "";
     try {
-      const retained = await this.#store.commitCall(record, planned.plans);
-      if (!retained) {
+      const outcome = await this.#store.commit(record, planned.plans);
+      envelope = outcome.envelope;
+      if (!outcome.retained) {
         tables = [];
         record = { ...record, flatTables: [], sourcePaths: [], flatReason: retentionBudgetReason(record.flatReason) };
       }
@@ -198,8 +200,9 @@ export class Interceptor {
         flatReason: boundedFlatReason(`load_failed: ${describeError(error)}`),
       };
       try {
-        const retained = await this.#store.commitCall(degraded, []);
-        record = retained ? degraded : { ...degraded, flatReason: retentionBudgetReason(degraded.flatReason) };
+        const retry = await this.#store.commit(degraded, []);
+        envelope = retry.envelope;
+        record = retry.retained ? degraded : { ...degraded, flatReason: retentionBudgetReason(degraded.flatReason) };
       } catch (envelopeError) {
         this.#log("envelope_payload_failed", envelopeError);
         this.#store.abandonCommit(retentionSeq);
@@ -211,7 +214,7 @@ export class Interceptor {
           retentionSeq: 0,
         };
         try {
-          await this.#store.commitCall(metadata, []);
+          envelope = (await this.#store.commit(metadata, [])).envelope;
           record = metadata;
         } catch (metadataError) {
           this.#log("envelope_write_failed", metadataError);
@@ -224,7 +227,7 @@ export class Interceptor {
       return this.#passthrough(result, reason, selected, ceiling, pagination);
     }
     try {
-      return this.#handleResult(record, selected, tables, planned.previewRows, pagination);
+      return this.#handleResult(record, envelope, selected, tables, planned.previewRows, pagination);
     } catch (error) {
       this.#log("handle_failed", error);
       return result;
@@ -326,6 +329,7 @@ export class Interceptor {
 
   #handleResult(
     record: CallRecord,
+    envelope: string,
     selected: SelectedPayload,
     tables: readonly TableRef[],
     previewRows: readonly JsonValue[],
@@ -342,6 +346,7 @@ export class Interceptor {
     const handle: Handle = {
       callId: record.callId,
       scopeId: record.scopeId,
+      envelopeTable: envelope,
       channel: selected.channel,
       conflict: selected.conflict,
       byteSize: selected.byteSize,

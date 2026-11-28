@@ -338,6 +338,8 @@
         "show_describe",
         "invalid_argument",
         "timeout",
+        "store_reset",
+        "stale_handle",
         "execution_error"
       ]
     },
@@ -1190,6 +1192,9 @@
           "type": "integer"
         },
         "max_session_calls": {
+          "type": "integer"
+        },
+        "store_max_memory": {
           "type": "integer"
         }
       }

@@ -104,6 +104,9 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -126,3 +129,6 @@ jobs:
         run: |
           python -c "import importlib.metadata, importlib.resources, sluice; assert importlib.metadata.version('mcp-sluice') == sluice.__version__; assert importlib.resources.files('sluice').joinpath('py.typed').is_file()"
           python -m sluice --help
+
+      - name: Start the installed server over stdio
+        run: python python/scripts/stdio_smoke.py

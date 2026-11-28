@@ -1,19 +1,14 @@
 """The `query` tool: gate, timeout, caps, rendering (spec 6)."""
 
 import logging
-import re
-import threading
-from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
-import anyio
-import duckdb
-
 from sluice.config import QUERY_OUTPUT_MIN_BYTES, Limits
-from sluice.gate import QueryRejectedError, check
-from sluice.payload import truncate_to_bytes
-from sluice.store import Store
+from sluice.execute import escape_cell as escape_cell
+from sluice.gate import QueryRejectedError
+from sluice.store import CommitSequencer
+from sluice.text import truncate_to_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -53,28 +48,6 @@ class QueryOutcome:
     truncated_cells: int = 0
     truncated_headers: int = 0
     dropped_rows: int = 0
-
-
-def escape_cell(value: object, max_bytes: int) -> tuple[str, bool]:
-    """Render one value for a markdown table.
-
-    Escaping is defined rather than left to the implementer, because two of
-    these are ambiguous otherwise: SQL NULL and the string "NULL" would render
-    identically, as would NULL and the empty string.
-    """
-    if value is None:
-        return "NULL", False
-    text = str(value)
-    if text == "":
-        return "''", False
-    text = text.replace("\\", "\\\\").replace("|", "\\|")
-    text = text.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
-    if len(text.encode("utf-8")) <= max_bytes:
-        return text, False
-    marker = "…"
-    marker_bytes = len(marker.encode("utf-8"))
-    rendered, _ = truncate_to_bytes(text, max(max_bytes - marker_bytes, 0))
-    return rendered + (marker if max_bytes >= marker_bytes else ""), True
 
 
 NOTES_RESERVE = QUERY_OUTPUT_MIN_BYTES
@@ -157,32 +130,22 @@ def render(outcome: QueryOutcome, limits: Limits) -> str:
     return f"{prefix}\n\n{fallback}" if prefix else fallback
 
 
-class _DeadlineExpiredError(Exception):
-    """Internal marker for a deadline that fired before a worker started."""
-
-
-_SUGGESTION_RE = re.compile(r"\n?Did you mean [^\n]*")
-
-
-def _engine_failure(exc: duckdb.Error) -> QueryRejectedError:
-    message = str(exc)
-    if isinstance(exc, duckdb.CatalogException) and "Table with name" in message:
-        return QueryRejectedError(
-            "a table this query names is no longer available; it may have been evicted"
-        )
-    return QueryRejectedError(f"{type(exc).__name__}: {_SUGGESTION_RE.sub('', message)}")
-
-
 class QueryTool:
     """Runs agent SQL on a connection of its own."""
 
-    def __init__(self, store: Store, limits: Limits) -> None:
+    def __init__(self, store: CommitSequencer, limits: Limits) -> None:
         self._store = store
         self._limits = limits
 
     async def run(self, sql: str, max_rows: int | None = None) -> str:
         limit = self._resolve_limit(max_rows)
-        outcome = await self._execute(sql, limit)
+        result = await self._store.run_query(sql, limit, self._limits)
+        outcome = QueryOutcome(
+            columns=result.columns,
+            rows=list(result.rows),
+            more_rows=result.more_rows,
+            dropped_rows=result.omitted,
+        )
         return render(outcome, self._limits)
 
     def _resolve_limit(self, max_rows: int | None) -> int:
@@ -191,86 +154,3 @@ class QueryTool:
         if max_rows < 1:
             raise QueryRejectedError(f"max_rows must be at least 1, got {max_rows}")
         return min(max_rows, self._limits.query_max_rows)
-
-    async def _execute(self, sql: str, limit: int) -> QueryOutcome:
-        """Gate and run on a connection of this query's own.
-
-        Two things are deliberate.
-
-        The deadline is a `threading.Timer`, not a task in a task group. A task
-        group's watchdog is cancelled along with everything else when the client
-        cancels the call, while the DuckDB worker ignores cancellation entirely,
-        so the query then ran unbounded. A timer is immune to that: a cancelled
-        query is still interrupted no later than the deadline.
-
-        The gate runs **inside** the worker. `extract_statements` and
-        `json_serialize_sql` are synchronous DuckDB calls, so running them on the
-        event loop blocked the whole server on pathological SQL, and running them
-        before the deadline started left them unbounded.
-        """
-        cursor = self._store.connection.cursor()
-        allowed = self._store.allowed_objects
-        evicted = self._store.evicted_tables
-        outcome = QueryOutcome()
-        expired = threading.Event()
-
-        def expire() -> None:
-            expired.set()
-            # The query may still be waiting for a worker or may have just
-            # finished. Either way, avoid an unhandled Timer-thread traceback.
-            with suppress(duckdb.Error):
-                cursor.interrupt()
-
-        def blocking() -> tuple[list[str], list[tuple[Any, ...]]]:
-            if expired.is_set():
-                raise _DeadlineExpiredError
-            check(sql, cursor, allowed, evicted)
-            if expired.is_set():
-                raise _DeadlineExpiredError
-            executed = cursor.execute(sql)
-            description = executed.description or []
-            fetched = executed.fetchmany(limit + 1)
-            if expired.is_set():
-                raise _DeadlineExpiredError
-            return [str(column[0]) for column in description], fetched
-
-        failure: QueryRejectedError | None = None
-        columns: list[str] = []
-        rows: list[tuple[Any, ...]] = []
-        timer = threading.Timer(self._limits.query_timeout_seconds, expire)
-        timer.daemon = True
-        timer.start()
-        try:
-            columns, rows = await anyio.to_thread.run_sync(blocking)
-        except duckdb.InterruptException, _DeadlineExpiredError:
-            failure = QueryRejectedError(
-                f"query exceeded the {self._limits.query_timeout_seconds}s timeout "
-                "and was interrupted"
-            )
-        except QueryRejectedError as exc:
-            failure = self._timeout_failure() if expired.is_set() else exc
-        except duckdb.Error as exc:
-            # Never an empty success: a failing query has to look like a
-            # failure, not like a result set with no rows.
-            failure = self._timeout_failure() if expired.is_set() else _engine_failure(exc)
-        finally:
-            timer.cancel()
-            timer.join()
-            # `abandon_on_cancel` is left at its default, so the worker has
-            # finished by the time this runs even when the caller cancelled.
-            # Closing the cursor out from under a live thread would be worse
-            # than any timeout.
-            cursor.close()
-
-        if failure is not None:
-            raise failure
-
-        outcome.columns = columns
-        outcome.more_rows = len(rows) > limit
-        outcome.rows = rows[:limit]
-        return outcome
-
-    def _timeout_failure(self) -> QueryRejectedError:
-        return QueryRejectedError(
-            f"query exceeded the {self._limits.query_timeout_seconds}s timeout and was interrupted"
-        )

@@ -1,7 +1,7 @@
 # Spec 001: Scratch DB for MCP tool results
 
-Status: draft (revision 6: two versions and the conformance suite)
-Date: 2026-08-28, revised 2026-11-25
+Status: draft (revision 7: the store process and its memory cap)
+Date: 2026-08-28, revised 2026-11-28
 Implements: intent/001-scratch-db.md
 Evidence: plan/001-notes-m0.md
 
@@ -54,6 +54,7 @@ TypeScript test.
 | §6.3 | fixtures `cell.*`, `session.query.*` (notice vocabulary parsed strictly) | verified |
 | §6.4 | fixture `session.query.envelope-view-reaches-the-payload` | verified |
 | §7 limits and retention | fixtures `config.*`, `session.retention.*` (sized to hold for any charge within the bounds) | verified; the memory calibration figures are **unverified** (2026-08-30 run on the reference host only) |
+| §7 `store_max_memory`, §8 store reset | fixtures `config.store-max-memory-*`, `config.duckdb-max-memory-*`, `session.reset.*`; `python/tests/test_supervisor.py` and `typescript/test/supervisor.test.ts` on macOS arm64 and Linux arm64 (Docker), task 1223 | verified on both; overshoot figures are measurements on those hosts only |
 | §9 | Python suite | verified, Python only |
 | §12 | fixtures `scope.*`, `naming.table-names-from-different-scopes-differ` | verified |
 
@@ -282,6 +283,12 @@ with a single `SELECT`, so it is never in the allowlist.
 Each scope instead gets a view, `sluice_calls__<scope_id>`, filtered to that
 scope and created inside the same transaction as the call it belongs to. The
 handle names the view, and recovery (§6.4) goes through it.
+
+After the n-th store reset (§8) the view is `sluice_calls__<scope_id>__r<n>`. A
+conversation id maps to the same scope before and after a reset, so reusing the
+old name would let a pre-reset handle read the new store's view, which holds none
+of its calls, and come back empty instead of failing. Always take the view name
+from the handle.
 
 ### 3.4 No schema view
 
@@ -689,6 +696,13 @@ DuckDB has no statement timeout. Execute on a **dedicated connection per
 in-flight query**, and have the event loop call `interrupt()` on that exact
 connection object when the deadline passes. Default 10 seconds.
 
+The deadline timer runs in the Sluice process; the connection lives in the store
+process (§8). At the deadline Sluice sends that query's interrupt to the store
+process, which interrupts the query's own connection. If the query has not
+stopped 5 seconds later, Sluice kills the store process, which is a store reset
+(§8). The spike measured `regexp_replace` running 1.5 to 3 s past an interrupt,
+so the grace period is not shorter.
+
 Measured, DuckDB 1.5.5: `interrupt()` on a *parent* connection does not stop work
 on a cursor derived from it (the query ran to completion, 5.2s). `interrupt()` on
 the object actually executing stopped it in 0.2s. Scope is the connection object.
@@ -701,6 +715,14 @@ other.
 
 ### 6.3 Result shaping
 
+- The store process cuts the result to what rendering can use before it replies
+  (§8): rows past `max_rows`, rows past the first one whose rendered line would
+  not fit the byte cap, and every column past the first whose header would not
+  fit. It reports the count of rows it withheld and whether more rows exist, so
+  the notices below are exactly what they would be over the whole fetch, and a
+  reply frame stays near `query_max_bytes`. A reply that would still exceed the
+  256 MiB frame limit (possible only with a huge `query_max_bytes`) is a query
+  error, not a store reset.
 - Execute the user SQL **unmodified** and pull `max_rows + 1` rows with
   `fetchmany`. Do not wrap as `SELECT * FROM (<sql>) LIMIT n+1`: trailing
   semicolons and duplicate column names break inside a subquery even though they
@@ -794,6 +816,7 @@ max_cell_bytes = 512
 duckdb_max_memory = "1GB"
 max_session_bytes = 268435456
 max_session_calls = 1000
+store_max_memory = 2147483648
 ```
 
 The payload default is an operational policy starting point, not a process RSS
@@ -804,6 +827,16 @@ at 1 MiB, dual channel, concurrency 2, plus 15 sequential retained calls. Those
 runs support the conservative 1 MiB v0 admission default on the reference host;
 they do not bound memory the MCP SDK already spent decoding structured content.
 Deployments should validate behavior on their target host.
+
+`store_max_memory` (bytes, default 2 GiB) is the process memory bound: the
+DuckDB store runs in a child process that is killed and restarted when its
+resident memory passes it (§8). It must be at least 128 MiB and greater than
+`duckdb_max_memory`, so `duckdb_max_memory` must be an absolute size (`B`, `KB`,
+`MB`, `GB`, `TB` for powers of 1000, `KiB` to `TiB` for powers of 1024, with
+DuckDB's long spellings); DuckDB's percentage form is refused because it cannot
+be compared. The 2 GiB default leaves room for the 1 GB engine limit, the
+256 MiB retention budget and the 3x overshoot measured on tracked operators
+(review/memory-cap.md).
 
 Every limit is validated where it is constructed, not only where it is parsed.
 `max_concurrent_materializations = 0` is the sharp one: a zero-sized admission
@@ -880,16 +913,102 @@ dropped.
 The invariant: **Sluice never turns a working tool call into a failed one**, with
 two boundaries, both named rather than implied:
 
-1. **Process death.** An OOM kill during materialization ends the session, and no
-   `except` catches it. The invariant is conditional on staying inside the memory
-   budget, which `max_payload_bytes` and `max_concurrent_materializations` exist
+1. **Process death.** An OOM kill of the Sluice process itself ends the
+   session, and no `except` catches it. Death of the store process does not (see
+   *Store process and reset* below). The invariant is conditional on staying
+   inside the memory budget, which `max_payload_bytes` and `max_concurrent_materializations` exist
    to bound, imperfectly (§5.1 step 2).
 2. **Connection-scoped interrupt.** A timed-out `query` must not abort a
    concurrent write. §6.2.
 
+### Store process and reset
+
+DuckDB does not count every string intermediate against `max_memory`. Measured
+on DuckDB 2.0.1 under `max_memory = '256MB'`, 327 bytes of nested `replace()`
+reached 1.9 GB, and an interrupt cannot stop a single vector's worth of such an
+expression (review/memory-cap.md). Everything that touches DuckDB therefore runs
+in a **store process**, a child of Sluice: the §6.1 lockdown, materialization and
+retention (§3.1, §7), the gate's parse, serialize and prepare, query execution
+and interrupts, and the scope views. The Sluice process keeps the MCP
+connections, admission, the FIFO commit order, sequence numbers and deadlines.
+
+- **Channel.** A private socket, length-prefixed frames (4-byte big-endian
+  length): JSON in Python, V8 structured-clone serialization in TypeScript, so
+  `bigint`, `Map` order and the int/float distinction survive. The store
+  process's stdout is Sluice's stderr; it can never write to the MCP transport.
+  It exits when the channel closes, so it never outlives Sluice.
+- **Enforcement.** While any request is in flight, Sluice samples the store
+  process's resident memory every 20 ms (`proc_pid_rusage`, the larger of
+  resident size and physical footprint, on macOS; `/proc/<pid>/statm` times the
+  page size, or `VmRSS` from `/proc/<pid>/status` in TypeScript, on Linux) and
+  kills it with `SIGKILL` above `store_max_memory`. Node cannot read another
+  process's memory on macOS without a native module, so the TypeScript store
+  process also samples its own RSS every 20 ms and kills itself, and the outside
+  check runs `ps` every 50 ms and takes the larger of it and the latest
+  `/usr/bin/footprint` reading. `footprint` (20 to 150 ms per call, measured)
+  runs alongside, never in the `ps` loop's path; each external command is killed
+  after 1 s, and a footprint reading older than 1 s is not used. The
+  self-check sees resident memory only, so memory macOS has compressed is caught
+  by the outside check alone. The store process keeps its self-check running, and
+  Sluice keeps the request in flight (so the outside check keeps sampling), until
+  DuckDB has actually stopped: a query past its deadline is interrupted, not
+  abandoned, and §6.2's 5-second grace kill applies to it. A query admission slot
+  is held for the same span.
+  On Linux the store process runs under `RLIMIT_DATA`, set only after DuckDB
+  has opened, the lockdown is applied and the gate canary has passed, to the
+  process's data segment at that moment (`VmData`) plus `store_max_memory` plus
+  64 MiB. `RLIMIT_DATA` counts reserved address space, not resident pages, and
+  the opening reservation varies with the architecture (DuckDB bundles jemalloc
+  on x86_64, and V8 reserves more there): a fixed allowance that worked on arm64
+  kept the TypeScript store from opening on x86_64 CI. Measured from the real
+  baseline it is a kernel backstop for growth the sampler misses, not the cap.
+  Python sets it with `setrlimit`; Node cannot, so Sluice applies it to the
+  TypeScript store process with util-linux `prlimit`, and if that fails it logs
+  a warning and relies on sampling. An allocation failure inside the store
+  process (DuckDB's `bad allocation`, or a `MemoryError`) is a breach too: the
+  store process reports it and exits,
+  because the spike saw a store left unusable after one. Measured overshoot past
+  a 256 MiB cap: 2 to 18 MB on macOS arm64 and Linux arm64 (task 1223 tests);
+  past a 2 GiB cap the spike measured 60 to 145 MB. Expect up to about 150 MB.
+- **Reset.** When the store process dies for any reason (the cap, a crash, the
+  timeout grace kill of §6.2), every request in flight fails, and the next one
+  starts a fresh, empty store process. The `query` that was running fails with
+  an error beginning `store reset:` that names the cause and `store_max_memory`.
+  Any later `query` naming a table or envelope view from before the reset fails
+  with an error saying it was lost when the store was reset; the names are kept
+  in a bounded cache (`max_session_calls * 64`, like evicted names), after which
+  the ordinary unknown-table rejection applies. Table sequence numbers are not
+  reset, and envelope views are renamed per reset (§3.3), so a pre-reset name
+  never resolves to post-reset data. Retention state lives with the data and
+  restarts empty.
+- **Interception keeps working.** A commit in flight when the store process dies
+  fails like any other write (§8 table, "Inference or insert fails"): Sluice
+  retries envelope-only on the fresh store, and the tool call returns an
+  envelope-only handle whose `flat_reason` is `load_failed: StoreResetError: ...`.
+  If that also fails, the downstream result is returned unmodified. Only `query`
+  reports a reset as an error.
+- **Not covered.** Memory the Sluice process spends before the store sees a
+  payload (MCP SDK decoding, JSON parsing, planning), which `max_payload_bytes`
+  and admission bound as before. Overshoot between samples. An agent that forces
+  resets erases its own and every other conversation's tables in that process; a
+  reset is a denial of service to the whole session, by design preferred to the
+  host killing Sluice. Linux x86_64, where DuckDB bundles jemalloc, was not
+  measured.
+- **Platforms.** The store process and its samplers run only on macOS and Linux.
+  On any other platform (Windows in particular, which has no `pass_fds`,
+  `SIGKILL` or `resource`) Sluice runs DuckDB in its own process as before and
+  logs a warning at startup that `store_max_memory` is not enforced there. It is
+  never a silent no-cap. With no store process to kill, a query that ignores its
+  interrupt is reported as timed out 5 seconds after the interrupt (the §6.2
+  grace period), and DuckDB may keep running it inside Sluice until it ends.
+
+Materializing a 4.5 MB, 3,800-row structured result (the size of a 19-page
+collection) took 0.85 s in-process and 0.91 s through the store process in
+Python, and 0.16 s and 0.19 s in TypeScript (medians of 7, macOS arm64).
+
 ## 9. Concurrency
 
-- One writer connection. Writes serialized behind a lock (`anyio.Lock` in Python).
+- One writer connection, in the store process (§8). Writes serialized behind a lock (`anyio.Lock` in Python) in the Sluice process, which sends one commit at a time.
 - **One dedicated DuckDB connection per in-flight query**, closed when the query
   finishes. The timeout interrupts that exact object (§6.2).
 - Materialization admission gated by `max_concurrent_materializations` (§7),

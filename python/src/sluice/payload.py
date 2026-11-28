@@ -9,6 +9,7 @@ from typing import Any
 from mcp import types
 
 from sluice.models import Passthrough, PayloadChannel, SelectedPayload
+from sluice.text import truncate_to_bytes
 
 TEXT_KIND = "text"
 MAX_CONTENT_KINDS = 32
@@ -171,24 +172,6 @@ def select(result: types.CallToolResult) -> SelectedPayload:
         byte_size=len(text.encode("utf-8")),
         wire_bytes=wire,
     )
-
-
-def truncate_to_bytes(text: str, limit: int) -> tuple[str, bool]:
-    """Cut to a byte budget on a character boundary.
-
-    Slicing UTF-8 at a byte offset produces invalid text and would corrupt the
-    handle the agent depends on.
-    """
-    encoded = text.encode("utf-8")
-    if len(encoded) <= limit:
-        return text, False
-    cut = encoded[:limit]
-    while cut:
-        try:
-            return cut.decode("utf-8"), True
-        except UnicodeDecodeError:
-            cut = cut[:-1]
-    return "", True
 
 
 def render_preview(payload: SelectedPayload, limit: int) -> tuple[str, bool]:

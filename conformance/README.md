@@ -97,7 +97,9 @@ with `executes: true` also runs the SQL on that connection.
 Rejection categories: `parse_error`, `no_statement`, `multiple_statements`,
 `not_select`, `unanalyzable`, `table_function`, `function`, `schema_qualified`,
 `unknown_table`, `evicted_table`, `show_describe`. The `query` tool adds
-`invalid_argument`, `timeout` and `execution_error`. Where the category depends
+`invalid_argument`, `timeout`, `store_reset` (this query pushed the store process
+past `store_max_memory`, spec 001 §8), `stale_handle` (the query names a table or
+envelope view lost in an earlier reset) and `execution_error`. Where the category depends
 on which layer refuses first, the case lists every acceptable one. That is the
 case for non-SELECT statements and `PRAGMA`: Python on DuckDB 1.5.5 refuses
 PRAGMA as unanalyzable, Python on 2.x refuses it as not SELECT, and Node types it
@@ -178,8 +180,9 @@ fixtures avoid rendering lists, JSON and timestamps directly.
 
 ### Session
 
-A session case opens a fresh store with `limits` (spec 001 §7 field names;
-unset fields take their defaults) and runs `steps` in order. Each call step is
+A session case opens a fresh store, in its own store process as in production
+(spec 001 §8), with `limits` (spec 001 §7 field names; unset fields take their
+defaults) and runs `steps` in order. Each call step is
 intercepted as a call to tool `tool` (default `"tool"`) on server `server`
 (default `"conformance"`), with `arguments` and request `meta`. The query tool is
 mounted.

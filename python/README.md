@@ -170,7 +170,22 @@ fail loudly.
 These are operational and logical bounds, not a process-RSS guarantee.
 `duckdb_max_memory = "1GB"` limits DuckDB's engine allocations, not the whole
 process, and the MCP SDK may decode structured content before Sluice can measure
-it. The [memory benchmark](https://github.com/miles-automation/sluice/blob/main/python/benchmarks/results/memory-2026-08-30.md)
+it.
+
+The real memory bound is `store_max_memory` (default 2 GiB, which must be
+greater than `duckdb_max_memory`). DuckDB runs in a child process
+(`python -m sluice._store_worker`) that Sluice samples every 20 ms and kills when
+its resident memory passes the cap; on Linux the child also runs under
+`RLIMIT_DATA`. A string expression DuckDB does not count against `max_memory`
+can otherwise grow without limit. When the cap is hit, the query that caused it
+fails with a `store reset` error, the store restarts empty, and every table and
+handle from before the reset fails loudly afterwards. A tool call whose result
+was being stored at that moment still returns its result, recorded
+envelope-only. Expect the cap to be overshot by up to about 150 MB between
+samples. The cap does not cover memory the Sluice process itself spends
+decoding a tool result. The store process runs only on macOS and Linux; on
+other platforms, Windows included, DuckDB runs inside the Sluice process and
+Sluice logs a warning at startup that `store_max_memory` is not enforced. The [memory benchmark](https://github.com/miles-automation/sluice/blob/main/python/benchmarks/results/memory-2026-08-30.md)
 records the four-shape, dual-channel concurrency calibration and long-session
 evidence.
 

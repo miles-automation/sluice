@@ -66,6 +66,7 @@ const INTEGER_LIMITS = [
   "max_cell_bytes",
   "max_session_bytes",
   "max_session_calls",
+  "store_max_memory",
   "preview_bytes",
   "preview_rows",
 ] as const;

@@ -1,0 +1,235 @@
+{
+  "kind": "session",
+  "description": "The store process memory cap (spec 001 §7, §8): a query that pushes the store past store_max_memory fails with a store-reset error, the session keeps serving on a fresh store, and every table and envelope view from before the reset fails loudly instead of reading as empty.",
+  "cases": [
+    {
+      "id": "session.reset.query-over-the-cap-resets-the-store",
+      "spec": "001 §7, §8",
+      "note": "The hostile query is 13 nested replace() calls over 20 one-character rows: about 1.8 GB when nothing stops it (review/memory-cap.md, nested_replace_tiny_literals), which DuckDB's max_memory does not track. The 256 MiB cap stops it at the cap plus the sampling overshoot, or earlier on Linux where RLIMIT_DATA makes the allocation fail inside the store process.",
+      "limits": {
+        "store_max_memory": 268435456,
+        "duckdb_max_memory": "64MB"
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"s\": \"a\"}, {\"id\": 2, \"s\": \"a\"}, {\"id\": 3, \"s\": \"a\"}, {\"id\": 4, \"s\": \"a\"}, {\"id\": 5, \"s\": \"a\"}, {\"id\": 6, \"s\": \"a\"}, {\"id\": 7, \"s\": \"a\"}, {\"id\": 8, \"s\": \"a\"}, {\"id\": 9, \"s\": \"a\"}, {\"id\": 10, \"s\": \"a\"}, {\"id\": 11, \"s\": \"a\"}, {\"id\": 12, \"s\": \"a\"}, {\"id\": 13, \"s\": \"a\"}, {\"id\": 14, \"s\": \"a\"}, {\"id\": 15, \"s\": \"a\"}, {\"id\": 16, \"s\": \"a\"}, {\"id\": 17, \"s\": \"a\"}, {\"id\": 18, \"s\": \"a\"}, {\"id\": 19, \"s\": \"a\"}, {\"id\": 20, \"s\": \"a\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 20
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(id) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                210
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(s, 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'))) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "store_reset"
+            ],
+            "mentions": [
+              "store_max_memory"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(id) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "stale_handle"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT count(*) FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "stale_handle"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT 1 AS one"
+          },
+          "expect": {
+            "rows": [
+              [
+                1
+              ]
+            ]
+          }
+        },
+        {
+          "call": "c2",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 101}, {\"id\": 102}, {\"id\": 103}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 3
+              }
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(id) FROM \"{{c2.table}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                306
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session.reset.conversation-envelope-is-not-reused",
+      "spec": "001 §3.3, §7, §12",
+      "note": "A conversation id maps to the same scope before and after the reset. The envelope view after the reset has a different name, so the pre-reset handle's envelope fails loudly rather than reading the new store's rows, which would hold none of its calls.",
+      "limits": {
+        "store_max_memory": 268435456,
+        "duckdb_max_memory": "64MB"
+      },
+      "steps": [
+        {
+          "call": "c1",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 1, \"s\": \"a\"}, {\"id\": 2, \"s\": \"a\"}, {\"id\": 3, \"s\": \"a\"}, {\"id\": 4, \"s\": \"a\"}, {\"id\": 5, \"s\": \"a\"}, {\"id\": 6, \"s\": \"a\"}, {\"id\": 7, \"s\": \"a\"}, {\"id\": 8, \"s\": \"a\"}, {\"id\": 9, \"s\": \"a\"}, {\"id\": 10, \"s\": \"a\"}, {\"id\": 11, \"s\": \"a\"}, {\"id\": 12, \"s\": \"a\"}, {\"id\": 13, \"s\": \"a\"}, {\"id\": 14, \"s\": \"a\"}, {\"id\": 15, \"s\": \"a\"}, {\"id\": 16, \"s\": \"a\"}, {\"id\": 17, \"s\": \"a\"}, {\"id\": 18, \"s\": \"a\"}, {\"id\": 19, \"s\": \"a\"}, {\"id\": 20, \"s\": \"a\"}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 20
+              }
+            ]
+          },
+          "meta": {
+            "conversationId": "conformance-reset"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT sum(length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(s, 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'), 'a', 'aaaa'))) FROM \"{{c1.table}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "store_reset"
+            ]
+          }
+        },
+        {
+          "call": "c2",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"items\": [{\"id\": 101}, {\"id\": 102}, {\"id\": 103}]}"
+              }
+            ]
+          },
+          "expect": {
+            "outcome": "handle",
+            "tables": [
+              {
+                "source_path": "$.items",
+                "row_count": 3
+              }
+            ]
+          },
+          "meta": {
+            "conversationId": "conformance-reset"
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT count(*) FROM \"{{c1.envelope}}\""
+          },
+          "expect": {
+            "error": true,
+            "categories": [
+              "stale_handle"
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT count(*), min(seq) > 0 FROM \"{{c2.envelope}}\" WHERE call_id = '{{c2.call_id}}'"
+          },
+          "expect": {
+            "rows": [
+              [
+                1,
+                {
+                  "bool": true
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "query": {
+            "sql": "SELECT count(*) FROM \"{{c2.envelope}}\""
+          },
+          "expect": {
+            "rows": [
+              [
+                1
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

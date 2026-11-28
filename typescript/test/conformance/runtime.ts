@@ -11,6 +11,8 @@ export const LOCKDOWN: readonly string[] = [
 ];
 
 const GATE_CATEGORIES: readonly (readonly [string, string])[] = [
+  ["lost when the store was reset", "stale_handle"],
+  ["store reset", "store_reset"],
   ["could not parse", "parse_error"],
   ["no statement found", "no_statement"],
   ["statements found", "multiple_statements"],
