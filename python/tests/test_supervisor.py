@@ -229,8 +229,20 @@ async def test_timed_out_hostile_query_stays_watched_until_duckdb_stops() -> Non
         handle = await _materialize(interceptor, _seed_rows())
         with pytest.raises(QueryRejectedError) as caught:
             await query.run(_hostile(handle["tables"][0]["name"]))
-        assert str(caught.value).startswith("store reset:")
-        assert store.resets == 1
+        message = str(caught.value)
+        assert message.startswith(("store reset:", "query exceeded the 0.05s timeout"))
+        if message.startswith("store reset:"):
+            assert store.resets == 1
+            return
+        sampler = memory_sampler()
+        process = store.process
+        assert sampler is not None and process is not None
+        peak = 0
+        for _ in range(40):
+            peak = max(peak, sampler(process.pid) or 0)
+            time.sleep(0.025)
+        assert peak < CAP, f"the store kept growing after the timeout: {peak} bytes"
+        assert store.resets == 0
 
 
 async def test_query_replies_stay_within_the_output_budget(

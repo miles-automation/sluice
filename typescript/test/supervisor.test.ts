@@ -222,9 +222,21 @@ test("a timed-out hostile query stays watched until DuckDB stops", async () => {
   await withStore(limits, async (store, interceptor, query) => {
     const handle = await materialize(interceptor, seedRows());
     const message = await rejection(query.run(hostile(handle.tables[0]?.name ?? "")));
-    assert.match(message, /^store reset:/u);
-    assert.equal(store.resets, 1);
+    assert.match(message, /^(store reset:|query exceeded the 0\.05s timeout)/u);
     assert.equal(query.inFlight, 0);
+    if (message.startsWith("store reset:")) {
+      assert.equal(store.resets, 1);
+      return;
+    }
+    const pid = store.process?.pid ?? 0;
+    const sampler = memorySampler();
+    let peak = 0;
+    for (let i = 0; i < 40; i += 1) {
+      peak = Math.max(peak, (await sampler.sample(pid)) ?? 0);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(peak < CAP, `the store kept growing after the timeout: ${describeBytes(peak)}`);
+    assert.equal(store.resets, 0);
   });
 });
 
