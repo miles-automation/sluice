@@ -1,0 +1,242 @@
+{
+  "kind": "gate",
+  "description": "Quadratic string-distance functions (spec 001 §6.1, review/memory-cap.md): damerau_levenshtein, levenshtein, editdist3, jaro_similarity and jaro_winkler_similarity are refused by name, in any query position and through a macro, because their memory or time grows with the square of the input length and max_memory does not bound them. Linear neighbours stay allowed.",
+  "defaults": {
+    "setup": [
+      "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+      "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+      "CREATE TABLE other (a BIGINT)",
+      "INSERT INTO other VALUES (1), (3)",
+      "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+      "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+      "CREATE TABLE gone (a BIGINT)"
+    ],
+    "allowed": [
+      "mine",
+      "other"
+    ],
+    "evicted": [
+      "gone"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gate.function.damerau-levenshtein",
+      "spec": "001 §6.1",
+      "sql": "SELECT damerau_levenshtein(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "damerau_levenshtein"
+        ]
+      },
+      "description": "Quadratic memory: 503 MB for two 8,000-character strings (review/memory-cap.md)."
+    },
+    {
+      "id": "gate.function.levenshtein",
+      "spec": "001 §6.1",
+      "sql": "SELECT levenshtein(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "levenshtein"
+        ]
+      },
+      "description": "Quadratic time: 5.7 s for two 64,000-character strings."
+    },
+    {
+      "id": "gate.function.editdist3",
+      "spec": "001 §6.1",
+      "sql": "SELECT editdist3(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "editdist3"
+        ]
+      },
+      "description": "An alias of levenshtein with the same quadratic time."
+    },
+    {
+      "id": "gate.function.jaro-similarity",
+      "spec": "001 §6.1",
+      "sql": "SELECT jaro_similarity(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "jaro_similarity"
+        ]
+      },
+      "description": "Quadratic time: 6 s for two 2,000,000-character strings."
+    },
+    {
+      "id": "gate.function.jaro-winkler-similarity",
+      "spec": "001 §6.1",
+      "sql": "SELECT jaro_winkler_similarity(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "jaro_winkler_similarity"
+        ]
+      },
+      "description": "Quadratic time, like jaro_similarity."
+    },
+    {
+      "id": "gate.function.string-distance-uppercase",
+      "spec": "001 §6.1",
+      "sql": "SELECT DAMERAU_LEVENSHTEIN(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "damerau_levenshtein"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.string-distance-in-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH x AS (SELECT damerau_levenshtein(b, b || b) AS d FROM mine) SELECT * FROM x",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "damerau_levenshtein"
+        ]
+      }
+    },
+    {
+      "id": "gate.function.string-distance-in-recursive-cte",
+      "spec": "001 §6.1",
+      "sql": "WITH RECURSIVE r(s) AS (SELECT 'x' UNION ALL SELECT s || s FROM r WHERE length(s) < 64) SELECT levenshtein(s, reverse(s)) FROM r",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "levenshtein"
+        ]
+      },
+      "description": "Recursive CTEs stay allowed; the distance call inside one is refused."
+    },
+    {
+      "id": "gate.function.user-macro-reaching-string-distance",
+      "spec": "001 §6.1",
+      "setup": [
+        "CREATE TABLE mine (a BIGINT, b VARCHAR)",
+        "INSERT INTO mine VALUES (1, 'x'), (2, 'y')",
+        "CREATE TABLE other (a BIGINT)",
+        "INSERT INTO other VALUES (1), (3)",
+        "CREATE TABLE sluice_calls (a BIGINT, scope_id VARCHAR, flat_tables VARCHAR[])",
+        "CREATE VIEW sluice_calls__0123 AS SELECT * FROM sluice_calls",
+        "CREATE TABLE gone (a BIGINT)",
+        "CREATE MACRO near(x, y) AS jaro_winkler_similarity(x, y) > 0.9"
+      ],
+      "sql": "SELECT near(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "near"
+        ]
+      },
+      "description": "A macro calling a quadratic distance function is refused transitively."
+    },
+    {
+      "id": "gate.function.string-distance-method-syntax",
+      "spec": "001 §6.1",
+      "sql": "SELECT b.levenshtein(b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "levenshtein"
+        ]
+      },
+      "description": "Method-call syntax resolves to the same function and must be refused by name."
+    },
+    {
+      "id": "gate.function.string-distance-schema-qualified",
+      "spec": "001 §6.1",
+      "sql": "SELECT main.levenshtein(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "levenshtein"
+        ]
+      },
+      "description": "A schema-qualified function name is refused by its unqualified name."
+    },
+    {
+      "id": "gate.function.string-distance-in-lambda",
+      "spec": "001 §6.1",
+      "sql": "SELECT list_transform([b], x -> jaro_winkler_similarity(x, x)) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "jaro_winkler_similarity"
+        ]
+      },
+      "description": "A denied function inside a lambda body is still refused."
+    },
+    {
+      "id": "gate.function.hamming-is-allowed",
+      "spec": "001 §6.1",
+      "sql": "SELECT hamming(b, b) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      },
+      "description": "Linear in the input length: 4 ms for 4,000,000 characters, no extra memory."
+    },
+    {
+      "id": "gate.function.mismatches-is-allowed",
+      "spec": "001 §6.1",
+      "sql": "SELECT mismatches(b, b) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      },
+      "description": "An alias of hamming."
+    },
+    {
+      "id": "gate.function.jaccard-is-allowed",
+      "spec": "001 §6.1",
+      "sql": "SELECT jaccard(b, b || b) FROM mine",
+      "expect": {
+        "decision": "allow",
+        "executes": true
+      },
+      "description": "Linear: compares character sets, 11 ms for 4,000,000 characters."
+    }
+  ]
+}

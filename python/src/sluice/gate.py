@@ -46,8 +46,13 @@ MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: frozenset[str] = frozenset(
     {
         "array_resize",
         "bitstring",
+        "damerau_levenshtein",
+        "editdist3",
         "format",
+        "jaro_similarity",
+        "jaro_winkler_similarity",
         "json_serialize_plan",
+        "levenshtein",
         "list_resize",
         "lpad",
         "nextval",
@@ -58,7 +63,8 @@ MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: frozenset[str] = frozenset(
         "write_log",
     }
 )
-"""Scalar calls that mutate, block, allocate from an attacker-chosen size, or bind SQL text."""
+"""Scalar calls that mutate, block, allocate from an attacker-chosen size, bind SQL text,
+or cost quadratic memory or time in their input length."""
 
 
 QUERY_NODE_TYPES: frozenset[str] = frozenset(

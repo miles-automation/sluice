@@ -1,0 +1,16 @@
+{
+ "duckdb": "2.0.1",
+ "gate": {
+  "nested_replace": "admitted",
+  "concat_chain": "admitted",
+  "recursive_doubling": "admitted",
+  "damerau_levenshtein": "admitted",
+  "string_agg": "admitted",
+  "list_agg": "admitted",
+  "regexp_replace_g": "admitted",
+  "control_group": "admitted",
+  "nested_replace_tiny_literals": "admitted",
+  "truncated_wrapper": "admitted",
+  "normal": "admitted"
+ }
+}
