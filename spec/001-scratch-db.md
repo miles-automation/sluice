@@ -658,8 +658,9 @@ Agent-sized allocation is denied by name too: `lpad`, `rpad`, `list_resize`,
 `array_resize` and `bitstring` allocate from a size argument before output
 rendering applies its cap. So is the **quadratic string-distance class**:
 `damerau_levenshtein`, `levenshtein`, `editdist3`, `jaro_similarity` and
-`jaro_winkler_similarity`. Their cost grows with the product of the two input
-lengths, and `max_memory` does not track it: `damerau_levenshtein` on a
+`jaro_winkler_similarity`. Their time grows roughly with the square of the
+input length (memory too, for `damerau_levenshtein`), and `max_memory` does not
+track it: `damerau_levenshtein` on a
 14,000-character string reached 1.6 to 1.7 GB under a 256 MB `max_memory`, and two
 8,000-character strings already take 503 MB. `levenshtein`, `editdist3` and the
 Jaro functions keep memory linear but take quadratic time (5.7 s for two

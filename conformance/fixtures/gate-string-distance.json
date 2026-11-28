@@ -164,6 +164,51 @@
       "description": "A macro calling a quadratic distance function is refused transitively."
     },
     {
+      "id": "gate.function.string-distance-method-syntax",
+      "spec": "001 §6.1",
+      "sql": "SELECT b.levenshtein(b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "levenshtein"
+        ]
+      },
+      "description": "Method-call syntax resolves to the same function and must be refused by name."
+    },
+    {
+      "id": "gate.function.string-distance-schema-qualified",
+      "spec": "001 §6.1",
+      "sql": "SELECT main.levenshtein(b, b) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "levenshtein"
+        ]
+      },
+      "description": "A schema-qualified function name is refused by its unqualified name."
+    },
+    {
+      "id": "gate.function.string-distance-in-lambda",
+      "spec": "001 §6.1",
+      "sql": "SELECT list_transform([b], x -> jaro_winkler_similarity(x, x)) FROM mine",
+      "expect": {
+        "decision": "reject",
+        "categories": [
+          "function"
+        ],
+        "mentions": [
+          "jaro_winkler_similarity"
+        ]
+      },
+      "description": "A denied function inside a lambda body is still refused."
+    },
+    {
       "id": "gate.function.hamming-is-allowed",
       "spec": "001 §6.1",
       "sql": "SELECT hamming(b, b) FROM mine",

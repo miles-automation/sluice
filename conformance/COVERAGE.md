@@ -12,8 +12,8 @@ compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
 Summary: 307 test functions. 200 are expressed as fixtures, 93 stay
-Python-only, 14 are the conformance runner itself. 527 fixture cases in
-total; 59 of them cover behavior no existing Python test asserted (listed
+Python-only, 14 are the conformance runner itself. 530 fixture cases in
+total; 62 of them cover behavior no existing Python test asserted (listed
 at the end).
 
 Reasons a test stays Python-only:
@@ -489,6 +489,9 @@ Reasons a test stays Python-only:
 - `gate.function.hamming-is-allowed`
 - `gate.function.harmless-user-macro-is-allowed`
 - `gate.function.jaccard-is-allowed`
+- `gate.function.string-distance-method-syntax`
+- `gate.function.string-distance-schema-qualified`
+- `gate.function.string-distance-in-lambda`
 - `gate.function.jaro-similarity`
 - `gate.function.jaro-winkler-similarity`
 - `gate.function.levenshtein`

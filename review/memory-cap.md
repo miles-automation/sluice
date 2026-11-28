@@ -327,7 +327,9 @@ class, `distance_growth.py` runs each DuckDB string-similarity function on two
 strings of growing length, one probe per child process, killed at 1 GiB RSS or
 60 s. `delta_mb` is peak RSS during the call minus peak RSS before it; inputs are
 at most 8 MB. macOS arm64, `threads=1`. DuckDB 2.0.1 and 1.5.5 expose the same set
-and measured within 10% of each other; no built-in macro calls any of them.
+of these functions; no built-in macro calls any of them. The table is the 2.0.1 run.
+The 1.5.5 rerun was within about 10% but its raw output was not kept; rerun
+`spike/memory-cap/distance_growth.py` to reproduce.
 
 | function | lengths | seconds | delta_mb | growth per doubling | decision |
 |---|---|---|---|---|---|
