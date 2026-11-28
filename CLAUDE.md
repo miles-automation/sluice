@@ -102,7 +102,9 @@ client --stdio--> server.py  tools/list = downstream union + query
                   infer.py   column types + the `exact` flag           (pure)
                   naming.py  injective names, quoting, collisions      (pure)
                   scope.py   scope ids; stale handles fail loudly
-                  store.py   envelope row + typed tables
+                  supervisor.py  parent side of the store: child process, memory cap, resets
+                  _store_worker.py  the child that owns DuckDB (ipc.py framing, execute.py)
+                  store.py   envelope row + typed tables (runs inside the child)
                   handle.py  preview + tables + columns -> the agent
                   query.py   per-query connection, timeout, result shaping
 ```
@@ -160,6 +162,10 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
   are blocked too: their cost escapes `max_memory` (review/memory-cap.md).
 - **Admission covers the whole interception pipeline** (§7). Selection, parse,
   projection, commit, and handle rendering all run under the same semaphore.
+- **The store has a real memory cap** (§8). DuckDB runs in a child process killed at
+  `store_max_memory` (default 2 GiB); the query that crossed it fails with a store
+  reset, and every earlier table and envelope view fails loudly as stale. Tests that
+  provoke a reset use caps of 256-512 MiB: never write a probe that can exceed a few GB.
 - **Session retention is bounded** (§7). `max_session_bytes` evicts oldest calls
   deterministically, dropping their tables and payload columns while preserving
   envelope metadata; handles never advertise a table after its call is evicted.
