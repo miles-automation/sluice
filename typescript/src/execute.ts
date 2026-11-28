@@ -4,6 +4,7 @@ import { QUERY_OUTPUT_MIN_BYTES } from "./limits.ts";
 import { byteLength, truncateToBytes } from "./payload.ts";
 
 export const INTERRUPT_RETRY_MS = 50;
+export const INTERRUPT_GRACE_MS = 5000;
 export const CELL_SLACK_BYTES = 4;
 
 export type Cell = string | null;
@@ -136,17 +137,27 @@ export async function executeOnConnection(
   cellBytes: number,
   outputBytes: number,
   signal: AbortSignal,
+  abandonAfterMs: number | null = null,
 ): Promise<QueryRows> {
   let connection: DuckDBConnection | undefined;
   let retry: ReturnType<typeof setInterval> | undefined;
   let finished = false;
   const expired = (): boolean => signal.aborted;
+  let abandon: ReturnType<typeof setTimeout> | undefined;
+  let giveUp = (): void => undefined;
+  const abandoned = new Promise<never>((_, reject) => {
+    giveUp = () => reject(new QueryInterrupted());
+  });
+  abandoned.catch(() => undefined);
   const expire = (): void => {
     if (finished) {
       return;
     }
     connection?.interrupt();
     retry = setInterval(() => connection?.interrupt(), INTERRUPT_RETRY_MS);
+    if (abandonAfterMs !== null) {
+      abandon = setTimeout(giveUp, abandonAfterMs);
+    }
   };
   if (signal.aborted) {
     expire();
@@ -199,8 +210,9 @@ export async function executeOnConnection(
       connection?.closeSync();
     }
   })();
+  work.catch(() => undefined);
   try {
-    const rows = await work;
+    const rows = await Promise.race([work, abandoned]);
     if (expired()) {
       throw new QueryInterrupted();
     }
@@ -214,6 +226,8 @@ export async function executeOnConnection(
     }
     throw engineFailure(error);
   } finally {
+    clearTimeout(abandon);
+    clearInterval(retry);
     signal.removeEventListener("abort", expire);
   }
 }

@@ -1,4 +1,4 @@
-import { writeSync } from "node:fs";
+import { readFileSync, writeSync } from "node:fs";
 import { Socket } from "node:net";
 import { AllocationFailed, QueryInterrupted, executeOnConnection, isAllocationFailure } from "./execute.ts";
 import { QueryRejectedError } from "./gate.ts";
@@ -18,6 +18,18 @@ function mib(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
+export function dataSegmentBytes(): number | null {
+  if (process.platform !== "linux") {
+    return null;
+  }
+  try {
+    const match = /^VmData:\s+([0-9]+)\s+kB$/mu.exec(readFileSync("/proc/self/status", "ascii"));
+    return match?.[1] === undefined ? null : Number(match[1]) * 1024;
+  } catch {
+    return null;
+  }
+}
+
 export function replyFrame(message: Message, maxBytes: number = REPLY_MAX_BYTES): Buffer {
   const encoded = frame(message);
   if (encoded.length <= maxBytes) {
@@ -35,16 +47,15 @@ export function replyFrame(message: Message, maxBytes: number = REPLY_MAX_BYTES)
 class StoreServer {
   readonly #descriptor: number;
   readonly #socket: Socket;
-  readonly #cap: number;
+  #cap = Number.POSITIVE_INFINITY;
   readonly #writes = new Mutex();
   readonly #queries = new Map<number, AbortController>();
   #store: Store | undefined;
   #busy = 0;
   #watch: ReturnType<typeof setInterval> | undefined;
 
-  constructor(descriptor: number, cap: number) {
+  constructor(descriptor: number) {
     this.#descriptor = descriptor;
-    this.#cap = cap;
     this.#socket = new Socket({ fd: descriptor, readable: true, writable: true });
   }
 
@@ -142,8 +153,9 @@ class StoreServer {
   async #open(message: Message): Promise<void> {
     try {
       const limits = makeLimits(message["limits"] as Record<string, unknown>);
+      this.#cap = limits.store_max_memory;
       this.#store = await Store.open(limits, Number(message["generation"]));
-      this.#send({ id: 0, ok: true });
+      this.#send({ id: 0, ok: true, data_segment: dataSegmentBytes() });
     } catch (error) {
       this.#send({ id: 0, ok: false, ...describe(error) });
     }
@@ -191,6 +203,6 @@ class StoreServer {
   }
 }
 
-export function serveStore(descriptor: number, cap: number): void {
-  new StoreServer(descriptor, cap).serve();
+export function serveStore(descriptor: number): void {
+  new StoreServer(descriptor).serve();
 }

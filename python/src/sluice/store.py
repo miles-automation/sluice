@@ -14,6 +14,7 @@ import duckdb
 
 from sluice.config import SESSION_CALLS_DEFAULT, SESSION_RETENTION_DEFAULT, Limits
 from sluice.execute import (
+    INTERRUPT_GRACE_SECONDS,
     QueryInterruptedError,
     QueryRows,
     execute_on_cursor,
@@ -348,35 +349,62 @@ class Store(CommitSequencer):
         allowed = self.allowed_objects
         evicted = self.evicted_tables
         expired = threading.Event()
+        done = threading.Event()
+        ownership = threading.Lock()
+        abandoned = False
+        outcome: list[QueryRows | BaseException] = []
 
         def expire() -> None:
             expired.set()
             with suppress(duckdb.Error):
                 cursor.interrupt()
 
-        def blocking() -> QueryRows:
-            return execute_on_cursor(
-                cursor,
-                sql,
-                limit,
-                allowed,
-                evicted,
-                limits.max_cell_bytes,
-                limits.query_max_bytes,
-                expired,
-            )
+        def blocking() -> None:
+            try:
+                outcome.append(
+                    execute_on_cursor(
+                        cursor,
+                        sql,
+                        limit,
+                        allowed,
+                        evicted,
+                        limits.max_cell_bytes,
+                        limits.query_max_bytes,
+                        expired,
+                    )
+                )
+            except BaseException as exc:
+                outcome.append(exc)
+            finally:
+                with ownership:
+                    done.set()
+                    close_here = abandoned
+                if close_here:
+                    cursor.close()
 
         timer = threading.Timer(limits.query_timeout_seconds, expire)
         timer.daemon = True
         timer.start()
+        threading.Thread(target=blocking, name="sluice-query", daemon=True).start()
         try:
-            return await anyio.to_thread.run_sync(blocking)
-        except QueryInterruptedError:
-            raise timeout_failure(limits.query_timeout_seconds) from None
+            await anyio.to_thread.run_sync(
+                done.wait, limits.query_timeout_seconds + INTERRUPT_GRACE_SECONDS
+            )
         finally:
             timer.cancel()
             timer.join()
-            cursor.close()
+            with ownership:
+                abandoned = not done.is_set()
+            if not abandoned:
+                cursor.close()
+        if abandoned:
+            raise timeout_failure(limits.query_timeout_seconds)
+        result = outcome[0]
+        if isinstance(result, QueryInterruptedError):
+            raise timeout_failure(limits.query_timeout_seconds) from None
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
     def _commit(self, record: CallRecord, plans: list[TablePlan]) -> CommitOutcome:
         record = replace(record, flat_reason=bounded_flat_reason(record.flat_reason))

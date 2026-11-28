@@ -1,9 +1,8 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { cpus } from "node:os";
 import type { Socket } from "node:net";
 import { fileURLToPath } from "node:url";
-import { timeoutFailure, type QueryRows } from "./execute.ts";
+import { INTERRUPT_GRACE_MS, timeoutFailure, type QueryRows } from "./execute.ts";
 import { QueryRejectedError } from "./gate.ts";
 import { BREACH_EXIT, FrameReader, REPLY_MAX_BYTES, frame, type Message } from "./ipc.ts";
 import type { Limits } from "./limits.ts";
@@ -16,16 +15,15 @@ const log = logger("sluice.supervisor");
 
 export const SAMPLE_INTERVAL_MS = 20;
 export const PS_SAMPLE_INTERVAL_MS = 50;
-export const INTERRUPT_GRACE_MS = 5000;
 export const OPEN_TIMEOUT_MS = 60_000;
 export const CLOSE_TIMEOUT_MS = 5000;
 
 const TOKEN = /[a-z0-9_]+/gu;
 
-export const ARENA_RESERVE_BYTES = 128 * 1024 * 1024;
+export const DATA_MARGIN_BYTES = 64 * 1024 * 1024;
 
-export function dataLimit(cap: number): number {
-  return cap + ARENA_RESERVE_BYTES * Math.max(cpus().length, 1);
+export function dataLimit(baseline: number, cap: number): number {
+  return baseline + cap + DATA_MARGIN_BYTES;
 }
 
 export type Sampler = (pid: number) => Promise<number | null>;
@@ -53,11 +51,20 @@ async function procSample(pid: number): Promise<number | null> {
   }
 }
 
+export const SAMPLE_COMMAND_TIMEOUT_MS = 1000;
+export const FOOTPRINT_STALE_MS = 1000;
+export const FOOTPRINT_PATH = "/usr/bin/footprint";
+
 function run(command: string, args: readonly string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile(command, [...args], { encoding: "utf8" }, (error, stdout) => {
-      resolve(error === null ? stdout : null);
-    });
+    execFile(
+      command,
+      [...args],
+      { encoding: "utf8", timeout: SAMPLE_COMMAND_TIMEOUT_MS, killSignal: "SIGKILL" },
+      (error, stdout) => {
+        resolve(error === null ? stdout : null);
+      },
+    );
   });
 }
 
@@ -67,13 +74,32 @@ async function psSample(pid: number): Promise<number | null> {
   return stdout !== null && stdout.trim() !== "" && Number.isFinite(kib) ? kib * 1024 : null;
 }
 
-async function footprintSample(pid: number): Promise<number | null> {
-  const [footprint, resident] = await Promise.all([run("/usr/bin/footprint", ["-p", String(pid)]), psSample(pid)]);
-  const physical = footprint === null ? null : parseFootprint(footprint);
-  if (physical === null) {
-    return resident;
-  }
-  return Math.max(physical, resident ?? 0);
+export function footprintSampler(command: string = FOOTPRINT_PATH): Sampler {
+  let latest: { readonly pid: number; readonly bytes: number; readonly at: number } | null = null;
+  let running = false;
+  const refresh = (pid: number): void => {
+    if (running) {
+      return;
+    }
+    running = true;
+    void run(command, ["-p", String(pid)]).then((output) => {
+      running = false;
+      const bytes = output === null ? null : parseFootprint(output);
+      if (bytes !== null) {
+        latest = { pid, bytes, at: performance.now() };
+      }
+    });
+  };
+  return async (pid) => {
+    refresh(pid);
+    const resident = await psSample(pid);
+    const physical =
+      latest !== null && latest.pid === pid && performance.now() - latest.at < FOOTPRINT_STALE_MS ? latest.bytes : null;
+    if (physical === null) {
+      return resident;
+    }
+    return Math.max(physical, resident ?? 0);
+  };
 }
 
 export function memorySampler(): { readonly sample: Sampler; readonly intervalMs: number } {
@@ -81,7 +107,7 @@ export function memorySampler(): { readonly sample: Sampler; readonly intervalMs
     return { sample: procSample, intervalMs: SAMPLE_INTERVAL_MS };
   }
   if (process.platform === "darwin") {
-    return { sample: footprintSample, intervalMs: PS_SAMPLE_INTERVAL_MS };
+    return { sample: footprintSampler(), intervalMs: PS_SAMPLE_INTERVAL_MS };
   }
   return { sample: psSample, intervalMs: PS_SAMPLE_INTERVAL_MS };
 }
@@ -146,23 +172,24 @@ export interface Request {
   readonly reply: Promise<Message>;
 }
 
-function workerCommand(cap: number): { readonly command: string; readonly args: string[] } {
+function workerCommand(): { readonly command: string; readonly args: string[] } {
   const extension = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
   const worker = fileURLToPath(new URL(`./store-worker${extension}`, import.meta.url));
-  const node = [process.execPath, worker, "3", String(cap)];
-  if (process.platform !== "linux") {
-    return { command: node[0] ?? process.execPath, args: node.slice(1) };
+  return { command: process.execPath, args: [worker, "3"] };
+}
+
+let prlimitWarned = false;
+
+async function limitData(pid: number, limit: number): Promise<number | null> {
+  const applied = await run("prlimit", ["--pid", String(pid), `--data=${limit}:${limit}`]);
+  if (applied !== null) {
+    return limit;
   }
-  return {
-    command: "/bin/sh",
-    args: [
-      "-c",
-      'ulimit -d "$1" 2>/dev/null || echo "sluice store: could not set RLIMIT_DATA" >&2; shift; exec "$@"',
-      "sh",
-      String(Math.floor(dataLimit(cap) / 1024)),
-      ...node,
-    ],
-  };
+  if (!prlimitWarned) {
+    prlimitWarned = true;
+    log.warning("could not set RLIMIT_DATA on the store process (is util-linux prlimit installed?); the memory cap relies on sampling alone");
+  }
+  return null;
 }
 
 function exitText(code: number | null, signal: NodeJS.Signals | null): string {
@@ -192,12 +219,13 @@ export class StoreProcess {
   #dead = false;
   #sampling = false;
   #peakBytes = 0;
+  #dataLimit: number | null = null;
 
   private constructor(limits: Limits, generation: number, onExit: (process: StoreProcess, cause: string) => void) {
     this.generation = generation;
     this.#limits = limits;
     this.#onExit = onExit;
-    const { command, args } = workerCommand(limits.store_max_memory);
+    const { command, args } = workerCommand();
     this.#child = spawn(command, args, { stdio: ["ignore", 2, 2, "pipe"] });
     const socket = this.#child.stdio[3];
     if (socket === null || socket === undefined) {
@@ -257,6 +285,10 @@ export class StoreProcess {
     return this.#peakBytes;
   }
 
+  get dataLimit(): number | null {
+    return this.#dataLimit;
+  }
+
   async #open(): Promise<void> {
     const reply = new Promise<Message>((resolve, reject) => {
       this.#opened = { resolve, reject };
@@ -267,6 +299,10 @@ export class StoreProcess {
       const opened = await reply;
       if (opened["ok"] !== true) {
         throw new StoreStartError(`the store process failed to open: ${String(opened["error"])}: ${String(opened["message"])}`);
+      }
+      const baseline = opened["data_segment"];
+      if (typeof baseline === "number") {
+        this.#dataLimit = await limitData(this.pid, dataLimit(baseline, this.#limits.store_max_memory));
       }
     } catch (error) {
       if (error instanceof StoreDied) {

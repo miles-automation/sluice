@@ -944,19 +944,29 @@ connections, admission, the FIFO commit order, sequence numbers and deadlines.
   kills it with `SIGKILL` above `store_max_memory`. Node cannot read another
   process's memory on macOS without a native module, so the TypeScript store
   process also samples its own RSS every 20 ms and kills itself, and the outside
-  check runs `/usr/bin/footprint` plus `ps` every 50 ms (about 20 ms per
-  `footprint` call, measured on a 1.2 GB process) and takes the larger. The
+  check runs `ps` every 50 ms and takes the larger of it and the latest
+  `/usr/bin/footprint` reading. `footprint` (20 to 150 ms per call, measured)
+  runs alongside, never in the `ps` loop's path; each external command is killed
+  after 1 s, and a footprint reading older than 1 s is not used. The
   self-check sees resident memory only, so memory macOS has compressed is caught
   by the outside check alone. The store process keeps its self-check running, and
   Sluice keeps the request in flight (so the outside check keeps sampling), until
   DuckDB has actually stopped: a query past its deadline is interrupted, not
   abandoned, and §6.2's 5-second grace kill applies to it. A query admission slot
-  is held for the same span. On Linux the store process runs under `RLIMIT_DATA` set to
-  `store_max_memory` plus 128 MiB per CPU. It counts reserved address space, not
-  resident pages, and DuckDB reserves about 0.6 GB of it at open with 12 threads
-  (measured), so it is a kernel backstop for growth the sampler misses, not the
-  cap. An allocation failure inside the store process (DuckDB's `bad allocation`,
-  or a `MemoryError`) is a breach too: the store process reports it and exits,
+  is held for the same span.
+  On Linux the store process runs under `RLIMIT_DATA`, set only after DuckDB
+  has opened, the lockdown is applied and the gate canary has passed, to the
+  process's data segment at that moment (`VmData`) plus `store_max_memory` plus
+  64 MiB. `RLIMIT_DATA` counts reserved address space, not resident pages, and
+  the opening reservation varies with the architecture (DuckDB bundles jemalloc
+  on x86_64, and V8 reserves more there): a fixed allowance that worked on arm64
+  kept the TypeScript store from opening on x86_64 CI. Measured from the real
+  baseline it is a kernel backstop for growth the sampler misses, not the cap.
+  Python sets it with `setrlimit`; Node cannot, so Sluice applies it to the
+  TypeScript store process with util-linux `prlimit`, and if that fails it logs
+  a warning and relies on sampling. An allocation failure inside the store
+  process (DuckDB's `bad allocation`, or a `MemoryError`) is a breach too: the
+  store process reports it and exits,
   because the spike saw a store left unusable after one. Measured overshoot past
   a 256 MiB cap: 2 to 18 MB on macOS arm64 and Linux arm64 (task 1223 tests);
   past a 2 GiB cap the spike measured 60 to 145 MB. Expect up to about 150 MB.
@@ -988,7 +998,9 @@ connections, admission, the FIFO commit order, sequence numbers and deadlines.
   On any other platform (Windows in particular, which has no `pass_fds`,
   `SIGKILL` or `resource`) Sluice runs DuckDB in its own process as before and
   logs a warning at startup that `store_max_memory` is not enforced there. It is
-  never a silent no-cap.
+  never a silent no-cap. With no store process to kill, a query that ignores its
+  interrupt is reported as timed out 5 seconds after the interrupt (the §6.2
+  grace period), and DuckDB may keep running it inside Sluice until it ends.
 
 Materializing a 4.5 MB, 3,800-row structured result (the size of a 19-page
 collection) took 0.85 s in-process and 0.91 s through the store process in

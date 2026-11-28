@@ -16,7 +16,7 @@ from typing import Any, Self
 import anyio
 
 from sluice.config import Limits
-from sluice.execute import QueryRows, timeout_failure
+from sluice.execute import INTERRUPT_GRACE_SECONDS, QueryRows, timeout_failure
 from sluice.gate import GateContractError, QueryRejectedError
 from sluice.ipc import (
     BREACH_EXIT,
@@ -34,7 +34,6 @@ from sluice.store import CommitOutcome, CommitSequencer, Store
 logger = logging.getLogger(__name__)
 
 SAMPLE_INTERVAL_SECONDS = 0.02
-INTERRUPT_GRACE_SECONDS = 5.0
 OPEN_TIMEOUT_SECONDS = 60.0
 CLOSE_TIMEOUT_SECONDS = 5.0
 
@@ -138,6 +137,7 @@ class StoreProcess:
     ) -> None:
         self.generation = generation
         self.peak_bytes = 0
+        self.data_limit: int | None = None
         self._limits = limits
         self._on_exit = on_exit
         self._sampler = memory_sampler()
@@ -159,7 +159,6 @@ class StoreProcess:
                     "-m",
                     "sluice._store_worker",
                     str(child.fileno()),
-                    str(limits.store_max_memory),
                 ],
                 pass_fds=(child.fileno(),),
                 stdin=subprocess.DEVNULL,
@@ -204,6 +203,8 @@ class StoreProcess:
             raise RuntimeError(f"the store process failed to start ({_exit_text(code)})") from exc
         self._channel.settimeout(None)
         if reply.get("ok"):
+            limit = reply.get("data_limit")
+            self.data_limit = int(limit) if limit is not None else None
             return
         message = str(reply.get("message"))
         if reply.get("error") == "GateContractError":

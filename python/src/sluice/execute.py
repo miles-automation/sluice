@@ -9,6 +9,7 @@ from sluice.gate import QueryRejectedError, check
 from sluice.text import truncate_to_bytes
 
 CELL_SLACK_BYTES = 4
+INTERRUPT_GRACE_SECONDS = 5.0
 
 type Cell = str | None
 

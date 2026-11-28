@@ -4,6 +4,7 @@ import socket
 import sys
 import threading
 from contextlib import suppress
+from pathlib import Path
 from typing import Any
 
 import duckdb
@@ -101,7 +102,7 @@ class Worker:
         except Exception as exc:
             self.send({"id": 0, "ok": False, "error": type(exc).__name__, "message": str(exc)})
             return
-        self.send({"id": 0, "ok": True})
+        self.send({"id": 0, "ok": True, "data_limit": limit_data(limits.store_max_memory)})
 
     def _require(self) -> Store:
         if self._store is None:
@@ -193,27 +194,43 @@ class Worker:
         self.send(reply)
 
 
-ARENA_RESERVE_BYTES = 128 * 1024 * 1024
+DATA_MARGIN_BYTES = 64 * 1024 * 1024
 
 
-def data_limit(cap: int) -> int:
-    return cap + ARENA_RESERVE_BYTES * max(os.cpu_count() or 1, 1)
+def data_limit(baseline: int, cap: int) -> int:
+    return baseline + cap + DATA_MARGIN_BYTES
 
 
-def _limit_data(cap: int) -> None:
+def data_segment_bytes() -> int | None:
+    try:
+        status = Path("/proc/self/status").read_text(encoding="ascii")
+    except OSError:
+        return None
+    for line in status.splitlines():
+        if line.startswith("VmData:"):
+            return int(line.split()[1]) * 1024
+    return None
+
+
+def limit_data(cap: int) -> int | None:
     if not sys.platform.startswith("linux"):
-        return
-    limit = data_limit(cap)
+        return None
+    baseline = data_segment_bytes()
+    if baseline is None:
+        print("sluice store: could not read VmData; RLIMIT_DATA not set", file=sys.stderr)
+        return None
+    limit = data_limit(baseline, cap)
     try:
         resource.setrlimit(resource.RLIMIT_DATA, (limit, limit))
     except ValueError, OSError:
         print(f"sluice store: could not set RLIMIT_DATA to {limit}", file=sys.stderr)
+        return None
+    return limit
 
 
 def main(argv: list[str]) -> int:
-    descriptor, cap = int(argv[0]), int(argv[1])
+    descriptor = int(argv[0])
     sys.stdout = sys.stderr
-    _limit_data(cap)
     channel = socket.socket(fileno=descriptor)
     Worker(channel).serve()
     return 0

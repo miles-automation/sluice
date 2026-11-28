@@ -18,7 +18,7 @@ import pytest
 from mcp import types
 
 from sluice import naming
-from sluice._store_worker import data_limit, reply_frame
+from sluice._store_worker import reply_frame
 from sluice.config import Limits
 from sluice.gate import QueryRejectedError
 from sluice.intercept import Interceptor
@@ -365,10 +365,16 @@ async def test_store_process_exits_when_its_parent_dies() -> None:
 async def test_store_process_runs_under_rlimit_data_on_linux() -> None:
     with SupervisedStore.open(LIMITS) as store:
         process = store.process
-        assert process is not None
+        assert process is not None and process.data_limit is not None
+        status = Path(f"/proc/{process.pid}/status").read_text(encoding="ascii")
+        vm_data = next(
+            int(row.split()[1]) * 1024 for row in status.splitlines() if row.startswith("VmData:")
+        )
+        assert CAP < process.data_limit - vm_data <= CAP + 64 * 1024 * 1024
         limits = Path(f"/proc/{process.pid}/limits").read_text(encoding="ascii")
         line = next(row for row in limits.splitlines() if row.startswith("Max data size"))
-        assert str(data_limit(CAP)) in line
+        assert str(process.data_limit) in line
+        assert "| 1 |" in await QueryTool(store, LIMITS).run("SELECT 1 AS one")
 
 
 def test_memory_sampler_reads_this_platform() -> None:
@@ -474,3 +480,28 @@ async def test_a_table_evicted_before_a_reset_is_still_reported_as_evicted() -> 
             await query.run(f'SELECT * FROM "{table}"')
         with pytest.raises(QueryRejectedError, match="lost when the store was reset"):
             await query.run(f'SELECT * FROM "{first["envelope_table"]}"')
+
+
+async def test_in_process_query_gives_up_after_the_grace_period(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = threading.Event()
+
+    def ignores_interrupt(*_args: object) -> object:
+        release.wait()
+        raise AssertionError("released")
+
+    monkeypatch.setattr("sluice.store.execute_on_cursor", ignores_interrupt)
+    monkeypatch.setattr("sluice.store.INTERRUPT_GRACE_SECONDS", 0.2)
+    limits = Limits(query_timeout_seconds=0.2)
+    safety = threading.Timer(4, release.set)
+    safety.start()
+    try:
+        with Store.open(limits) as store:
+            started = time.monotonic()
+            with pytest.raises(QueryRejectedError, match="timeout"):
+                await QueryTool(store, limits).run("SELECT 1")
+            assert time.monotonic() - started < 2
+    finally:
+        release.set()
+        safety.cancel()

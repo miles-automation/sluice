@@ -13,15 +13,16 @@ import type { ToolResult } from "../src/models.ts";
 import { mountedName } from "../src/naming.ts";
 import { QueryRejectedError } from "../src/gate.ts";
 import { QueryTool } from "../src/query.ts";
+import { QueryInterrupted, executeOnConnection } from "../src/execute.ts";
 import { FrameReader } from "../src/ipc.ts";
 import { replyFrame } from "../src/store-server.ts";
 import { Store } from "../src/store.ts";
 import {
   StoreProcess,
   SupervisedStore,
-  dataLimit,
   describeBytes,
   memorySampler,
+  footprintSampler,
   openStore,
   parseFootprint,
   parseStatusRss,
@@ -320,11 +321,17 @@ test("the store process exits when its parent dies", async () => {
 });
 
 test("the store process runs under RLIMIT_DATA on Linux", { skip: process.platform !== "linux" }, async () => {
-  await withStore(LIMITS, async (store) => {
-    const pid = store.process?.pid ?? -1;
-    const limits = readFileSync(`/proc/${pid}/limits`, "ascii");
+  await withStore(LIMITS, async (store, _interceptor, query) => {
+    const child = store.process;
+    assert.ok(child !== null && child.dataLimit !== null);
+    const status = readFileSync(`/proc/${child.pid}/status`, "ascii");
+    const vmData = Number(/^VmData:\s+([0-9]+) kB$/mu.exec(status)?.[1]) * 1024;
+    const headroom = child.dataLimit - vmData;
+    assert.ok(headroom > CAP && headroom <= CAP + 64 * 1024 * 1024, String(headroom));
+    const limits = readFileSync(`/proc/${child.pid}/limits`, "ascii");
     const line = limits.split("\n").find((row) => row.startsWith("Max data size")) ?? "";
-    assert.ok(line.includes(String(dataLimit(CAP))), line);
+    assert.ok(line.includes(String(child.dataLimit)), line);
+    assert.match(await query.run("SELECT 1 AS one"), /\| 1 \|/u);
   });
 });
 
@@ -431,11 +438,59 @@ test("the macOS sampler reads the physical footprint", { skip: process.platform 
   try {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     const pid = child.pid ?? -1;
-    const sampled = await memorySampler().sample(pid);
+    const sampler = memorySampler();
+    await sampler.sample(pid);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const sampled = await sampler.sample(pid);
     const reported = parseFootprint(spawnSync("/usr/bin/footprint", ["-p", String(pid)], { encoding: "utf8" }).stdout);
     assert.ok(sampled !== null && reported !== null);
     assert.ok(sampled >= reported, `${sampled} < footprint ${reported}`);
   } finally {
     child.kill("SIGKILL");
   }
+});
+
+test("a hung footprint never delays ps sampling", { skip: process.platform !== "darwin" }, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "sluice-footprint-"));
+  try {
+    const hung = join(directory, "footprint");
+    writeFileSync(hung, "#!/bin/sh\nexec sleep 30\n", { mode: 0o755 });
+    const sample = footprintSampler(hung);
+    const timings: number[] = [];
+    for (let round = 0; round < 5; round += 1) {
+      const started = performance.now();
+      const used = await Promise.race([
+        sample(process.pid),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+      ]);
+      timings.push(performance.now() - started);
+      assert.ok(used !== null && used > 1024 * 1024, `round ${round}: no reading`);
+    }
+    assert.ok(Math.max(...timings) < 500, String(timings));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const leftover = spawnSync("pgrep", ["-f", hung], { encoding: "utf8" }).stdout.trim();
+    assert.equal(leftover, "", "the timed-out footprint call was not killed");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an in-process query that ignores its interrupt gives up after the grace period", async () => {
+  const control = new AbortController();
+  const source = {
+    connect: () => new Promise<never>(() => undefined),
+    allowedObjects: new Set<string>(),
+    evictedTables: new Set<string>(),
+  };
+  setTimeout(() => control.abort(), 50);
+  const started = performance.now();
+  const outcome = await Promise.race([
+    executeOnConnection(source, "SELECT 1", 10, 512, 65536, control.signal, 200).then(
+      () => "returned",
+      (error: unknown) => (error instanceof QueryInterrupted ? "interrupted" : String(error)),
+    ),
+    new Promise<string>((resolve) => setTimeout(() => resolve("still waiting"), 2000)),
+  ]);
+  assert.equal(outcome, "interrupted");
+  assert.ok(performance.now() - started < 1000);
 });

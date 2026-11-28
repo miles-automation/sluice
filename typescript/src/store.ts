@@ -19,7 +19,7 @@ import { CALL_COLUMN, ROW_COLUMN } from "./shape.ts";
 import { SCOPE_PATTERN, verifyParserContract } from "./gate.ts";
 import type { Limits } from "./limits.ts";
 import { Mutex } from "./sync.ts";
-import { QueryInterrupted, executeOnConnection, timeoutFailure, type QueryRows } from "./execute.ts";
+import { INTERRUPT_GRACE_MS, QueryInterrupted, executeOnConnection, timeoutFailure, type QueryRows } from "./execute.ts";
 import { longTimeout } from "./timer.ts";
 
 export const MAX_FLAT_REASON_BYTES = 512;
@@ -414,7 +414,15 @@ export class Store extends CommitSequencer {
     const control = new AbortController();
     const cancelTimer = longTimeout(() => control.abort(), Math.max(0, deadline - performance.now()));
     try {
-      return await executeOnConnection(this, sql, limit, limits.max_cell_bytes, limits.query_max_bytes, control.signal);
+      return await executeOnConnection(
+        this,
+        sql,
+        limit,
+        limits.max_cell_bytes,
+        limits.query_max_bytes,
+        control.signal,
+        INTERRUPT_GRACE_MS,
+      );
     } catch (error) {
       if (error instanceof QueryInterrupted) {
         throw timeoutFailure(limits.query_timeout_seconds);

@@ -11,7 +11,7 @@ The Python tests that became fixtures are kept for now, so the two can be
 compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
-Summary: 325 test functions. 202 are expressed as fixtures, 109 stay
+Summary: 326 test functions. 202 are expressed as fixtures, 110 stay
 Python-only, 14 are the conformance runner itself. 539 fixture cases in
 total; 69 of them cover behavior no existing Python test asserted (listed
 at the end).
@@ -484,6 +484,7 @@ Reasons a test stays Python-only:
 | `test_resets_do_not_leak_descriptors` | Python-only: socket lifetime in the Python client. TS closes the channel with the child process. |
 | `test_a_reset_racing_the_stale_check_still_reports_the_reset` | Python-only: injects the race by monkeypatching. TS: `typescript/test/supervisor.test.ts` "a reset racing the stale check still reports the reset". |
 | `test_a_table_evicted_before_a_reset_is_still_reported_as_evicted` | Python-only: needs a reset between steps, which the fixtures cannot inject without a hostile query. TS: `typescript/test/supervisor.test.ts` "a table evicted before a reset is still reported as evicted". |
+| `test_in_process_query_gives_up_after_the_grace_period` | Python-only: the in-process fallback, with the executor replaced by monkeypatching. TS: `typescript/test/supervisor.test.ts` "an in-process query that ignores its interrupt gives up after the grace period". |
 
 ## Fixtures with no prior Python test
 
