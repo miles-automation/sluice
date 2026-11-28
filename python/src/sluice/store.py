@@ -135,6 +135,7 @@ class _CallMetadata:
 class CommitOutcome:
     retained: bool
     envelope: str
+    evicted: tuple[str, ...] = ()
 
 
 class CommitSequencer:
@@ -355,7 +356,14 @@ class Store(CommitSequencer):
 
         def blocking() -> QueryRows:
             return execute_on_cursor(
-                cursor, sql, limit, allowed, evicted, limits.max_cell_bytes, expired
+                cursor,
+                sql,
+                limit,
+                allowed,
+                evicted,
+                limits.max_cell_bytes,
+                limits.query_max_bytes,
+                expired,
             )
 
         timer = threading.Timer(limits.query_timeout_seconds, expire)
@@ -432,11 +440,13 @@ class Store(CommitSequencer):
             raise
         # Only after the commit succeeds: an object the agent can name has to be
         # one that actually exists.
+        newly_evicted: list[str] = []
         all_entries = self._retained | {record.call_id: new_entry}
         evicted = set(all_entries) - set(retained)
         for call_id in evicted:
             self._allowed_objects.difference_update(all_entries[call_id].tables)
             self._remember_evicted(all_entries[call_id].tables)
+            newly_evicted.extend(all_entries[call_id].tables)
             if call_id in metadata:
                 metadata[call_id] = replace(metadata[call_id], tables=())
         self._retained = retained
@@ -445,6 +455,7 @@ class Store(CommitSequencer):
         for call_id in removed_metadata:
             self._allowed_objects.difference_update(self._metadata[call_id].tables)
             self._remember_evicted(self._metadata[call_id].tables)
+            newly_evicted.extend(self._metadata[call_id].tables)
         remaining_scopes = {entry.scope_id for entry in metadata.values()}
         for call_id in removed_metadata:
             scope_id = self._metadata[call_id].scope_id
@@ -453,7 +464,7 @@ class Store(CommitSequencer):
         self._metadata = metadata
         self._allowed_objects.update(table for entry in retained.values() for table in entry.tables)
         self._allowed_objects.add(view)
-        return CommitOutcome(retained=fits_budget, envelope=view)
+        return CommitOutcome(retained=fits_budget, envelope=view, evicted=tuple(newly_evicted))
 
     @staticmethod
     def _retained_total(retained: dict[str, _RetainedCall]) -> int:

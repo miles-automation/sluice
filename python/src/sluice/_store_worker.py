@@ -18,6 +18,7 @@ from sluice.execute import (
 from sluice.gate import QueryRejectedError
 from sluice.ipc import (
     BREACH_EXIT,
+    REPLY_MAX_BYTES,
     ChannelClosedError,
     Message,
     encode,
@@ -26,6 +27,24 @@ from sluice.ipc import (
     record_from_wire,
 )
 from sluice.store import Store
+
+
+def reply_frame(message: Message, max_bytes: int = REPLY_MAX_BYTES) -> bytes:
+    frame = encode(message)
+    if len(frame) <= max_bytes:
+        return frame
+    return encode(
+        {
+            "id": message.get("id"),
+            "ok": False,
+            "kind": "rejected",
+            "error": "ReplyTooLarge",
+            "message": (
+                f"the result is {len(frame)} bytes, over the {max_bytes} byte limit for one "
+                "reply from the store; select fewer or narrower columns"
+            ),
+        }
+    )
 
 
 class _Query:
@@ -43,7 +62,7 @@ class Worker:
         self._queries_lock = threading.Lock()
 
     def send(self, message: Message) -> None:
-        frame = encode(message)
+        frame = reply_frame(message)
         with self._send_lock:
             self._channel.sendall(frame)
 
@@ -114,7 +133,13 @@ class Worker:
             )
             return
         self.send(
-            {"id": request, "ok": True, "retained": outcome.retained, "envelope": outcome.envelope}
+            {
+                "id": request,
+                "ok": True,
+                "retained": outcome.retained,
+                "envelope": outcome.envelope,
+                "evicted": list(outcome.evicted),
+            }
         )
 
     def _query(self, message: Message, query: _Query) -> None:
@@ -132,12 +157,20 @@ class Worker:
                     store.allowed_objects,
                     store.evicted_tables,
                     int(message["cell_bytes"]),
+                    int(message["output_bytes"]),
                     query.expired,
                 )
             finally:
                 query.cursor = None
                 cursor.close()
-            reply = {"id": request, "ok": True, "columns": rows.columns, "rows": rows.rows}
+            reply = {
+                "id": request,
+                "ok": True,
+                "columns": rows.columns,
+                "rows": rows.rows,
+                "more_rows": rows.more_rows,
+                "omitted": rows.omitted,
+            }
         except AllocationFailedError as exc:
             self.breach(exc)
             return

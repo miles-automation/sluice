@@ -20,6 +20,7 @@ from sluice.execute import QueryRows, timeout_failure
 from sluice.gate import GateContractError, QueryRejectedError
 from sluice.ipc import (
     BREACH_EXIT,
+    REPLY_MAX_BYTES,
     ChannelClosedError,
     Message,
     encode,
@@ -28,7 +29,7 @@ from sluice.ipc import (
     record_to_wire,
 )
 from sluice.models import CallRecord, TablePlan
-from sluice.store import CommitOutcome, CommitSequencer
+from sluice.store import CommitOutcome, CommitSequencer, Store
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,6 @@ SAMPLE_INTERVAL_SECONDS = 0.02
 INTERRUPT_GRACE_SECONDS = 5.0
 OPEN_TIMEOUT_SECONDS = 60.0
 CLOSE_TIMEOUT_SECONDS = 5.0
-REPLY_MAX_BYTES = 256 * 1024 * 1024
 
 _TOKEN = re.compile(r"[a-z0-9_]+")
 
@@ -90,6 +90,13 @@ def reset_message(cause: str, limits: Limits) -> str:
         f"{limits.store_max_memory} bytes ({describe_bytes(limits.store_max_memory)}); it was "
         "restarted, so every table and handle from before the reset is gone. Rerun the "
         "source tool calls to materialize their results again."
+    )
+
+
+def evicted_message(name: str) -> str:
+    return (
+        f"table {name!r} was evicted by the session retention budget; "
+        "rerun the source tool call to materialize it again"
     )
 
 
@@ -283,6 +290,8 @@ class StoreProcess:
                 pending.done.set()
         self._process.kill()
         code = self._process.wait()
+        with suppress(OSError):
+            self._channel.close()
         with self._lock:
             closing = self._closing
             if closing:
@@ -376,6 +385,8 @@ class SupervisedStore(CommitSequencer):
         self._closed = False
         self._known = _BoundedNames(limits.max_session_calls * 64)
         self._lost = _BoundedNames(limits.max_session_calls * 64)
+        self._evicted = _BoundedNames(limits.max_session_calls * 64)
+        self._lost_evicted = _BoundedNames(limits.max_session_calls * 64)
 
     @classmethod
     def open(cls, limits: Limits) -> Self:
@@ -444,13 +455,27 @@ class SupervisedStore(CommitSequencer):
             self._generation += 1
             self._resets += 1
             self._lost.add(self._known.take())
+            self._lost_evicted.add(self._evicted.take())
 
-    def _remember(self, generation: int, names: list[str]) -> None:
+    def _remember(self, generation: int, names: list[str], evicted: list[str]) -> None:
         with self._state:
             if generation == self._generation:
                 self._known.add(names)
+                self._evicted.add(evicted)
             else:
                 self._lost.add(names)
+                self._lost_evicted.add(evicted)
+
+    def _stale(self, sql: str) -> QueryRejectedError | None:
+        tokens = set(_TOKEN.findall(sql.lower()))
+        with self._state:
+            evicted = self._lost_evicted.first_of(tokens)
+            lost = self._lost.first_of(tokens)
+        if evicted is not None:
+            return QueryRejectedError(evicted_message(evicted))
+        if lost is not None:
+            return QueryRejectedError(stale_message(lost, self._limits))
+        return None
 
     async def _write(self, record: CallRecord, plans: list[TablePlan]) -> CommitOutcome:
         return await anyio.to_thread.run_sync(self._commit_blocking, record, plans)
@@ -471,14 +496,15 @@ class SupervisedStore(CommitSequencer):
         retained = bool(reply["retained"])
         envelope = str(reply["envelope"])
         names = [plan.name for plan in plans] if retained else []
-        self._remember(process.generation, [*names, envelope])
+        self._remember(
+            process.generation, [*names, envelope], [str(name) for name in reply["evicted"]]
+        )
         return CommitOutcome(retained=retained, envelope=envelope)
 
     async def run_query(self, sql: str, limit: int, limits: Limits) -> QueryRows:
-        with self._state:
-            lost = self._lost.first_of(set(_TOKEN.findall(sql.lower())))
-        if lost is not None:
-            raise QueryRejectedError(stale_message(lost, self._limits))
+        stale = self._stale(sql)
+        if stale is not None:
+            raise stale
         return await anyio.to_thread.run_sync(self._query_blocking, sql, limit, limits)
 
     def _query_blocking(self, sql: str, limit: int, limits: Limits) -> QueryRows:
@@ -490,7 +516,13 @@ class SupervisedStore(CommitSequencer):
         timers: list[threading.Timer] = []
         try:
             request, pending = process.start(
-                {"op": "query", "sql": sql, "limit": limit, "cell_bytes": limits.max_cell_bytes}
+                {
+                    "op": "query",
+                    "sql": sql,
+                    "limit": limit,
+                    "cell_bytes": limits.max_cell_bytes,
+                    "output_bytes": limits.query_max_bytes,
+                }
             )
         except StoreDiedError as died:
             raise QueryRejectedError(reset_message(died.cause, self._limits)) from None
@@ -523,7 +555,30 @@ class SupervisedStore(CommitSequencer):
                 timer.cancel()
         if reply.get("ok") and not expired.is_set():
             rows: list[list[Any]] = reply["rows"]
-            return QueryRows(columns=list(reply["columns"]), rows=[tuple(row) for row in rows])
+            return QueryRows(
+                columns=list(reply["columns"]),
+                rows=[tuple(row) for row in rows],
+                more_rows=bool(reply["more_rows"]),
+                omitted=int(reply["omitted"]),
+            )
         if expired.is_set() or reply.get("kind") == "interrupted":
             raise timeout_failure(limits.query_timeout_seconds)
-        raise QueryRejectedError(str(reply.get("message")))
+        raise self._stale(sql) or QueryRejectedError(str(reply.get("message")))
+
+
+def supervised_platform(platform: str | None = None) -> bool:
+    name = sys.platform if platform is None else platform
+    return name == "darwin" or name.startswith("linux")
+
+
+def open_store(limits: Limits, platform: str | None = None) -> SupervisedStore | Store:
+    name = sys.platform if platform is None else platform
+    if supervised_platform(name):
+        return SupervisedStore.open(limits)
+    logger.warning(
+        "store_max_memory is not enforced on %s: the store process and its memory "
+        "sampler run only on macOS and Linux, so DuckDB runs inside the Sluice process "
+        "and a hostile query can use unbounded memory",
+        name,
+    )
+    return Store.open(limits)

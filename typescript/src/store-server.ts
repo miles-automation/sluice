@@ -2,7 +2,7 @@ import { writeSync } from "node:fs";
 import { Socket } from "node:net";
 import { AllocationFailed, QueryInterrupted, executeOnConnection, isAllocationFailure } from "./execute.ts";
 import { QueryRejectedError } from "./gate.ts";
-import { BREACH_EXIT, FrameReader, frame, type Message } from "./ipc.ts";
+import { BREACH_EXIT, FrameReader, REPLY_MAX_BYTES, frame, type Message } from "./ipc.ts";
 import { makeLimits } from "./limits.ts";
 import type { CallRecord, TablePlan } from "./models.ts";
 import { Store } from "./store.ts";
@@ -16,6 +16,20 @@ function describe(error: unknown): { readonly error: string; readonly message: s
 
 function mib(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+export function replyFrame(message: Message, maxBytes: number = REPLY_MAX_BYTES): Buffer {
+  const encoded = frame(message);
+  if (encoded.length <= maxBytes) {
+    return encoded;
+  }
+  return frame({
+    id: message["id"],
+    ok: false,
+    kind: "rejected",
+    error: "ReplyTooLarge",
+    message: `the result is ${encoded.length} bytes, over the ${maxBytes} byte limit for one reply from the store; select fewer or narrower columns`,
+  });
 }
 
 class StoreServer {
@@ -53,7 +67,7 @@ class StoreServer {
   }
 
   #send(message: Message): void {
-    this.#socket.write(frame(message));
+    this.#socket.write(replyFrame(message));
   }
 
   breach(detail: string): never {
@@ -141,7 +155,7 @@ class StoreServer {
       const outcome = await this.#writes.run(() =>
         store.commitNow(message["record"] as CallRecord, message["plans"] as readonly TablePlan[]),
       );
-      this.#send({ id, ok: true, retained: outcome.retained, envelope: outcome.envelope });
+      this.#send({ id, ok: true, retained: outcome.retained, envelope: outcome.envelope, evicted: outcome.evicted ?? [] });
     } catch (error) {
       if (isAllocationFailure(error)) {
         this.breach(`an allocation failed inside the store (${describe(error).message})`);
@@ -157,9 +171,10 @@ class StoreServer {
         String(message["sql"]),
         Number(message["limit"]),
         Number(message["cell_bytes"]),
+        Number(message["output_bytes"]),
         signal,
       );
-      this.#send({ id, ok: true, columns: rows.columns, rows: rows.rows });
+      this.#send({ id, ok: true, columns: rows.columns, rows: rows.rows, more_rows: rows.moreRows, omitted: rows.omitted });
     } catch (error) {
       if (error instanceof AllocationFailed || isAllocationFailure(error)) {
         this.breach(`an allocation failed inside the store (${describe(error).message})`);

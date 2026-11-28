@@ -1,6 +1,7 @@
 import type { DuckDBConnection, DuckDBPreparedStatement, DuckDBResult } from "@duckdb/node-api";
 import { QueryRejectedError, check, prepareSelect } from "./gate.ts";
-import { truncateToBytes } from "./payload.ts";
+import { QUERY_OUTPUT_MIN_BYTES } from "./limits.ts";
+import { byteLength, truncateToBytes } from "./payload.ts";
 
 export const INTERRUPT_RETRY_MS = 50;
 export const CELL_SLACK_BYTES = 4;
@@ -10,6 +11,8 @@ export type Cell = string | null;
 export interface QueryRows {
   readonly columns: readonly string[];
   readonly rows: readonly (readonly Cell[])[];
+  readonly moreRows: boolean;
+  readonly omitted: number;
 }
 
 export interface QuerySource {
@@ -62,6 +65,58 @@ export function timeoutFailure(seconds: number): QueryRejectedError {
   return new QueryRejectedError(`query exceeded the ${seconds}s timeout and was interrupted`);
 }
 
+export function escapeCell(value: unknown, maxBytes: number): readonly [string, boolean] {
+  if (value === null || value === undefined) {
+    return ["NULL", false];
+  }
+  let text = String(value);
+  if (text === "") {
+    return ["''", false];
+  }
+  text = text.replaceAll("\\", "\\\\").replaceAll("|", "\\|");
+  text = text.replaceAll("\r\n", "\\n").replaceAll("\n", "\\n").replaceAll("\r", "\\n");
+  if (byteLength(text) <= maxBytes) {
+    return [text, false];
+  }
+  const marker = "…";
+  const markerBytes = byteLength(marker);
+  const [rendered] = truncateToBytes(text, Math.max(maxBytes - markerBytes, 0));
+  return [rendered + (maxBytes >= markerBytes ? marker : ""), true];
+}
+
+export function boundRows(
+  columns: readonly string[],
+  fetched: readonly (readonly Cell[])[],
+  limit: number,
+  queryMaxBytes: number,
+  maxCellBytes: number,
+): QueryRows {
+  const moreRows = fetched.length > limit;
+  const rows = fetched.slice(0, limit);
+  if (columns.length === 0) {
+    return { columns, rows, moreRows, omitted: 0 };
+  }
+  const budget = Math.max(queryMaxBytes - QUERY_OUTPUT_MIN_BYTES - 2, 0);
+  let used = 3;
+  for (const [index, name] of columns.entries()) {
+    used += byteLength(escapeCell(name, maxCellBytes)[0]) + 9;
+    if (used > budget) {
+      return { columns: columns.slice(0, index + 1), rows: [], moreRows, omitted: rows.length };
+    }
+  }
+  for (const [index, row] of rows.entries()) {
+    let line = 4 + 3 * Math.max(row.length - 1, 0);
+    for (const value of row) {
+      line += byteLength(escapeCell(value, maxCellBytes)[0]);
+    }
+    if (used + line + 1 > budget) {
+      return { columns, rows: rows.slice(0, index), moreRows, omitted: rows.length - index };
+    }
+    used += line + 1;
+  }
+  return { columns, rows, moreRows, omitted: 0 };
+}
+
 export function cellText(value: unknown, maxBytes: number): Cell {
   if (value === null || value === undefined) {
     return null;
@@ -79,23 +134,20 @@ export async function executeOnConnection(
   sql: string,
   limit: number,
   cellBytes: number,
+  outputBytes: number,
   signal: AbortSignal,
 ): Promise<QueryRows> {
   let connection: DuckDBConnection | undefined;
   let retry: ReturnType<typeof setInterval> | undefined;
   let finished = false;
-  let expire = (): void => undefined;
   const expired = (): boolean => signal.aborted;
-  const deadline = new Promise<never>((_, reject) => {
-    expire = (): void => {
-      reject(new QueryInterrupted());
-      if (finished) {
-        return;
-      }
-      connection?.interrupt();
-      retry = setInterval(() => connection?.interrupt(), INTERRUPT_RETRY_MS);
-    };
-  });
+  const expire = (): void => {
+    if (finished) {
+      return;
+    }
+    connection?.interrupt();
+    retry = setInterval(() => connection?.interrupt(), INTERRUPT_RETRY_MS);
+  };
   if (signal.aborted) {
     expire();
   } else {
@@ -120,7 +172,7 @@ export async function executeOnConnection(
       guard();
       result = await prepared.stream();
       const cellCap = cellBytes + CELL_SLACK_BYTES;
-      const columns = result.columnNames();
+      const columns = result.columnNames().map((name) => cellText(name, cellCap) ?? "");
       const rows: Cell[][] = [];
       while (rows.length <= limit) {
         guard();
@@ -135,7 +187,7 @@ export async function executeOnConnection(
         }
       }
       guard();
-      return { columns, rows };
+      return boundRows(columns, rows, limit, outputBytes, cellBytes);
     } finally {
       finished = true;
       clearInterval(retry);
@@ -147,10 +199,12 @@ export async function executeOnConnection(
       connection?.closeSync();
     }
   })();
-  work.catch(() => undefined);
-  deadline.catch(() => undefined);
   try {
-    return await Promise.race([work, deadline]);
+    const rows = await work;
+    if (expired()) {
+      throw new QueryInterrupted();
+    }
+    return rows;
   } catch (error) {
     if (error instanceof QueryInterrupted || expired() || isInterrupt(error)) {
       throw new QueryInterrupted();

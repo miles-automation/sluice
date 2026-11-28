@@ -204,6 +204,7 @@ type Waiter = () => void;
 export interface CommitOutcome {
   readonly retained: boolean;
   readonly envelope: string;
+  readonly evicted?: readonly string[];
 }
 
 export abstract class CommitSequencer {
@@ -413,7 +414,7 @@ export class Store extends CommitSequencer {
     const control = new AbortController();
     const cancelTimer = longTimeout(() => control.abort(), Math.max(0, deadline - performance.now()));
     try {
-      return await executeOnConnection(this, sql, limit, limits.max_cell_bytes, control.signal);
+      return await executeOnConnection(this, sql, limit, limits.max_cell_bytes, limits.query_max_bytes, control.signal);
     } catch (error) {
       if (error instanceof QueryInterrupted) {
         throw timeoutFailure(limits.query_timeout_seconds);
@@ -491,6 +492,7 @@ export class Store extends CommitSequencer {
       await connection.run("ROLLBACK").catch(() => undefined);
       throw error;
     }
+    const newlyEvicted: string[] = [];
     const allEntries = new Map(this.#retained);
     allEntries.set(record.callId, newEntry);
     for (const [callId, entry] of allEntries) {
@@ -501,6 +503,7 @@ export class Store extends CommitSequencer {
         this.#allowedObjects.delete(table);
       }
       this.#rememberEvicted(entry.tables);
+      newlyEvicted.push(...entry.tables);
       const meta = metadata.get(callId);
       if (meta !== undefined) {
         metadata.set(callId, { ...meta, tables: [] });
@@ -516,6 +519,7 @@ export class Store extends CommitSequencer {
           this.#allowedObjects.delete(table);
         }
         this.#rememberEvicted(entry.tables);
+        newlyEvicted.push(...entry.tables);
       }
     }
     const remainingScopes = new Set([...metadata.values()].map((entry) => entry.scopeId));
@@ -532,7 +536,7 @@ export class Store extends CommitSequencer {
       }
     }
     this.#allowedObjects.add(view);
-    return { retained: fitsBudget, envelope: view };
+    return { retained: fitsBudget, envelope: view, evicted: newlyEvicted };
   }
 
   static #total(retained: ReadonlyMap<string, RetainedCall>): number {

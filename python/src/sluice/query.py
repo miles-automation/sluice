@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sluice.config import QUERY_OUTPUT_MIN_BYTES, Limits
+from sluice.execute import escape_cell as escape_cell
 from sluice.gate import QueryRejectedError
 from sluice.store import CommitSequencer
 from sluice.text import truncate_to_bytes
@@ -47,28 +48,6 @@ class QueryOutcome:
     truncated_cells: int = 0
     truncated_headers: int = 0
     dropped_rows: int = 0
-
-
-def escape_cell(value: object, max_bytes: int) -> tuple[str, bool]:
-    """Render one value for a markdown table.
-
-    Escaping is defined rather than left to the implementer, because two of
-    these are ambiguous otherwise: SQL NULL and the string "NULL" would render
-    identically, as would NULL and the empty string.
-    """
-    if value is None:
-        return "NULL", False
-    text = str(value)
-    if text == "":
-        return "''", False
-    text = text.replace("\\", "\\\\").replace("|", "\\|")
-    text = text.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
-    if len(text.encode("utf-8")) <= max_bytes:
-        return text, False
-    marker = "…"
-    marker_bytes = len(marker.encode("utf-8"))
-    rendered, _ = truncate_to_bytes(text, max(max_bytes - marker_bytes, 0))
-    return rendered + (marker if max_bytes >= marker_bytes else ""), True
 
 
 NOTES_RESERVE = QUERY_OUTPUT_MIN_BYTES
@@ -163,8 +142,9 @@ class QueryTool:
         result = await self._store.run_query(sql, limit, self._limits)
         outcome = QueryOutcome(
             columns=result.columns,
-            rows=list(result.rows[:limit]),
-            more_rows=len(result.rows) > limit,
+            rows=list(result.rows),
+            more_rows=result.more_rows,
+            dropped_rows=result.omitted,
         )
         return render(outcome, self._limits)
 

@@ -715,6 +715,14 @@ other.
 
 ### 6.3 Result shaping
 
+- The store process cuts the result to what rendering can use before it replies
+  (§8): rows past `max_rows`, rows past the first one whose rendered line would
+  not fit the byte cap, and every column past the first whose header would not
+  fit. It reports the count of rows it withheld and whether more rows exist, so
+  the notices below are exactly what they would be over the whole fetch, and a
+  reply frame stays near `query_max_bytes`. A reply that would still exceed the
+  256 MiB frame limit (possible only with a huge `query_max_bytes`) is a query
+  error, not a store reset.
 - Execute the user SQL **unmodified** and pull `max_rows + 1` rows with
   `fetchmany`. Do not wrap as `SELECT * FROM (<sql>) LIMIT n+1`: trailing
   semicolons and duplicate column names break inside a subquery even though they
@@ -931,11 +939,19 @@ connections, admission, the FIFO commit order, sequence numbers and deadlines.
   It exits when the channel closes, so it never outlives Sluice.
 - **Enforcement.** While any request is in flight, Sluice samples the store
   process's resident memory every 20 ms (`proc_pid_rusage`, the larger of
-  resident size and physical footprint, on macOS; `/proc/<pid>/statm` on Linux)
-  and kills it with `SIGKILL` above `store_max_memory`. The TypeScript store
-  process also samples its own RSS every 20 ms and kills itself, because Node can
-  read another process's RSS on macOS only through `ps`, which the outside check
-  runs every 50 ms. On Linux the store process runs under `RLIMIT_DATA` set to
+  resident size and physical footprint, on macOS; `/proc/<pid>/statm` times the
+  page size, or `VmRSS` from `/proc/<pid>/status` in TypeScript, on Linux) and
+  kills it with `SIGKILL` above `store_max_memory`. Node cannot read another
+  process's memory on macOS without a native module, so the TypeScript store
+  process also samples its own RSS every 20 ms and kills itself, and the outside
+  check runs `/usr/bin/footprint` plus `ps` every 50 ms (about 20 ms per
+  `footprint` call, measured on a 1.2 GB process) and takes the larger. The
+  self-check sees resident memory only, so memory macOS has compressed is caught
+  by the outside check alone. The store process keeps its self-check running, and
+  Sluice keeps the request in flight (so the outside check keeps sampling), until
+  DuckDB has actually stopped: a query past its deadline is interrupted, not
+  abandoned, and §6.2's 5-second grace kill applies to it. A query admission slot
+  is held for the same span. On Linux the store process runs under `RLIMIT_DATA` set to
   `store_max_memory` plus 128 MiB per CPU. It counts reserved address space, not
   resident pages, and DuckDB reserves about 0.6 GB of it at open with 12 threads
   (measured), so it is a kernel backstop for growth the sampler misses, not the
@@ -967,7 +983,12 @@ connections, admission, the FIFO commit order, sequence numbers and deadlines.
   resets erases its own and every other conversation's tables in that process; a
   reset is a denial of service to the whole session, by design preferred to the
   host killing Sluice. Linux x86_64, where DuckDB bundles jemalloc, was not
-  measured, and neither was any platform other than macOS and Linux.
+  measured.
+- **Platforms.** The store process and its samplers run only on macOS and Linux.
+  On any other platform (Windows in particular, which has no `pass_fds`,
+  `SIGKILL` or `resource`) Sluice runs DuckDB in its own process as before and
+  logs a warning at startup that `store_max_memory` is not enforced there. It is
+  never a silent no-cap.
 
 Materializing a 4.5 MB, 3,800-row structured result (the size of a 19-page
 collection) took 0.85 s in-process and 0.91 s through the store process in

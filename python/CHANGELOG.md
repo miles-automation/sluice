@@ -25,7 +25,10 @@ This tracks what has landed against the milestones in
   during a reset still returns its result, recorded envelope-only. After a reset
   a conversation's envelope view is `sluice_calls__<scope>__r<n>`. Storing a
   4.5 MB, 3,800-row result takes about 60 ms longer (0.85 s to 0.91 s on an M-series
-  Mac).
+  Mac). On platforms other than macOS and Linux, Windows included, the store
+  stays in the Sluice process and a startup warning says the cap is not
+  enforced. Query replies from the store are cut to what the 64 KiB output can
+  show, with the same truncation notices.
 
 ## 0.2.2 — 2026-11-25
 

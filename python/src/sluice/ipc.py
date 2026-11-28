@@ -9,6 +9,7 @@ from sluice.models import CallRecord, PayloadChannel, SelectedPayload, TablePlan
 
 HEADER = struct.Struct(">I")
 MAX_FRAME_BYTES = 2**31 - 1
+REPLY_MAX_BYTES = 256 * 1024 * 1024
 
 type Message = dict[str, Any]
 

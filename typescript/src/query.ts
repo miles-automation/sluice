@@ -1,3 +1,4 @@
+import { escapeCell } from "./execute.ts";
 import { QueryRejectedError } from "./gate.ts";
 import { QUERY_OUTPUT_MIN_BYTES, type Limits } from "./limits.ts";
 import { byteLength, truncateToBytes } from "./payload.ts";
@@ -7,6 +8,7 @@ import { queryConcurrency } from "./threadpool.ts";
 
 export {
   CELL_SLACK_BYTES,
+  escapeCell,
   INTERRUPT_RETRY_MS,
   VANISHED_TABLE,
   cellText,
@@ -45,25 +47,6 @@ export interface QueryOutcome {
   readonly truncatedCells?: number;
   readonly truncatedHeaders?: number;
   readonly droppedRows?: number;
-}
-
-export function escapeCell(value: unknown, maxBytes: number): readonly [string, boolean] {
-  if (value === null || value === undefined) {
-    return ["NULL", false];
-  }
-  let text = String(value);
-  if (text === "") {
-    return ["''", false];
-  }
-  text = text.replaceAll("\\", "\\\\").replaceAll("|", "\\|");
-  text = text.replaceAll("\r\n", "\\n").replaceAll("\n", "\\n").replaceAll("\r", "\\n");
-  if (byteLength(text) <= maxBytes) {
-    return [text, false];
-  }
-  const marker = "…";
-  const markerBytes = byteLength(marker);
-  const [rendered] = truncateToBytes(text, Math.max(maxBytes - markerBytes, 0));
-  return [rendered + (maxBytes >= markerBytes ? marker : ""), true];
 }
 
 export function render(outcome: QueryOutcome, limits: Limits): string {
@@ -162,7 +145,7 @@ export class QueryTool {
     const deadline = performance.now() + this.#limits.query_timeout_seconds * 1000;
     const execution = await this.#admission.run(() => this.#store.runQuery(sql, limit, this.#limits, deadline));
     return render(
-      { columns: execution.columns, rows: execution.rows.slice(0, limit), moreRows: execution.rows.length > limit },
+      { columns: execution.columns, rows: execution.rows, moreRows: execution.moreRows, droppedRows: execution.omitted },
       this.#limits,
     );
   }

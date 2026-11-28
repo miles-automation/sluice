@@ -16,7 +16,7 @@ from sluice.naming import NameCollisionError
 from sluice.proxy import Proxy
 from sluice.query import QueryTool
 from sluice.server import build_server, initialization_options
-from sluice.supervisor import SupervisedStore
+from sluice.supervisor import open_store
 
 STARTUP_ERRORS = (DownstreamError, NameCollisionError, ConfigError)
 
@@ -48,7 +48,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 async def serve(config: Config) -> None:
     async with AsyncExitStack() as stack:
         proxy = await Proxy.start(config, stack)
-        store = stack.enter_context(SupervisedStore.open(config.limits))
+        store = stack.enter_context(open_store(config.limits))
         interceptor = Interceptor(store, config.limits, query_available=True)
         server = build_server(proxy, interceptor, QueryTool(store, config.limits))
         async with stdio_server() as (read_stream, write_stream):

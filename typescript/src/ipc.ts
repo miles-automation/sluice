@@ -3,6 +3,7 @@ import { deserialize, serialize } from "node:v8";
 export const BREACH_EXIT = 86;
 export const HEADER_BYTES = 4;
 export const MAX_FRAME_BYTES = 2 ** 31 - 1;
+export const REPLY_MAX_BYTES = 256 * 1024 * 1024;
 
 export type Message = Readonly<Record<string, unknown>>;
 

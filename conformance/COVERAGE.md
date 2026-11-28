@@ -11,7 +11,7 @@ The Python tests that became fixtures are kept for now, so the two can be
 compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
-Summary: 317 test functions. 202 are expressed as fixtures, 101 stay
+Summary: 325 test functions. 202 are expressed as fixtures, 109 stay
 Python-only, 14 are the conformance runner itself. 539 fixture cases in
 total; 69 of them cover behavior no existing Python test asserted (listed
 at the end).
@@ -476,6 +476,14 @@ Reasons a test stays Python-only:
 | `test_store_process_exits_when_its_parent_dies` | Python-only: process lifetime. TS: `typescript/test/supervisor.test.ts` "the store process exits when its parent dies". |
 | `test_store_process_runs_under_rlimit_data_on_linux` | Python-only: Linux process limits. TS: `typescript/test/supervisor.test.ts` "the store process runs under RLIMIT_DATA on Linux". |
 | `test_memory_sampler_reads_this_platform` | Python-only: the parent's RSS sampler. TS samples through `ps` or `/proc` (`typescript/test/supervisor.test.ts` "the memory sampler reads this platform"). |
+| `test_timed_out_hostile_query_stays_watched_until_duckdb_stops` | Python-only: timing-sensitive (a 0.05 s deadline). TS: `typescript/test/supervisor.test.ts` "a timed-out hostile query stays watched until DuckDB stops". |
+| `test_query_replies_stay_within_the_output_budget` | Python-only: measures the store process's reply frames. The notices themselves are the session query fixtures. TS: `typescript/test/supervisor.test.ts` "query replies stay within the output budget". |
+| `test_an_oversized_reply_becomes_a_query_error` | Python-only: the store process's reply framing. TS: `typescript/test/supervisor.test.ts` "an oversized reply becomes a query error". |
+| `test_unsupported_platforms_fall_back_loudly` | Python-only: platform selection and its warning. TS: `typescript/test/supervisor.test.ts` "win32 falls back to the in-process store loudly" and the other platforms. |
+| `test_supported_platforms_use_the_store_process` | Python-only: platform selection. TS: covered by the supervisor tests, which run through `SupervisedStore`. |
+| `test_resets_do_not_leak_descriptors` | Python-only: socket lifetime in the Python client. TS closes the channel with the child process. |
+| `test_a_reset_racing_the_stale_check_still_reports_the_reset` | Python-only: injects the race by monkeypatching. TS: `typescript/test/supervisor.test.ts` "a reset racing the stale check still reports the reset". |
+| `test_a_table_evicted_before_a_reset_is_still_reported_as_evicted` | Python-only: needs a reset between steps, which the fixtures cannot inject without a hostile query. TS: `typescript/test/supervisor.test.ts` "a table evicted before a reset is still reported as evicted". |
 
 ## Fixtures with no prior Python test
 

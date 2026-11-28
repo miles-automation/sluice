@@ -183,7 +183,9 @@ handle from before the reset fails loudly afterwards. A tool call whose result
 was being stored at that moment still returns its result, recorded
 envelope-only. Expect the cap to be overshot by up to about 150 MB between
 samples. The cap does not cover memory the Sluice process itself spends
-decoding a tool result. The [memory benchmark](https://github.com/miles-automation/sluice/blob/main/python/benchmarks/results/memory-2026-08-30.md)
+decoding a tool result. The store process runs only on macOS and Linux; on
+other platforms, Windows included, DuckDB runs inside the Sluice process and
+Sluice logs a warning at startup that `store_max_memory` is not enforced. The [memory benchmark](https://github.com/miles-automation/sluice/blob/main/python/benchmarks/results/memory-2026-08-30.md)
 records the four-shape, dual-channel concurrency calibration and long-session
 evidence.
 

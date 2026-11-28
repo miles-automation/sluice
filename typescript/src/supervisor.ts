@@ -5,11 +5,11 @@ import type { Socket } from "node:net";
 import { fileURLToPath } from "node:url";
 import { timeoutFailure, type QueryRows } from "./execute.ts";
 import { QueryRejectedError } from "./gate.ts";
-import { BREACH_EXIT, FrameReader, frame, type Message } from "./ipc.ts";
+import { BREACH_EXIT, FrameReader, REPLY_MAX_BYTES, frame, type Message } from "./ipc.ts";
 import type { Limits } from "./limits.ts";
 import { logger } from "./log.ts";
 import type { CallRecord, TablePlan } from "./models.ts";
-import { CommitSequencer, type CommitOutcome } from "./store.ts";
+import { CommitSequencer, Store, type CommitOutcome } from "./store.ts";
 import { longTimeout } from "./timer.ts";
 
 const log = logger("sluice.supervisor");
@@ -19,7 +19,6 @@ export const PS_SAMPLE_INTERVAL_MS = 50;
 export const INTERRUPT_GRACE_MS = 5000;
 export const OPEN_TIMEOUT_MS = 60_000;
 export const CLOSE_TIMEOUT_MS = 5000;
-export const REPLY_MAX_BYTES = 256 * 1024 * 1024;
 
 const TOKEN = /[a-z0-9_]+/gu;
 
@@ -31,30 +30,58 @@ export function dataLimit(cap: number): number {
 
 export type Sampler = (pid: number) => Promise<number | null>;
 
-const PAGE_BYTES = 4096;
+const STATUS_RSS = /^VmRSS:\s+([0-9]+)\s+kB$/mu;
+const FOOTPRINT = /Footprint:\s+([0-9.]+)\s+(B|KB|MB|GB|TB)\b/u;
+const FOOTPRINT_UNITS: Readonly<Record<string, number>> = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+
+export function parseStatusRss(text: string): number | null {
+  const match = STATUS_RSS.exec(text);
+  return match?.[1] === undefined ? null : Number(match[1]) * 1024;
+}
+
+export function parseFootprint(text: string): number | null {
+  const match = FOOTPRINT.exec(text);
+  const unit = FOOTPRINT_UNITS[match?.[2] ?? ""];
+  return match?.[1] === undefined || unit === undefined ? null : Math.round(Number(match[1]) * unit);
+}
 
 async function procSample(pid: number): Promise<number | null> {
   try {
-    const fields = (await readFile(`/proc/${pid}/statm`, "ascii")).split(" ");
-    const pages = Number(fields[1]);
-    return Number.isFinite(pages) ? pages * PAGE_BYTES : null;
+    return parseStatusRss(await readFile(`/proc/${pid}/status`, "ascii"));
   } catch {
     return null;
   }
 }
 
-function psSample(pid: number): Promise<number | null> {
+function run(command: string, args: readonly string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile("ps", ["-o", "rss=", "-p", String(pid)], { encoding: "utf8" }, (error, stdout) => {
-      const kib = Number(stdout.trim());
-      resolve(error === null && stdout.trim() !== "" && Number.isFinite(kib) ? kib * 1024 : null);
+    execFile(command, [...args], { encoding: "utf8" }, (error, stdout) => {
+      resolve(error === null ? stdout : null);
     });
   });
+}
+
+async function psSample(pid: number): Promise<number | null> {
+  const stdout = await run("ps", ["-o", "rss=", "-p", String(pid)]);
+  const kib = Number(stdout?.trim() ?? "");
+  return stdout !== null && stdout.trim() !== "" && Number.isFinite(kib) ? kib * 1024 : null;
+}
+
+async function footprintSample(pid: number): Promise<number | null> {
+  const [footprint, resident] = await Promise.all([run("/usr/bin/footprint", ["-p", String(pid)]), psSample(pid)]);
+  const physical = footprint === null ? null : parseFootprint(footprint);
+  if (physical === null) {
+    return resident;
+  }
+  return Math.max(physical, resident ?? 0);
 }
 
 export function memorySampler(): { readonly sample: Sampler; readonly intervalMs: number } {
   if (process.platform === "linux") {
     return { sample: procSample, intervalMs: SAMPLE_INTERVAL_MS };
+  }
+  if (process.platform === "darwin") {
+    return { sample: footprintSample, intervalMs: PS_SAMPLE_INTERVAL_MS };
   }
   return { sample: psSample, intervalMs: PS_SAMPLE_INTERVAL_MS };
 }
@@ -80,6 +107,10 @@ export function resetMessage(cause: string, limits: Limits): string {
     "restarted, so every table and handle from before the reset is gone. Rerun the " +
     "source tool calls to materialize their results again."
   );
+}
+
+export function evictedMessage(name: string): string {
+  return `table '${name}' was evicted by the session retention budget; rerun the source tool call to materialize it again`;
 }
 
 export function staleMessage(name: string, limits: Limits): string {
@@ -406,12 +437,16 @@ export class SupervisedStore extends CommitSequencer {
   #closed = false;
   readonly #known: BoundedNames;
   readonly #lost: BoundedNames;
+  readonly #evicted: BoundedNames;
+  readonly #lostEvicted: BoundedNames;
 
   private constructor(limits: Limits) {
     super();
     this.#limits = limits;
     this.#known = new BoundedNames(limits.max_session_calls * 64);
     this.#lost = new BoundedNames(limits.max_session_calls * 64);
+    this.#evicted = new BoundedNames(limits.max_session_calls * 64);
+    this.#lostEvicted = new BoundedNames(limits.max_session_calls * 64);
   }
 
   static async open(limits: Limits): Promise<SupervisedStore> {
@@ -476,14 +511,27 @@ export class SupervisedStore extends CommitSequencer {
     this.#generation += 1;
     this.#resets += 1;
     this.#lost.add(this.#known.take());
+    this.#lostEvicted.add(this.#evicted.take());
   }
 
-  #remember(generation: number, names: readonly string[]): void {
+  #remember(generation: number, names: readonly string[], evicted: readonly string[]): void {
     if (generation === this.#generation) {
       this.#known.add(names);
+      this.#evicted.add(evicted);
     } else {
       this.#lost.add(names);
+      this.#lostEvicted.add(evicted);
     }
+  }
+
+  #stale(sql: string): QueryRejectedError | null {
+    const tokens = new Set(sql.toLowerCase().match(TOKEN) ?? []);
+    const evicted = this.#lostEvicted.firstOf(tokens);
+    if (evicted !== null) {
+      return new QueryRejectedError(evictedMessage(evicted));
+    }
+    const lost = this.#lost.firstOf(tokens);
+    return lost === null ? null : new QueryRejectedError(staleMessage(lost, this.#limits));
   }
 
   protected async write(record: CallRecord, plans: readonly TablePlan[]): Promise<CommitOutcome> {
@@ -502,14 +550,15 @@ export class SupervisedStore extends CommitSequencer {
     }
     const retained = reply["retained"] === true;
     const envelope = String(reply["envelope"]);
-    this.#remember(process.generation, [...(retained ? plans.map((plan) => plan.name) : []), envelope]);
+    const evicted = Array.isArray(reply["evicted"]) ? (reply["evicted"] as unknown[]).map(String) : [];
+    this.#remember(process.generation, [...(retained ? plans.map((plan) => plan.name) : []), envelope], evicted);
     return { retained, envelope };
   }
 
   async runQuery(sql: string, limit: number, limits: Limits, deadline: number): Promise<QueryRows> {
-    const lost = this.#lost.firstOf(new Set(sql.toLowerCase().match(TOKEN) ?? []));
-    if (lost !== null) {
-      throw new QueryRejectedError(staleMessage(lost, this.#limits));
+    const stale = this.#stale(sql);
+    if (stale !== null) {
+      throw stale;
     }
     let process: StoreProcess;
     try {
@@ -517,7 +566,13 @@ export class SupervisedStore extends CommitSequencer {
     } catch (error) {
       throw new QueryRejectedError(`the store is unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const request = process.start({ op: "query", sql, limit, cell_bytes: limits.max_cell_bytes });
+    const request = process.start({
+      op: "query",
+      sql,
+      limit,
+      cell_bytes: limits.max_cell_bytes,
+      output_bytes: limits.query_max_bytes,
+    });
     let expired = false;
     let grace: ReturnType<typeof setTimeout> | undefined;
     const cancelTimer = longTimeout(
@@ -547,11 +602,30 @@ export class SupervisedStore extends CommitSequencer {
       clearTimeout(grace);
     }
     if (reply["ok"] === true && !expired) {
-      return { columns: reply["columns"] as string[], rows: reply["rows"] as (string | null)[][] };
+      return {
+        columns: reply["columns"] as string[],
+        rows: reply["rows"] as (string | null)[][],
+        moreRows: reply["more_rows"] === true,
+        omitted: Number(reply["omitted"]),
+      };
     }
     if (expired || reply["kind"] === "interrupted") {
       throw timeoutFailure(limits.query_timeout_seconds);
     }
-    throw new QueryRejectedError(String(reply["message"]));
+    throw this.#stale(sql) ?? new QueryRejectedError(String(reply["message"]));
   }
+}
+
+export function supervisedPlatform(platform: string = process.platform): boolean {
+  return platform === "darwin" || platform === "linux";
+}
+
+export async function openStore(limits: Limits, platform: string = process.platform): Promise<SupervisedStore | Store> {
+  if (supervisedPlatform(platform)) {
+    return SupervisedStore.open(limits);
+  }
+  log.warning(
+    `store_max_memory is not enforced on ${platform}: the store process and its memory sampler run only on macOS and Linux, so DuckDB runs inside the Sluice process and a hostile query can use unbounded memory`,
+  );
+  return Store.open(limits);
 }
