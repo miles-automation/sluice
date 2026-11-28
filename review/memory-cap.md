@@ -318,3 +318,32 @@ Costs:
 5. Should the cheap gate rules (deny recursive CTEs, deny edit-distance functions) go
    in regardless? Recursive CTEs are currently explicitly supported by the gate.
 6. Measure Linux x86_64 and DuckDB 1.5.5 as a follow-up task?
+
+## Follow-up: string-distance growth (2026-11-28)
+
+The owner chose to deny the quadratic string-distance functions (open question 5,
+the edit-distance half; recursive CTEs stay allowed). To find every member of the
+class, `distance_growth.py` runs each DuckDB string-similarity function on two
+strings of growing length, one probe per child process, killed at 1 GiB RSS or
+60 s. `delta_mb` is peak RSS during the call minus peak RSS before it; inputs are
+at most 8 MB. macOS arm64, `threads=1`. DuckDB 2.0.1 and 1.5.5 expose the same set
+and measured within 10% of each other; no built-in macro calls any of them.
+
+| function | lengths | seconds | delta_mb | growth per doubling | decision |
+|---|---|---|---|---|---|
+| damerau_levenshtein | 2k / 4k / 8k | 0.018 / 0.066 / 0.27 | 32 / 126 / 503 | memory 4x, time 4x | deny |
+| levenshtein | 16k / 32k / 64k | 0.36 / 1.42 / 5.71 | 1 / 1 / 2 | time 4x | deny |
+| editdist3 (alias of levenshtein) | 16k / 32k / 64k | 0.44 / 1.44 / 5.73 | 1 / 1 / 1 | time 4x | deny |
+| jaro_similarity | 128k / 512k / 2M | 0.029 / 0.42 / 6.08 | 9 / 32 / 123 | time 4x (14x per 4x), memory linear | deny |
+| jaro_winkler_similarity | 128k / 512k / 2M | 0.029 / 0.41 / 6.05 | 9 / 32 / 123 | time 4x, memory linear | deny |
+| hamming | 250k / 1M / 4M | 0.001 / 0.002 / 0.004 | 1 / 1 / 1 | linear | allow |
+| mismatches (alias of hamming) | 250k / 1M / 4M | 0.001 / 0.002 / 0.004 | 1 / 1 / 1 | linear | allow |
+| jaccard | 250k / 1M / 4M | 0.002 / 0.004 / 0.011 | 1 / 1 / 1 | linear (character sets) | allow |
+
+Times are DuckDB 2.0.1 except editdist3 (1.5.5). The brief was to deny superlinear
+time as well as superlinear memory: one pair of 64,000-character strings already
+spends 5.7 s of the 10 s default timeout (§6.2) in levenshtein. Whether the timeout
+interrupts inside one call was not measured.
+`array_*` and `list_*` distance and similarity functions are linear in list length
+and stay allowed. Python and Node run the same engine, so the Node gate denies the
+same names.

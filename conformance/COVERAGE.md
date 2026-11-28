@@ -12,8 +12,8 @@ compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
 Summary: 307 test functions. 200 are expressed as fixtures, 93 stay
-Python-only, 14 are the conformance runner itself. 515 fixture cases in
-total; 47 of them cover behavior no existing Python test asserted (listed
+Python-only, 14 are the conformance runner itself. 527 fixture cases in
+total; 59 of them cover behavior no existing Python test asserted (listed
 at the end).
 
 Reasons a test stays Python-only:
@@ -483,12 +483,24 @@ Reasons a test stays Python-only:
 - `extract.nine-objects-and-a-scalar`
 - `extract.object-with-scalar-list-is-one-row`
 - `gate.function.array-resize`
+- `gate.function.damerau-levenshtein`
+- `gate.function.editdist3`
 - `gate.function.format`
+- `gate.function.hamming-is-allowed`
 - `gate.function.harmless-user-macro-is-allowed`
+- `gate.function.jaccard-is-allowed`
+- `gate.function.jaro-similarity`
+- `gate.function.jaro-winkler-similarity`
+- `gate.function.levenshtein`
+- `gate.function.mismatches-is-allowed`
 - `gate.function.nextval`
 - `gate.function.printf`
 - `gate.function.rpad`
 - `gate.function.setseed`
+- `gate.function.string-distance-in-cte`
+- `gate.function.string-distance-in-recursive-cte`
+- `gate.function.string-distance-uppercase`
+- `gate.function.user-macro-reaching-string-distance`
 - `gate.function.user-macro-running-a-query`
 - `gate.function.user-table-macro`
 - `gate_ast.statement-layer-admits-a-select`

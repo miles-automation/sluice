@@ -7,8 +7,13 @@ export const ALLOWED_TABLE_FUNCTIONS: ReadonlySet<string> = new Set();
 export const MUTATING_OR_BLOCKING_SCALAR_FUNCTIONS: ReadonlySet<string> = new Set([
   "array_resize",
   "bitstring",
+  "damerau_levenshtein",
+  "editdist3",
   "format",
+  "jaro_similarity",
+  "jaro_winkler_similarity",
   "json_serialize_plan",
+  "levenshtein",
   "list_resize",
   "lpad",
   "nextval",

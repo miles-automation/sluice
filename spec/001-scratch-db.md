@@ -654,6 +654,21 @@ the live catalog, and its "Did you mean" error names real tables in other scopes
 The canary also proves `sleep_ms`, `pg_get_viewdef` and `json_serialize_plan` are
 refused.
 
+Agent-sized allocation is denied by name too: `lpad`, `rpad`, `list_resize`,
+`array_resize` and `bitstring` allocate from a size argument before output
+rendering applies its cap. So is the **quadratic string-distance class**:
+`damerau_levenshtein`, `levenshtein`, `editdist3`, `jaro_similarity` and
+`jaro_winkler_similarity`. Their cost grows with the product of the two input
+lengths, and `max_memory` does not track it: `damerau_levenshtein` on a
+14,000-character string reached 1.6 to 1.7 GB under a 256 MB `max_memory`, and two
+8,000-character strings already take 503 MB. `levenshtein`, `editdist3` and the
+Jaro functions keep memory linear but take quadratic time (5.7 s for two
+64,000-character strings in `levenshtein`). The linear neighbours `hamming`,
+`mismatches` and `jaccard` stay allowed. Measured on DuckDB 1.5.5 and 2.0.1
+(review/memory-cap.md, "Follow-up: string-distance growth"). This closes one
+class only: replace, concatenation and regexp amplification still escape
+`max_memory` (same review, section 4). Recursive CTEs stay allowed.
+
 CTE names bound by the statement appear in the AST as base tables and are
 allowed, so `WITH x AS (...) SELECT * FROM x` still works. **They must be honoured
 by lexical scope.** Collecting them for the whole statement is a complete bypass:

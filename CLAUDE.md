@@ -155,7 +155,9 @@ Each of these was a bug before it was a rule. Spec section in parentheses.
   in a tool that sells determinism.
 - **Agent-sized allocation functions are blocked** (§6.1). Table functions and
   scalar constructors such as `range`, `lpad`, `list_resize`, and `bitstring`
-  can allocate before output rendering applies its cap.
+  can allocate before output rendering applies its cap. Quadratic string-distance
+  functions (`damerau_levenshtein`, `levenshtein`, `editdist3`, the Jaro pair)
+  are blocked too: their cost escapes `max_memory` (review/memory-cap.md).
 - **Admission covers the whole interception pipeline** (§7). Selection, parse,
   projection, commit, and handle rendering all run under the same semaphore.
 - **Session retention is bounded** (§7). `max_session_bytes` evicts oldest calls

@@ -3,6 +3,16 @@
 This tracks what has landed against the milestones in
 `plan/001-scratch-db.md`.
 
+## Unreleased
+
+- **Security: the query gate refuses the quadratic string-distance functions.**
+  `damerau_levenshtein`, `levenshtein`, `editdist3`, `jaro_similarity` and
+  `jaro_winkler_similarity` cost memory or time that grows with the square of the
+  input length, outside DuckDB's `max_memory`: `damerau_levenshtein` on a
+  14,000-character string reached 1.6 to 1.7 GB under a 256 MB limit. They are refused by name,
+  in any query position and through a macro. `hamming`, `mismatches` and `jaccard`
+  are linear and stay allowed. The TypeScript gate refuses the same names.
+
 ## 0.2.2 — 2026-11-25
 
 - **Security: a Unicode CTE name could shadow a table the gate protects.** The
