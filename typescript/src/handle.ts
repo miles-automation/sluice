@@ -1,6 +1,5 @@
 import type { JsonValue } from "./json.ts";
 import type { ContentBlock, Handle, PaginationSummary, TableRef } from "./models.ts";
-import { scopeViewName } from "./store.ts";
 import { rawJson } from "./wire.ts";
 
 export const QUERY_HINT = "Run SQL over this with the `query` tool.";
@@ -122,7 +121,7 @@ export function renderText(handle: Handle): string {
   if (handle.tables.length === 0) {
     lines.push(`no table: ${handle.flatReason ?? "no tabular rows found"}`);
   }
-  lines.push(`envelope: ${scopeViewName(handle.scopeId)} WHERE call_id = '${handle.callId}'`);
+  lines.push(`envelope: ${handle.envelopeTable} WHERE call_id = '${handle.callId}'`);
   if (handle.previewComplete) {
     lines.push(`preview (complete, ${handle.byteSize} B):`);
   } else if (handle.previewRows !== null && handle.totalRows !== null) {
@@ -176,7 +175,7 @@ export function renderStructured(handle: Handle): StructuredHandle {
   return {
     call_id: handle.callId,
     scope_id: handle.scopeId,
-    envelope_table: scopeViewName(handle.scopeId),
+    envelope_table: handle.envelopeTable,
     source_channel: handle.channel,
     channel_conflict: handle.conflict,
     tables: handle.tables.map((table) => ({

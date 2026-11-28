@@ -102,6 +102,7 @@ export interface PaginationSummary {
 export interface Handle {
   readonly callId: string;
   readonly scopeId: string;
+  readonly envelopeTable: string;
   readonly channel: PayloadChannel;
   readonly conflict: boolean;
   readonly byteSize: number;

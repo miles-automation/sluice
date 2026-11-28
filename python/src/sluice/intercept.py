@@ -26,7 +26,7 @@ from sluice.models import (
     TablePlan,
     TableRef,
 )
-from sluice.store import Store, bounded_flat_reason, retention_budget_reason
+from sluice.store import CommitSequencer, bounded_flat_reason, retention_budget_reason
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,9 @@ def _now() -> datetime:
 class Interceptor:
     """Records every call and replaces eligible results with a handle."""
 
-    def __init__(self, store: Store, limits: Limits, *, query_available: bool = False) -> None:
+    def __init__(
+        self, store: CommitSequencer, limits: Limits, *, query_available: bool = False
+    ) -> None:
         self._store = store
         self._limits = limits
         self._query_available = query_available
@@ -165,9 +167,11 @@ class Interceptor:
             flat_reason=flat_reason,
         )
 
+        envelope = ""
         try:
-            retained = await self._store.commit_call(record, plans)
-            if not retained:
+            outcome = await self._store.commit(record, plans)
+            envelope = outcome.envelope
+            if not outcome.retained:
                 # The call itself exceeded the session retention budget. The
                 # envelope remains as metadata, but no handle may advertise
                 # tables that were immediately evicted.
@@ -194,8 +198,9 @@ class Interceptor:
                 flat_reason=bounded_flat_reason(f"load_failed: {type(exc).__name__}: {exc}"),
             )
             try:
-                retry_retained = await self._store.commit_call(degraded, [])
-                if not retry_retained:
+                retry = await self._store.commit(degraded, [])
+                envelope = retry.envelope
+                if not retry.retained:
                     record = replace(
                         degraded,
                         flat_reason=retention_budget_reason(degraded.flat_reason),
@@ -213,7 +218,7 @@ class Interceptor:
             return self._passthrough(result, reason, selected, ceiling, pagination)
 
         return handle_render.to_result(
-            self._build_handle(record, selected, tables, preview_rows, pagination)
+            self._build_handle(record, envelope, selected, tables, preview_rows, pagination)
         )
 
     def _passthrough(
@@ -324,6 +329,7 @@ class Interceptor:
     def _build_handle(
         self,
         record: CallRecord,
+        envelope: str,
         selected: SelectedPayload,
         tables: list[TableRef],
         preview_rows: list[object],
@@ -340,6 +346,7 @@ class Interceptor:
         return Handle(
             call_id=record.call_id,
             scope_id=record.scope_id,
+            envelope_table=envelope,
             channel=selected.channel,
             conflict=selected.conflict,
             byte_size=selected.byte_size,

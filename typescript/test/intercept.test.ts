@@ -97,9 +97,9 @@ test("a selection failure passes the original result through and is recorded", a
 
 test("a failed commit degrades to an envelope-only handle and does not wedge later calls", async () => {
   await withInterceptor(makeLimits(), async (interceptor, store, events) => {
-    const commit = store.commitCall.bind(store);
+    const commit = store.commit.bind(store);
     let failures = 1;
-    store.commitCall = async (record, plans) => {
+    store.commit = async (record, plans) => {
       if (failures > 0 && plans.length > 0) {
         failures -= 1;
         throw new Error("synthetic insert failure");
@@ -122,7 +122,7 @@ test("a failed commit degrades to an envelope-only handle and does not wedge lat
 
 test("a failed envelope write returns the downstream result unmodified", async () => {
   await withInterceptor(makeLimits(), async (interceptor, store, events) => {
-    store.commitCall = () => Promise.reject(new Error("synthetic envelope failure"));
+    store.commit = () => Promise.reject(new Error("synthetic envelope failure"));
     const original: ToolResult = { content: [{ type: "text", text: '[{"id": 1}]' }] };
     assert.equal(await interceptor.intercept(request(original)), original);
     assert.deepEqual(events, ["commit_failed", "envelope_payload_failed", "envelope_write_failed"]);
@@ -169,7 +169,7 @@ test("plain structuredContent is still accepted when no lossless form is supplie
 test("admission bounds the whole pipeline, not only the write", async () => {
   const limits = makeLimits({ max_concurrent_materializations: 1 });
   await withInterceptor(limits, async (interceptor, store) => {
-    const commit = store.commitCall.bind(store);
+    const commit = store.commit.bind(store);
     const ticket = store.nextRetentionSeq.bind(store);
     let admitted = 0;
     store.nextRetentionSeq = () => {
@@ -184,7 +184,7 @@ test("admission bounds the whole pipeline, not only the write", async () => {
     const started = new Promise<void>((resolve) => {
       commitStarted = resolve;
     });
-    store.commitCall = async (record, plans) => {
+    store.commit = async (record, plans) => {
       commitStarted();
       await blocked;
       return commit(record, plans);
@@ -202,8 +202,8 @@ test("admission bounds the whole pipeline, not only the write", async () => {
 
 test("an envelope that cannot hold its payload is still written as metadata", async () => {
   await withInterceptor(makeLimits(), async (interceptor, store, events) => {
-    const commit = store.commitCall.bind(store);
-    store.commitCall = async (record, plans) => {
+    const commit = store.commit.bind(store);
+    store.commit = async (record, plans) => {
       if (record.payload.value !== undefined) {
         throw new Error("synthetic payload failure");
       }

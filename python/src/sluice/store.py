@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, replace
@@ -12,6 +13,12 @@ import anyio
 import duckdb
 
 from sluice.config import SESSION_CALLS_DEFAULT, SESSION_RETENTION_DEFAULT, Limits
+from sluice.execute import (
+    QueryInterruptedError,
+    QueryRows,
+    execute_on_cursor,
+    timeout_failure,
+)
 from sluice.gate import SCOPE_PATTERN, GateContractError, verify_parser_contract
 from sluice.infer import ColumnSpec, coerce
 from sluice.models import CallRecord, SelectedPayload, TablePlan
@@ -67,8 +74,10 @@ SELECT. Each scope gets a filtered view instead (`scope_view_name`), and the
 gate's allowlist admits the views, never this."""
 
 
-def scope_view_name(scope_id: str) -> str:
-    return f"{ENVELOPE_TABLE}__{scope_id}"
+def scope_view_name(scope_id: str, generation: int = 0) -> str:
+    if generation == 0:
+        return f"{ENVELOPE_TABLE}__{scope_id}"
+    return f"{ENVELOPE_TABLE}__{scope_id}__r{generation}"
 
 
 ENVELOPE_DDL = f"""
@@ -122,23 +131,14 @@ class _CallMetadata:
     tables: tuple[str, ...]
 
 
-class Store:
-    """Owns the connection Sluice writes through.
+@dataclass(frozen=True, slots=True)
+class CommitOutcome:
+    retained: bool
+    envelope: str
 
-    The lockdown is database-global, so it applies to Sluice's own SQL exactly as
-    it applies to the agent's. That is why materialization cannot use `read_json`
-    (spec 5.4). Do not relax it to fix a write.
-    """
 
-    def __init__(
-        self,
-        connection: duckdb.DuckDBPyConnection,
-        max_session_bytes: int = SESSION_RETENTION_DEFAULT,
-        max_session_calls: int = SESSION_CALLS_DEFAULT,
-    ) -> None:
-        self._connection = connection
-        self._max_session_bytes = max_session_bytes
-        self._max_session_calls = max_session_calls
+class CommitSequencer:
+    def __init__(self) -> None:
         self._lock = anyio.Lock()
         self._commit_condition = anyio.Condition()
         self._next_commit_seq = 1
@@ -147,66 +147,12 @@ class Store:
         self._call_sequences: dict[str, int] = {}
         self._table_sequences: dict[str, int] = {}
         self._retention_sequence = 0
-        self._retained: dict[str, _RetainedCall] = {}
-        self._metadata: dict[str, _CallMetadata] = {}
-        self._retained_bytes = 0
-        self._evicted_tables: set[str] = set()
-        self._evicted_table_order: deque[str] = deque()
-        self._evicted_table_limit = max_session_calls * 64
-        # Exactly the objects the gate will admit. Nothing else in the catalog
-        # is reachable, whether or not anyone thought to deny it by name.
-        self._allowed_objects: set[str] = set()
 
-    @classmethod
-    def open(cls, limits: Limits) -> Self:
-        connection = duckdb.connect(":memory:")
-        for statement in LOCKDOWN_TEMPLATE:
-            connection.execute(statement.format(max_memory=limits.duckdb_max_memory))
-        try:
-            verify_parser_contract(connection)
-        except GateContractError:
-            connection.close()
-            raise
-        # CREATE TABLE still works after the lockdown; only external access and
-        # further configuration changes are closed off.
-        connection.execute(ENVELOPE_DDL)
-        return cls(connection, limits.max_session_bytes, limits.max_session_calls)
+    async def _write(self, record: CallRecord, plans: list[TablePlan]) -> CommitOutcome:
+        raise NotImplementedError
 
-    @property
-    def connection(self) -> duckdb.DuckDBPyConnection:
-        return self._connection
-
-    @property
-    def allowed_objects(self) -> set[str]:
-        return set(self._allowed_objects)
-
-    @property
-    def retained_bytes(self) -> int:
-        """Logical bytes retained by payload and table row representations."""
-        return self._retained_bytes
-
-    @property
-    def retained_call_ids(self) -> set[str]:
-        return set(self._retained)
-
-    @property
-    def evicted_tables(self) -> set[str]:
-        """Table names removed by retention, for a precise stale-handle error."""
-        return set(self._evicted_tables)
-
-    def close(self) -> None:
-        self._connection.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        self.close()
+    async def run_query(self, sql: str, limit: int, limits: Limits) -> QueryRows:
+        raise NotImplementedError
 
     async def next_call_seq(self, mounted: str) -> int:
         """Nth call to this tool. Recorded on the envelope row."""
@@ -234,6 +180,9 @@ class Store:
             return nxt
 
     async def commit_call(self, record: CallRecord, plans: list[TablePlan]) -> bool:
+        return (await self.commit(record, plans)).retained
+
+    async def commit(self, record: CallRecord, plans: list[TablePlan]) -> CommitOutcome:
         """Write the flat tables and the envelope row as one transaction.
 
         Atomicity matters here for a specific reason: the envelope is the only
@@ -261,7 +210,7 @@ class Store:
                 retry = sequence == self._retry_seq
                 ready = True
             async with self._lock:
-                outcome = await anyio.to_thread.run_sync(self._commit, record, plans)
+                outcome = await self._write(record, plans)
         except BaseException as exc:
             # Cancellation remains active while unwinding, so cleanup must be
             # shielded. A caller cancelled while waiting abandons only its own
@@ -310,7 +259,118 @@ class Store:
             self._abandoned_sequences.remove(self._next_commit_seq)
             self._next_commit_seq += 1
 
-    def _commit(self, record: CallRecord, plans: list[TablePlan]) -> bool:
+
+class Store(CommitSequencer):
+    """Owns the connection Sluice writes through.
+
+    The lockdown is database-global, so it applies to Sluice's own SQL exactly as
+    it applies to the agent's. That is why materialization cannot use `read_json`
+    (spec 5.4). Do not relax it to fix a write.
+    """
+
+    def __init__(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        max_session_bytes: int = SESSION_RETENTION_DEFAULT,
+        max_session_calls: int = SESSION_CALLS_DEFAULT,
+        generation: int = 0,
+    ) -> None:
+        super().__init__()
+        self._connection = connection
+        self._max_session_bytes = max_session_bytes
+        self._max_session_calls = max_session_calls
+        self._generation = generation
+        self._retained: dict[str, _RetainedCall] = {}
+        self._metadata: dict[str, _CallMetadata] = {}
+        self._retained_bytes = 0
+        self._evicted_tables: set[str] = set()
+        self._evicted_table_order: deque[str] = deque()
+        self._evicted_table_limit = max_session_calls * 64
+        self._allowed_objects: set[str] = set()
+
+    @classmethod
+    def open(cls, limits: Limits, generation: int = 0) -> Self:
+        connection = duckdb.connect(":memory:")
+        for statement in LOCKDOWN_TEMPLATE:
+            connection.execute(statement.format(max_memory=limits.duckdb_max_memory))
+        try:
+            verify_parser_contract(connection)
+        except GateContractError:
+            connection.close()
+            raise
+        # CREATE TABLE still works after the lockdown; only external access and
+        # further configuration changes are closed off.
+        connection.execute(ENVELOPE_DDL)
+        return cls(connection, limits.max_session_bytes, limits.max_session_calls, generation)
+
+    @property
+    def connection(self) -> duckdb.DuckDBPyConnection:
+        return self._connection
+
+    @property
+    def allowed_objects(self) -> set[str]:
+        return set(self._allowed_objects)
+
+    @property
+    def retained_bytes(self) -> int:
+        """Logical bytes retained by payload and table row representations."""
+        return self._retained_bytes
+
+    @property
+    def retained_call_ids(self) -> set[str]:
+        return set(self._retained)
+
+    @property
+    def evicted_tables(self) -> set[str]:
+        """Table names removed by retention, for a precise stale-handle error."""
+        return set(self._evicted_tables)
+
+    def close(self) -> None:
+        self._connection.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    async def _write(self, record: CallRecord, plans: list[TablePlan]) -> CommitOutcome:
+        return await anyio.to_thread.run_sync(self._commit, record, plans)
+
+    async def run_query(self, sql: str, limit: int, limits: Limits) -> QueryRows:
+        cursor = self._connection.cursor()
+        allowed = self.allowed_objects
+        evicted = self.evicted_tables
+        expired = threading.Event()
+
+        def expire() -> None:
+            expired.set()
+            with suppress(duckdb.Error):
+                cursor.interrupt()
+
+        def blocking() -> QueryRows:
+            return execute_on_cursor(
+                cursor, sql, limit, allowed, evicted, limits.max_cell_bytes, expired
+            )
+
+        timer = threading.Timer(limits.query_timeout_seconds, expire)
+        timer.daemon = True
+        timer.start()
+        try:
+            return await anyio.to_thread.run_sync(blocking)
+        except QueryInterruptedError:
+            raise timeout_failure(limits.query_timeout_seconds) from None
+        finally:
+            timer.cancel()
+            timer.join()
+            cursor.close()
+
+    def _commit(self, record: CallRecord, plans: list[TablePlan]) -> CommitOutcome:
         record = replace(record, flat_reason=bounded_flat_reason(record.flat_reason))
         size = self._retention_size(record, plans)
         order = record.retention_seq or self._retention_sequence + 1
@@ -389,11 +449,11 @@ class Store:
         for call_id in removed_metadata:
             scope_id = self._metadata[call_id].scope_id
             if scope_id not in remaining_scopes:
-                self._allowed_objects.discard(scope_view_name(scope_id))
+                self._allowed_objects.discard(scope_view_name(scope_id, self._generation))
         self._metadata = metadata
         self._allowed_objects.update(table for entry in retained.values() for table in entry.tables)
         self._allowed_objects.add(view)
-        return fits_budget
+        return CommitOutcome(retained=fits_budget, envelope=view)
 
     @staticmethod
     def _retained_total(retained: dict[str, _RetainedCall]) -> int:
@@ -504,7 +564,8 @@ class Store:
         ).fetchone()
         if remaining is None:
             self._connection.execute(
-                f"DROP VIEW IF EXISTS {quote_ident(scope_view_name(entry.scope_id))}"
+                f"DROP VIEW IF EXISTS "
+                f"{quote_ident(scope_view_name(entry.scope_id, self._generation))}"
             )
 
     def _ensure_scope_view(self, scope_id: str) -> str:
@@ -513,7 +574,7 @@ class Store:
             # into SQL. Refuse anything that is not, rather than trusting the
             # caller.
             raise ValueError(f"scope id is not 32 hex characters: {scope_id!r}")
-        name = scope_view_name(scope_id)
+        name = scope_view_name(scope_id, self._generation)
         self._connection.execute(
             f"CREATE OR REPLACE VIEW {quote_ident(name)} AS "
             f"SELECT * FROM {quote_ident(ENVELOPE_TABLE)} WHERE scope_id = '{scope_id}'"

@@ -11,9 +11,9 @@ The Python tests that became fixtures are kept for now, so the two can be
 compared while the TypeScript port lands. Whether to delete them is an open
 decision; until then a behavior change updates both.
 
-Summary: 307 test functions. 200 are expressed as fixtures, 93 stay
-Python-only, 14 are the conformance runner itself. 530 fixture cases in
-total; 62 of them cover behavior no existing Python test asserted (listed
+Summary: 317 test functions. 202 are expressed as fixtures, 101 stay
+Python-only, 14 are the conformance runner itself. 539 fixture cases in
+total; 69 of them cover behavior no existing Python test asserted (listed
 at the end).
 
 Reasons a test stays Python-only:
@@ -462,9 +462,26 @@ Reasons a test stays Python-only:
 | `test_cancelled_direct_waiter_releases_its_fifo_ticket` | Python-only: timing-sensitive (threads, deadlines, cancellation). TS: needs an equivalent; review/duckdb2-node-check.md constraint 4 (libuv pool) makes it a different test. |
 | `test_sequences_are_monotonic_per_tool_and_independent` | `session.handle.call-sequence-counts-per-tool`, `session.handle.table-sequence-counts-tables-per-tool` |
 
+## tests/test_supervisor.py
+
+| Test | Covered by |
+|---|---|
+| `test_hostile_query_resets_the_store_and_the_server_keeps_serving` | `session.reset.query-over-the-cap-resets-the-store`; the measured overshoot and reset count read Python internals. TS: `typescript/test/supervisor.test.ts` "a hostile query resets the store and the server keeps serving". |
+| `test_every_pre_reset_handle_fails_loudly` | `session.reset.conversation-envelope-is-not-reused`, `session.reset.query-over-the-cap-resets-the-store` |
+| `test_materialization_racing_a_reset_keeps_the_tool_call_working` | Python-only: injects the kill by monkeypatching the store client. TS: `typescript/test/supervisor.test.ts` "a materialization racing a reset keeps the tool call working". |
+| `test_materialization_concurrent_with_a_hostile_query_never_fails` | Python-only: timing-sensitive concurrency. TS: `typescript/test/supervisor.test.ts` "materializations concurrent with a hostile query never fail". |
+| `test_query_timeout_interrupts_inside_the_store_without_a_reset` | Python-only: timing-sensitive. TS: `typescript/test/supervisor.test.ts` "a query timeout interrupts inside the store without a reset". |
+| `test_gate_rejections_and_engine_errors_cross_the_process_boundary` | Python-only: the categories themselves are the gate and session query fixtures, which run through the store process. TS: `typescript/test/supervisor.test.ts` "gate rejections and engine errors cross the process boundary". |
+| `test_store_process_never_writes_to_stdout` | Python-only: process file descriptors. TS: `typescript/test/supervisor.test.ts` "the store process never writes to stdout". |
+| `test_store_process_exits_when_its_parent_dies` | Python-only: process lifetime. TS: `typescript/test/supervisor.test.ts` "the store process exits when its parent dies". |
+| `test_store_process_runs_under_rlimit_data_on_linux` | Python-only: Linux process limits. TS: `typescript/test/supervisor.test.ts` "the store process runs under RLIMIT_DATA on Linux". |
+| `test_memory_sampler_reads_this_platform` | Python-only: the parent's RSS sampler. TS samples through `ps` or `/proc` (`typescript/test/supervisor.test.ts` "the memory sampler reads this platform"). |
+
 ## Fixtures with no prior Python test
 
 - `config.byte-order-mark-is-refused`
+- `config.duckdb-max-memory-must-be-an-absolute-size`
+- `config.duckdb-max-memory-needs-a-unit`
 - `config.env-values-are-stringified-like-python`
 - `config.limit-cross-check-above-2-53-is-exact`
 - `config.limits-above-2-53-are-accepted`
@@ -472,6 +489,11 @@ Reasons a test stays Python-only:
 - `config.preview-bytes-may-be-zero`
 - `config.preview-rows-may-be-zero`
 - `config.query-output-floor-is-allowed`
+- `config.store-max-memory-above-decimal-duckdb-limit-is-allowed`
+- `config.store-max-memory-as-string-is-refused`
+- `config.store-max-memory-below-the-floor-is-refused`
+- `config.store-max-memory-binary-units-compare-exactly`
+- `config.store-max-memory-must-exceed-duckdb-max-memory`
 - `engine.integer-sum-is-exact-hugeint`
 - `engine.lockdown-blocks-read-text`
 - `engine.max-of-mixed-double-rounds`

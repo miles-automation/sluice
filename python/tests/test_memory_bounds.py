@@ -56,7 +56,7 @@ async def test_admission_covers_selection_and_commit(monkeypatch: pytest.MonkeyP
         commit_started = anyio.Event()
         release_commit = anyio.Event()
         original_select = payload_module.select
-        original_commit = store.commit_call
+        original_commit = store.commit
 
         def counting_select(result: types.CallToolResult):  # type: ignore[no-untyped-def]
             nonlocal selected
@@ -69,7 +69,7 @@ async def test_admission_covers_selection_and_commit(monkeypatch: pytest.MonkeyP
             return await original_commit(record, plans)
 
         monkeypatch.setattr(payload_module, "select", counting_select)
-        monkeypatch.setattr(store, "commit_call", delayed_commit)
+        monkeypatch.setattr(store, "commit", delayed_commit)
         first = asyncio.create_task(_intercept(interceptor, "fake__rows", {"items": [1]}))
         await commit_started.wait()
         second = asyncio.create_task(_intercept(interceptor, "fake__rows", {"items": [2]}))

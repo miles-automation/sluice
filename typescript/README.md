@@ -81,9 +81,15 @@ These are recorded as one-sided in the spec:
 The agent can only read tables Sluice created in its own scope. File, network
 and extension access are locked off in DuckDB, spilling to disk is disabled,
 and the `query` tool admits a single read-only `SELECT` checked against an
-allowlist over DuckDB's own parse tree. Known limit: DuckDB does not count every
-string intermediate against `max_memory`, so a hostile query can still use a
-lot of memory; run Sluice under a process memory limit if that matters.
+allowlist over DuckDB's own parse tree. DuckDB does not count every string
+intermediate against `max_memory`, so DuckDB runs in a child process
+(`dist/store-worker.js`) capped by `store_max_memory` (default 2 GiB, greater
+than `duckdb_max_memory`). The child checks its own resident memory every 20 ms
+and Sluice checks it from outside (through `ps` on macOS, `/proc` on Linux, where
+the child also runs under `RLIMIT_DATA`). A query that passes the cap fails with
+a `store reset` error, the store restarts empty, and every earlier table and
+handle fails loudly. Tool calls keep working throughout. Expect an overshoot of
+up to about 150 MB.
 
 Report problems at https://github.com/miles-automation/sluice/issues.
 

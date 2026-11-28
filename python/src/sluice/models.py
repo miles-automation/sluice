@@ -122,6 +122,7 @@ class Handle:
 
     call_id: str
     scope_id: str
+    envelope_table: str
     channel: PayloadChannel
     conflict: bool
     byte_size: int

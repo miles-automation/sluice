@@ -92,6 +92,8 @@ def params(kind: str) -> list[Any]:
 
 
 _GATE_CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("lost when the store was reset", "stale_handle"),
+    ("store reset", "store_reset"),
     ("could not parse", "parse_error"),
     ("no statement found", "no_statement"),
     ("statements found", "multiple_statements"),

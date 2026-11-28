@@ -12,6 +12,7 @@ import { mountedName } from "../../src/naming.ts";
 import { QueryTool, escapeCell, runQueryTool } from "../../src/query.ts";
 import { derive } from "../../src/scope.ts";
 import { Store, scopeViewName } from "../../src/store.ts";
+import { SupervisedStore } from "../../src/supervisor.ts";
 
 type JsonRecord = { readonly [key: string]: Json };
 
@@ -219,7 +220,7 @@ function assertHandle(expect: JsonRecord, result: ToolResult): Structured {
   assert.equal(typeof text, "string");
   const body = String(text);
   const scopeId = String(structured["scope_id"]);
-  assert.equal(structured["envelope_table"], scopeViewName(scopeId));
+  assert.ok(String(structured["envelope_table"]).startsWith(scopeViewName(scopeId)));
   assert.ok(body.includes(String(structured["envelope_table"])));
   for (const key of ["source_channel", "channel_conflict", "preview_complete", "scope_id"]) {
     if (key in expect) {
@@ -301,12 +302,14 @@ function assertPassthrough(expect: JsonRecord, original: ToolResult, result: Too
 
 class Session {
   readonly limits: Limits;
+  readonly store: SupervisedStore;
   readonly interceptor: Interceptor;
   readonly query: QueryTool;
   readonly calls = new Map<string, Structured>();
 
-  constructor(limits: Limits, store: Store) {
+  constructor(limits: Limits, store: SupervisedStore) {
     this.limits = limits;
+    this.store = store;
     this.interceptor = new Interceptor(store, limits, { queryAvailable: true, logger: () => undefined });
     this.query = new QueryTool(store, limits);
   }
@@ -322,7 +325,7 @@ class Session {
         case "table":
           return String((entry["tables"] as Structured[])[Number(index ?? 0)]?.["name"]);
         case "envelope":
-          return scopeViewName(String(entry["scope_id"]));
+          return String(entry["envelope_table"]);
         case "call_id":
           return String(entry["call_id"]);
         case "scope":
@@ -353,7 +356,11 @@ class Session {
     if (expect["outcome"] === "passthrough") {
       assertPassthrough(expect, original, result);
       const derived = derive(meta);
-      this.calls.set(name, { tables: [], scope_id: derived.fromClient ? derived.tag : null });
+      this.calls.set(name, {
+        tables: [],
+        scope_id: derived.fromClient ? derived.tag : null,
+        envelope_table: derived.fromClient ? scopeViewName(derived.tag, this.store.generation) : null,
+      });
       return;
     }
     this.calls.set(name, assertHandle(expect, result));
@@ -388,7 +395,7 @@ class Session {
 
 export async function runSession(testCase: Case): Promise<void> {
   const limits = makeLimits(isRecord(testCase["limits"]) ? testCase["limits"] : {});
-  const store = await Store.open(limits);
+  const store = await SupervisedStore.open(limits);
   try {
     const session = new Session(limits, store);
     for (const step of list(testCase["steps"])) {
@@ -400,6 +407,6 @@ export async function runSession(testCase: Case): Promise<void> {
       }
     }
   } finally {
-    store.close();
+    await store.close();
   }
 }
